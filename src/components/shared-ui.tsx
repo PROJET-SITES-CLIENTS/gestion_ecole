@@ -111,6 +111,8 @@ type FieldDef = {
   options?: { value: string; label: string }[];
   required?: boolean;
   placeholder?: string;
+  defaultValue?: string | number | boolean | null;
+  step?: string;
 };
 
 export function ModalForm({
@@ -124,6 +126,7 @@ export function ModalForm({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const valueOf = (f: FieldDef) => defaultValues?.[f.name] ?? f.defaultValue;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -145,11 +148,11 @@ export function ModalForm({
           {fields.map(f => (
             <FormField key={f.name} label={f.label} required={f.required}>
               {f.type === 'textarea' ? (
-                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={defaultValues?.[f.name]} required={f.required} />
+                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} />
               ) : f.type === 'select' ? (
                 <select
                   name={f.name}
-                  defaultValue={defaultValues?.[f.name] ?? ''}
+                  defaultValue={valueOf(f) ?? ''}
                   required={f.required}
                   className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
@@ -157,15 +160,15 @@ export function ModalForm({
                   {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               ) : f.type === 'checkbox' ? (
-                <Checkbox name={f.name} defaultChecked={defaultValues?.[f.name]} />
+                <Checkbox name={f.name} defaultChecked={valueOf(f)} />
               ) : (
                 <Input
                   type={f.type ?? 'text'}
                   name={f.name}
                   placeholder={f.placeholder}
-                  defaultValue={defaultValues?.[f.name]}
+                  defaultValue={valueOf(f)}
                   required={f.required}
-                  step={f.type === 'number' ? '0.01' : undefined}
+                  step={f.step ?? (f.type === 'number' ? '0.01' : undefined)}
                 />
               )}
             </FormField>

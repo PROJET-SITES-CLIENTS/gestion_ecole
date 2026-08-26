@@ -144,7 +144,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                       <CardHeader className="pb-2"><CardTitle className="text-sm">Consentements mineurs (Partie C.8)</CardTitle></CardHeader>
                       <CardContent className="space-y-2">
                         <ConsentementRow label="Portail élève activé" checked={eleve.consentementPortailEleve} date={eleve.consentementPortailEleveDate}
-                          onActivate={() => startTransition(() => actions.activerConsentementPortailEleve(eleve.id, dirUserId))} />
+                          onActivate={() => startTransition(() => { void actions.activerConsentementPortailEleve(eleve.id, dirUserId); })} />
                         <ConsentementRow label="Photo interne autorisée" checked={eleve.consentementPhotoInterne} />
                         <ConsentementRow label="Photo externe autorisée" checked={eleve.consentementPhotoExterne} />
                       </CardContent>
@@ -358,7 +358,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                     action={actions.ajouterBesoinSpecifique}
                   />
                   {!eleve.consentementPortailEleve && (
-                    <Button variant="outline" size="sm" onClick={() => startTransition(() => actions.activerConsentementPortailEleve(eleve.id, dirUserId))}>
+                    <Button variant="outline" size="sm" onClick={() => startTransition(() => { void actions.activerConsentementPortailEleve(eleve.id, dirUserId); })}>
                       <Shield className="h-4 w-4 mr-1" /> Activer consentement portail élève
                     </Button>
                   )}
@@ -374,7 +374,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   );
 }
 
-function ConsentementRow({ label, checked, date, onActivate }: { label: string; checked: boolean; date: any; onActivate?: () => void }) {
+function ConsentementRow({ label, checked, date, onActivate }: { label: string; checked: boolean; date?: any; onActivate?: () => void }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
       <div>

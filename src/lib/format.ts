@@ -30,7 +30,6 @@ export function statutColor(statut: string): string {
     planifiee: "bg-amber-100 text-amber-700 border-amber-200",
     planifie: "bg-amber-100 text-amber-700 border-amber-200",
     "en_cours": "bg-blue-100 text-blue-700 border-blue-200",
-    en_cours: "bg-blue-100 text-blue-700 border-blue-200",
     "en_attente": "bg-amber-100 text-amber-700 border-amber-200",
     en_attente_validation_pp: "bg-amber-100 text-amber-700 border-amber-200",
     en_attente_validation_direction: "bg-amber-100 text-amber-700 border-amber-200",

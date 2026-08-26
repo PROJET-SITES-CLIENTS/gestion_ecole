@@ -105,17 +105,17 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                 key: 'actions', label: 'Actions', render: (b) => (
                   <div className="flex gap-1 flex-wrap">
                     {b.statut === 'en_construction' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.changerStatutBulletin(b.id, 'valide_pp', dirUserId, 'pp'))}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'valide_pp', dirUserId, 'pp'); })}>
                         Valider PP
                       </Button>
                     )}
                     {b.statut === 'valide_pp' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.changerStatutBulletin(b.id, 'publie', dirUserId, 'direction'))}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'publie', dirUserId, 'direction'); })}>
                         Publier
                       </Button>
                     )}
                     {b.statut === 'publie' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.changerStatutBulletin(b.id, 'rectifie', dirUserId, 'direction'))}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'rectifie', dirUserId, 'direction'); })}>
                         Rectifier
                       </Button>
                     )}

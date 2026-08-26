@@ -95,12 +95,12 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
                 key: 'actions', label: 'Actions', render: (e) => (
                   <div className="flex gap-1">
                     {e.statut !== 'suspendu' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.changerStatutEcole(e.id, 'suspendu'))}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutEcole(e.id, 'suspendu'); })}>
                         Suspendre
                       </Button>
                     )}
                     {e.statut === 'suspendu' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.changerStatutEcole(e.id, 'actif'))}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutEcole(e.id, 'actif'); })}>
                         Réactiver
                       </Button>
                     )}

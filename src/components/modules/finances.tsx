@@ -203,7 +203,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
                 { key: 'validee', label: 'Statut', render: (d) => d.validee ? <StatusBadge statut="validee" /> : <StatusBadge statut="en_attente" /> },
                 {
                   key: 'actions', label: 'Action', render: (d) => !d.validee ? (
-                    <Button size="sm" variant="outline" onClick={() => startTransition(() => actions.validerDepense(d.id, dirUserId))}>Valider</Button>
+                    <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.validerDepense(d.id, dirUserId); })}>Valider</Button>
                   ) : null,
                 },
               ]}

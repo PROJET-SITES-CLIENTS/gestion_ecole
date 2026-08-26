@@ -3,9 +3,73 @@
 // notifications, audit. Pré-configuré pour démonstration de bout en bout.
 
 import { db } from "../src/lib/db";
+import { Prisma } from "@prisma/client";
+
+// Nettoyage idempotent : supprime toutes les lignes de toutes les tables,
+// dans l'ordre topologique (tables porteuses de FK supprimées en premier),
+// pour pouvoir ré-exécuter le seed sans erreur de contrainte unique.
+async function wipeAll() {
+  // Désactive les FK au cas où la connexion le permette (SQLite par connexion)
+  try {
+    await db.$executeRawUnsafe("PRAGMA foreign_keys = OFF;");
+  } catch { /* non bloquant : l'ordre topologique suffit */ }
+
+  const models = Prisma.dmmf.datamodel.models;
+  const names = new Set(models.map((m) => m.name));
+  // Graphe : modèle -> modèles référencés (lorsqu'il porte la FK)
+  const deps = new Map<string, Set<string>>();
+  for (const m of models) {
+    deps.set(m.name, new Set());
+    for (const f of m.fields as any[]) {
+      if (f.kind === "object" && Array.isArray(f.relationFromFields) && f.relationFromFields.length > 0) {
+        if (names.has(f.type)) deps.get(m.name)!.add(f.type);
+      }
+    }
+  }
+
+  // Tri topologique (algorithme de Kahn itératif)
+  const done = new Set<string>();
+  const remaining = [...names];
+  let progress = true;
+  while (remaining.length > 0 && progress) {
+    progress = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const name = remaining[i];
+      const pending = [...deps.get(name)!].filter((d) => !done.has(d));
+      if (pending.length === 0) {
+        const key = name.charAt(0).toLowerCase() + name.slice(1);
+        const delegate = (db as any)[key];
+        if (delegate && typeof delegate.deleteMany === "function") {
+          await delegate.deleteMany({});
+        }
+        done.add(name);
+        remaining.splice(i, 1);
+        i--;
+        progress = true;
+      }
+    }
+  }
+
+  // Filet de sécurité pour les cycles résiduels (self-relations, etc.)
+  for (const name of remaining) {
+    const key = name.charAt(0).toLowerCase() + name.slice(1);
+    const delegate = (db as any)[key];
+    if (delegate && typeof delegate.deleteMany === "function") {
+      try {
+        await delegate.deleteMany({});
+      } catch { /* cycle protégé par le PRAGMA OFF si actif */ }
+    }
+  }
+
+  try {
+    await db.$executeRawUnsafe("PRAGMA foreign_keys = ON;");
+  } catch { /* non bloquant */ }
+}
 
 async function main() {
   console.log("🌱 Début du seed...");
+  console.log("🧹 Nettoyage de la base (idempotence)...");
+  await wipeAll();
 
   // 1) Plans tarifaires SaaS
   const planEssentiel = await db.planTarifaire.create({
@@ -1199,6 +1263,244 @@ async function main() {
       { salleId: sallesEcole[0].id, type: "climatisation", quantite: 1, etat: "panne" },
     ] });
   }
+
+  // ==================================================================
+  // COMPLÉTION AUDIT — 21 tables pré-existantes non seedées
+  // (RBAC, historique, documents, congés, programmes, bulletins,
+  //  compétences, réservations, examens, cantine, etc.)
+  // ==================================================================
+
+  // A) RBAC : Permissions + associations rôles/utilisateurs
+  const permsData = [
+    { code: "eleves.lire", libelle: "Consulter les élèves", module: "eleves" },
+    { code: "eleves.ecrire", libelle: "Créer/modifier les élèves", module: "eleves" },
+    { code: "notes.saisir", libelle: "Saisir les notes", module: "pedagogie" },
+    { code: "bulletins.valider", libelle: "Valider les bulletins", module: "pedagogie" },
+    { code: "finances.voir", libelle: "Consulter la trésorerie", module: "finances" },
+    { code: "finances.valider", libelle: "Valider les dépenses", module: "finances" },
+    { code: "presences.saisir", libelle: "Faire l'appel", module: "presences" },
+    { code: "rh.gerer", libelle: "Gérer le personnel", module: "rh" },
+    { code: "communication.envoyer", libelle: "Envoyer des communications", module: "communication" },
+    { code: "admin.saas", libelle: "Administration SaaS", module: "saas" },
+  ];
+  const perms = [] as any[];
+  for (const p of permsData) {
+    perms.push(await db.permission.create({ data: { ...p, ecoles: { connect: { id: ecole.id } } } }));
+  }
+  const byCode = (c: string) => perms.find((p) => p.code === c)!.id;
+  await db.rolePermission.createMany({ data: [
+    { roleId: roleDirection.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleDirection.id, permissionId: byCode("eleves.ecrire") },
+    { roleId: roleDirection.id, permissionId: byCode("bulletins.valider") },
+    { roleId: roleDirection.id, permissionId: byCode("finances.voir") },
+    { roleId: roleDirection.id, permissionId: byCode("finances.valider") },
+    { roleId: roleDirection.id, permissionId: byCode("rh.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("communication.envoyer") },
+    { roleId: roleDirection.id, permissionId: byCode("admin.saas") },
+    { roleId: roleEnseignant.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleEnseignant.id, permissionId: byCode("notes.saisir") },
+    { roleId: roleEnseignant.id, permissionId: byCode("presences.saisir") },
+    { roleId: roleComptable.id, permissionId: byCode("finances.voir") },
+    { roleId: roleComptable.id, permissionId: byCode("finances.valider") },
+    { roleId: roleSurveillant.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleSurveillant.id, permissionId: byCode("presences.saisir") },
+  ] });
+  await db.utilisateurRole.createMany({ data: [
+    { utilisateurId: dirUtilisateur.id, roleId: roleDirection.id },
+    { utilisateurId: enseignants[0].utilisateur.id, roleId: roleEnseignant.id },
+    { utilisateurId: enseignants[1].utilisateur.id, roleId: roleEnseignant.id },
+  ] });
+
+  // B) Historique de classe (passage 5B -> 6A pour un redoublant fictif)
+  await db.eleveHistoriqueClasse.create({ data: {
+    eleveId: eleves[0].eleve.id, classeId: classe5B.id,
+    dateEntree: new Date("2025-09-01"), dateSortie: new Date("2026-06-30"), motif: "Passage en classe supérieure",
+  } });
+  await db.eleveHistoriqueClasse.create({ data: {
+    eleveId: eleves[5].eleve.id, classeId: classe6A.id,
+    dateEntree: new Date("2025-09-01"), dateSortie: new Date("2026-06-30"), motif: "Réorientation",
+  } });
+
+  // C) Documents élèves
+  await db.documentEleve.create({ data: {
+    eleveId: eleves[0].eleve.id, type: "acte_naissance", fichierUrl: "/uploads/docs/acte-diop.pdf",
+    confidentiel: false, ajouteParId: dirUtilisateur.id,
+  } });
+  await db.documentEleve.create({ data: {
+    eleveId: eleves[1].eleve.id, type: "certificat_medical", fichierUrl: "/uploads/docs/cert-med.pdf",
+    confidentiel: true, ajouteParId: dirUtilisateur.id,
+  } });
+
+  // D) Congés + remplacement
+  const congeMaladie = await db.conge.create({ data: {
+    personnelId: enseignants[2].personnel.id, type: "maladie",
+    dateDebut: new Date("2026-09-28"), dateFin: new Date("2026-10-09"),
+    statut: "accepte", motif: "Arrêt maladie — certificat fourni", traiteParId: dirUtilisateur.id,
+  } });
+  await db.conge.create({ data: {
+    personnelId: enseignants[4].personnel.id, type: "annuel",
+    dateDebut: new Date("2026-12-21"), dateFin: new Date("2027-01-04"),
+    statut: "demande", motif: "Congés annuels fin d'année",
+  } });
+  await db.remplacement.create({ data: {
+    congeId: congeMaladie.id,
+    personnelAbsentId: enseignants[2].personnel.id,
+    personnelRemplacantId: enseignants[5].personnel.id,
+    dateDebut: new Date("2026-09-28"), dateFin: new Date("2026-10-09"), statut: "confirme",
+  } });
+
+  // E) Évaluation annuelle du personnel
+  await db.evaluationPersonnel.create({ data: {
+    personnelId: enseignants[0].personnel.id, evaluateurId: dirUtilisateur.id, periode: "2025-2026",
+    criteres: JSON.stringify({ pedagogie: 17, assiduite: 19, travail_equipe: 16, communication_parents: 15 }),
+    commentaireGlobal: "Excellente implication pédagogique. Points d'appui : rigueur, suivi individualisé.",
+  } });
+
+  // F) Programme pédagogique + chapitres + avancement
+  const programmeMaths = await db.programme.create({ data: {
+    ecoleId: ecole.id, matiereId: enseignants[0].matiere.id, niveauId: n6.id, anneeScolaireId: annee.id,
+    titre: "Mathématiques 6e — Programme annuel",
+    objectifs: "Maîtriser les décimaux, la proportionnalité et la géométrie de base.",
+    volumeHorairePrevu: 108, publie: true,
+  } });
+  const chap1 = await db.chapitre.create({ data: { programmeId: programmeMaths.id, titre: "Nombres décimaux", ordre: 1, volumeHorairePrevu: 12, contenu: "Addition, soustraction, multiplication des décimaux." } });
+  const chap2 = await db.chapitre.create({ data: { programmeId: programmeMaths.id, titre: "Proportionnalité", ordre: 2, volumeHorairePrevu: 10 } });
+  const chap3 = await db.chapitre.create({ data: { programmeId: programmeMaths.id, titre: "Figures usuelles", ordre: 3, volumeHorairePrevu: 14 } });
+  await db.avancementProgramme.create({ data: {
+    chapitreId: chap1.id, classeId: classe6A.id, enseignantId: enseignants[0].personnel.id,
+    pourcentage: 65, commentaire: "Chapitre bien avancé, évaluation prévue semaine 42.",
+  } });
+  await db.avancementProgramme.create({ data: {
+    chapitreId: chap2.id, classeId: classe6A.id, enseignantId: enseignants[0].personnel.id,
+    pourcentage: 15,
+  } });
+
+  // G) Règles de calcul de moyenne par cycle
+  await db.regleCalculMoyenne.create({ data: {
+    ecoleId: ecole.id, cycleId: cCollege.id, methode: "moyenne_ponderee",
+    inclutAbsents: false, notePlancher: 0, notePlafond: 20, arrondi: 2,
+    reglesSpecifiques: JSON.stringify({ coefficients: "par matiere", eleve_absent: "note neutralisee" }),
+  } });
+  await db.regleCalculMoyenne.create({ data: {
+    ecoleId: ecole.id, cycleId: cPrimaire.id, methode: "moyenne_ponderee",
+    inclutAbsents: false, notePlancher: 0, notePlafond: 20, arrondi: 0,
+  } });
+
+  // H) Bulletins (workflow complet : en_construction -> valide_pp -> publie)
+  await db.bulletin.create({ data: {
+    eleveId: eleves[0].eleve.id, classeId: classe6A.id, periodeId: periodeT1.id, version: 1,
+    statut: "publie", moyennes: JSON.stringify({ MATHS: 14.5, FR: 13.0, HG: 15.5 }),
+    moyenneGenerale: 14.3, rang: 2, appreciationGenerale: "Trimestre solide, continue ainsi !",
+    decisionConseil: "admis", pdfUrl: "/documents/bulletins/bulletin-1-t1.pdf",
+    creeParId: enseignants[0].utilisateur.id,
+    dateValidationPp: new Date("2026-12-10"), validePpParId: dirUtilisateur.id,
+    dateValidationDirection: new Date("2026-12-12"), valideDirectionParId: dirUtilisateur.id,
+    datePublication: new Date("2026-12-13"),
+  } });
+  await db.bulletin.create({ data: {
+    eleveId: eleves[1].eleve.id, classeId: classe6A.id, periodeId: periodeT1.id, version: 1,
+    statut: "valide_pp", moyennes: JSON.stringify({ MATHS: 11.0, FR: 16.5, HG: 12.0 }),
+    moyenneGenerale: 13.2, rang: 4, appreciationGenerale: "Bon trimestre en français.",
+    creeParId: enseignants[0].utilisateur.id,
+    dateValidationPp: new Date("2026-12-11"), validePpParId: dirUtilisateur.id,
+  } });
+  await db.bulletin.create({ data: {
+    eleveId: eleves[2].eleve.id, classeId: classe6A.id, periodeId: periodeT1.id, version: 1,
+    statut: "en_construction",
+    moyennes: JSON.stringify({ MATHS: 9.5, FR: 10.5, HG: 11.0 }),
+    creeParId: enseignants[0].utilisateur.id,
+  } });
+
+  // I) Compétences (cycle primaire) + évaluations compétences
+  const compLecture = await db.competence.create({ data: { ecoleId: ecole.id, cycleId: cPrimaire.id, libelle: "Lire couramment un texte adapté", ordre: 1 } });
+  const compCalcul = await db.competence.create({ data: { ecoleId: ecole.id, cycleId: cPrimaire.id, libelle: "Résoudre un problème à une étape", ordre: 2 } });
+  await db.evaluationCompetence.createMany({ data: [
+    { eleveId: eleves[9].eleve.id, competenceId: compLecture.id, periodeId: periodeT1.id, niveauAcquisition: "maitrise", commentaire: "Fluidité remarquable.", evalueParId: enseignants[1].utilisateur.id },
+    { eleveId: eleves[9].eleve.id, competenceId: compCalcul.id, periodeId: periodeT1.id, niveauAcquisition: "acquis", evalueParId: enseignants[0].utilisateur.id },
+    { eleveId: eleves[10].eleve.id, competenceId: compLecture.id, periodeId: periodeT1.id, niveauAcquisition: "en_cours_d_acquisition", evalueParId: enseignants[1].utilisateur.id },
+    { eleveId: eleves[11].eleve.id, competenceId: compCalcul.id, periodeId: periodeT1.id, niveauAcquisition: "non_acquis", commentaire: "Besoin d'un soutien ciblé.", evalueParId: enseignants[0].utilisateur.id },
+  ] });
+
+  // J) Affectation des paiements aux échéances
+  const paiementsExistants = await db.paiement.findMany({ where: { ecoleId: ecole.id }, orderBy: { datePaiement: "asc" } });
+  const echeancesExistantes = await db.echeanceFrais.findMany({ where: { eleveId: eleves[0].eleve.id } });
+  if (paiementsExistants[0] && echeancesExistantes[0]) {
+    await db.paiementEcheance.createMany({ data: [
+      { paiementId: paiementsExistants[0].id, echeanceId: echeancesExistantes[0].id, montantApplique: echeancesExistantes[0].montantPaye },
+      { paiementId: paiementsExistants[0].id, echeanceId: echeancesExistantes[1].id, montantApplique: echeancesExistantes[1].montantPaye },
+    ] });
+  }
+
+  // K) Réservations de salles
+  await db.reservationSalle.create({ data: {
+    salleId: salleA101!.id, seanceId: seance.id, date: new Date("2026-09-22"),
+    heureDebut: "08:00", heureFin: "10:00", reserveParId: dirUtilisateur.id,
+    motif: "Cours de mathématiques (séance régulière)",
+  } });
+  const salleB202 = sallesEcole.find((s: any) => s.nom !== "A101") ?? sallesEcole[0];
+  await db.reservationSalle.create({ data: {
+    salleId: salleB202.id, date: new Date("2026-10-14"),
+    heureDebut: "17:00", heureFin: "19:00", reserveParId: dirUtilisateur.id,
+    motif: "Réunion Comité d'Éducation à la Santé",
+  } });
+
+  // L) Inscriptions à l'examen officiel (BEPC)
+  await db.inscriptionExamenOfficiel.createMany({ data: [
+    { examenOfficielId: examenBepc.id, eleveId: eleves[0].eleve.id, numeroTable: "SN-2027-00142", centreExamen: "CEM Kennedy, Dakar", statut: "inscrit" },
+    { examenOfficielId: examenBepc.id, eleveId: eleves[1].eleve.id, numeroTable: "SN-2027-00143", centreExamen: "CEM Kennedy, Dakar", statut: "convoque" },
+  ] });
+
+  // M) Réunion collective parents
+  await db.reunionCollective.create({ data: {
+    classeId: classe6A.id, date: new Date("2026-10-03"), heure: "18:00", lieu: "Salle A101",
+    description: "Réunion de rentrée : présentation de l'équipe et du programme annuel.",
+  } });
+  await db.reunionCollective.create({ data: {
+    classeId: classeCM2A.id, date: new Date("2026-11-12"), heure: "17:30", lieu: "Salle B202",
+    description: "Préparation du concours d'entrée en sixième.",
+  } });
+
+  // N) Listes de fournitures
+  await db.listeFourniture.create({ data: {
+    niveauId: n6.id, anneeScolaireId: annee.id,
+    contenu: JSON.stringify([
+      { article: "Cahier 200 pages", quantite: 6 },
+      { article: "Classeur à levier", quantite: 2 },
+      { article: "Calculatrice collège", quantite: 1 },
+      { article: "Kit géométrie", quantite: 1 },
+    ]),
+    publiee: true, datePublication: new Date("2026-08-20"),
+  } });
+  await db.listeFourniture.create({ data: {
+    niveauId: nCM2.id, anneeScolaireId: annee.id,
+    contenu: JSON.stringify([
+      { article: "Cahier 96 pages", quantite: 8 },
+      { article: "Livre de lecture imposé", quantite: 1 },
+    ]),
+    publiee: false,
+  } });
+
+  // O) Sortie anticipée
+  await db.sortieAnticipee.create({ data: {
+    eleveId: eleves[2].eleve.id, date: new Date("2026-09-18"), heure: "14:30",
+    recupereParNom: "Mme Camara (mère)", validationExceptionnelle: false,
+    valideParId: dirUtilisateur.id, parentsNotifies: true,
+  } });
+  await db.sortieAnticipee.create({ data: {
+    eleveId: eleves[7].eleve.id, date: new Date("2026-09-24"), heure: "10:00",
+    recupereParNom: "M. Bello (père)", validationExceptionnelle: true,
+    valideParId: dirUtilisateur.id, parentsNotifies: true,
+  } });
+
+  // P) Inscriptions cantine
+  await db.cantineInscription.create({ data: {
+    ecoleId: ecole.id, eleveId: eleves[0].eleve.id, classeId: classe6A.id, anneeScolaireId: annee.id,
+    joursSemaine: JSON.stringify([1, 3, 5]), tarifJournalier: 1500, actif: true,
+  } });
+  await db.cantineInscription.create({ data: {
+    ecoleId: ecole.id, eleveId: eleves[8].eleve.id, classeId: classe5B.id, anneeScolaireId: annee.id,
+    joursSemaine: JSON.stringify([1, 2, 3, 4, 5]), tarifJournalier: 1200, actif: true,
+  } });
 
   console.log("✅ Seed terminé (avec 37 failles corrigées) !");
 }
