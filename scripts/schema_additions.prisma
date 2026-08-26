@@ -1,0 +1,1502 @@
+
+
+// ====================================================================
+// EXTENSION V4 — 37 FAILLES CORRIGÉES
+// Ajouts aux 71 modèles existants pour couverture complète du cahier V4
+// ====================================================================
+
+// --------------------------------------------------------------------
+// POINT 1 — TICKETS SUPPORT SAAS (Partie A)
+// --------------------------------------------------------------------
+
+model Ticket {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  sujet           String
+  description     String
+  categorie       String   @default("fonctionnel") // fonctionnel/technique/facturation/demande
+  priorite        String   @default("normale") // basse/normale/haute/critique
+  statut          String   @default("ouvert") // ouvert/en_cours/en_attente_client/resolu/ferme
+  slaContractuelHeures Int?
+  slaEcheance     DateTime?
+  creeParId       String?
+  assigneAId      String?
+  dateCreation     DateTime @default(now())
+  dateCloture     DateTime?
+  delaiResolutionMinutes Int?
+
+  messages        TicketMessage[]
+  historique      TicketStatutHistorique[]
+}
+
+model TicketMessage {
+  id              String   @id @default(cuid())
+  ticketId        String
+  ticket          Ticket   @relation(fields: [ticketId], references: [id])
+  auteurId        String?
+  auteurRole      String   // support_editeur/direction_ecole/enseignant/parent
+  message         String
+  pieceJointeUrl  String?
+  interne         Boolean  @default(false) // note interne équipe éditeur
+  dateEnvoi       DateTime @default(now())
+}
+
+model TicketStatutHistorique {
+  id              Int      @id @default(autoincrement())
+  ticketId        String
+  ticket          Ticket   @relation(fields: [ticketId], references: [id])
+  ancienStatut    String?
+  nouveauStatut   String
+  modifieParId    String?
+  dateChangement  DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 2 — SIGNALEMENTS PROTECTION MINEURS (Partie C.8)
+// --------------------------------------------------------------------
+
+model SignalementMineur {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String?
+  eleve           Eleve?   @relation(fields: [eleveId], references: [id])
+  type            String   // harcelement/maltraitance/fgm/radicalisation/abus/lautre
+  description     String
+  gravite         String   // information/preoccupant/grave/urgent
+  source          String   // enseignant/parent/eleve/tiers/anonyme
+  dateSignalement DateTime @default(now())
+  dateFaits       DateTime?
+  lieuFaits       String?
+  declareParId    String?
+  signalantAnonyme Boolean @default(false)
+  statut          String   @default("recu") // recu/en_cours/transmis_externe/traite/classe_sans_suite
+  confidentialiteNiveau String @default("restreint") // public/equipe_dir/restreint/confidentiel
+  partenairesExternesIds String? // JSON array
+  transfertCrip   Boolean  @default(false)
+  dateTransfertCrip DateTime?
+  mesuresProvisoires String?
+
+  mesures         MesureProtection[]
+  suivis          SuiviSignalement[]
+}
+
+model PartenaireExterne {
+  id              String   @id @default(cuid())
+  type            String   // crip/assistant_social/police/justice/association
+  nom             String
+  contact         String
+  email           String?
+  adresse         String?
+  actif           Boolean  @default(true)
+}
+
+model MesureProtection {
+  id              String   @id @default(cuid())
+  signalementId   String
+  signalement     SignalementMineur @relation(fields: [signalementId], references: [id])
+  type            String   // signalement_au_parquet/accompagnement_psychologique/mesure_de_securite/reorientation/saisine_ase
+  description     String
+  decideePar      String
+  dateDecision    DateTime @default(now())
+  dateFin         DateTime?
+  statut          String   @default("planifiee") // planifiee/en_cours/realisee/annulee
+}
+
+model SuiviSignalement {
+  id              String   @id @default(cuid())
+  signalementId   String
+  signalement     SignalementMineur @relation(fields: [signalementId], references: [id])
+  note            String
+  auteurId        String?
+  date            DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 3 — HABILITATION PÉNALE / VÉRIFICATION ANTÉCÉDENTS (Partie C.8)
+// --------------------------------------------------------------------
+
+model VerificationAntecedents {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  type            String   // casier_judiciaire/extrait_casier/declaration_honneur/attestation_aptitude
+  referenceDossier String?
+  statut          String   @default("demandee") // demandee/en_cours/obtenue/refusee
+  dateDemande     DateTime @default(now())
+  dateObtention   DateTime?
+  dateExpiration  DateTime?
+  fichierUrl      String?
+  valideParId     String?
+}
+
+model HabilitationPenale {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  numeroHabilitation String?
+  dateDelivrance  DateTime?
+  dateExpiration  DateTime?
+  autoriteEmettrice String?
+  statut          String   @default("non_verifiee") // non_verifiee/validee/expiree/a_renouveler
+}
+
+// --------------------------------------------------------------------
+// POINT 4 — BULLETINS DE PAIE (Partie B RH)
+// --------------------------------------------------------------------
+
+model BulletinPaie {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  periode         String   // "2026-08"
+  salaireBrut     Float
+  salaireNet      Float
+  cotisationsTotales Float
+  retenuesTotales Float
+  primesTotales   Float
+  netAPayer       Float
+  devise          String
+  statut          String   @default("brouillon") // brouillon/valide/paye
+  dateEdition     DateTime @default(now())
+  dateValidation  DateTime?
+  datePaiement    DateTime?
+  valideParId     String?
+  pdfUrl          String?
+
+  lignes          LigneBulletinPaie[]
+  cotisations     CotisationSociale[]
+  variables       VariablePaie[]
+
+  @@unique([personnelId, periode])
+}
+
+model LigneBulletinPaie {
+  id              String   @id @default(cuid())
+  bulletinId      String
+  bulletin        BulletinPaie @relation(fields: [bulletinId], references: [id])
+  type            String   // salaire_base/prime/indemnite/retenue/heures_sup/avantage_nature
+  libelle         String
+  montant         Float
+  sens            String   // plus/moins
+  quantite        Float?
+  taux            Float?
+}
+
+model CotisationSociale {
+  id              String   @id @default(cuid())
+  bulletinId      String
+  bulletin        BulletinPaie @relation(fields: [bulletinId], references: [id])
+  libelle         String   // IPM/RC/PCF/Assurance_maladie
+  assiette       Float
+  tauxEmployeur   Float
+  tauxSalarie     Float
+  partEmployeur   Float
+  partSalarie     Float
+}
+
+model VariablePaie {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  periode         String
+  type            String   // prime/indemnite/avantage/heure_sup
+  libelle         String
+  montant         Float
+  dateAttribution DateTime @default(now())
+  attribueParId   String?
+}
+
+// --------------------------------------------------------------------
+// POINT 5 — RECRUTEMENT (Partie B RH)
+// --------------------------------------------------------------------
+
+model OffreEmploi {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  poste           String
+  description     String
+  profilRecherche String
+  typeContrat     String   // CDI/CDD/Stage/Vacataire
+  dateOuverture   DateTime @default(now())
+  dateCloture     DateTime?
+  statut          String   @default("ouverte") // ouverte/fermee/pourvue
+  lieu            String?
+
+  candidatures    Candidature[]
+}
+
+model Candidature {
+  id              String   @id @default(cuid())
+  offreId         String
+  offre           OffreEmploi @relation(fields: [offreId], references: [id])
+  nom             String
+  prenom          String
+  email           String
+  telephone       String?
+  cvUrl           String?
+  lettreMotivation String?
+  source          String   // spontanee/offre/interne/recommandation
+  dateReception   DateTime @default(now())
+  statut          String   @default("recue") // recue/presel/entretien/retenu/refuse
+  etapeActuelle   String?
+
+  etapes          EtapeRecrutement[]
+  entretiens      EntretienRecrutement[]
+}
+
+model EtapeRecrutement {
+  id              String   @id @default(cuid())
+  candidatureId   String
+  candidature     Candidature @relation(fields: [candidatureId], references: [id])
+  etape           String   // tri_cv/entretien_rh/entretien_direction/essai/decision
+  statut          String   // en_cours/valide/refuse
+  date            DateTime @default(now())
+  note            String?
+  decideurId      String?
+}
+
+model EntretienRecrutement {
+  id              String   @id @default(cuid())
+  candidatureId   String
+  candidature     Candidature @relation(fields: [candidatureId], references: [id])
+  date            DateTime
+  lieu            String
+  type            String   // physique/video/telephone
+  intervieweurs   String?  // JSON
+  compteRendu     String?
+  note            Int?
+  statut          String   @default("planifie") // planifie/realise/annule
+}
+
+// --------------------------------------------------------------------
+// POINT 6 — STAGES & CONVENTIONS (Partie B RH/Pédagogique)
+// --------------------------------------------------------------------
+
+model Stage {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  entreprise      String
+  poste           String
+  dateDebut       DateTime
+  dateFin         DateTime
+  tuteurEntreprise String?
+  encadrantEcoleId String?
+  objectifs       String?
+  evaluation      String?
+  statut          String   @default("planifie") // planifie/en_cours/termine/annule
+  conventionUrl   String?
+}
+
+model ConventionStage {
+  id              String   @id @default(cuid())
+  stageId         String
+  stage           Stage    @relation(fields: [stageId], references: [id])
+  numeroConvention String?
+  dateSignature    DateTime?
+  signeParEleve    Boolean @default(false)
+  signeParEcole     Boolean @default(false)
+  signeParEntreprise Boolean @default(false)
+  fichierUrl       String?
+  statut          String   @default("brouillon") // brouillon/valide/signe
+}
+
+// --------------------------------------------------------------------
+// POINT 7 — SOLDES DE CONGÉS PAYÉS (Partie B RH)
+// --------------------------------------------------------------------
+
+model SoldeConge {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  annee           String
+  droitsAcquis    Float    @default(0)
+  joursPris       Float    @default(0)
+  joursRestants   Float    @default(0)
+  reliquatAnterieur Float  @default(0)
+  derniereMaj      DateTime @default(now())
+
+  @@unique([personnelId, annee])
+}
+
+// --------------------------------------------------------------------
+// POINT 8 — ADMISSIONS / PRÉ-INSCRIPTIONS (Partie B Élèves)
+// --------------------------------------------------------------------
+
+model CandidatureAdmission {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  niveauId        String?
+  niveau          Niveau?  @relation(fields: [niveauId], references: [id])
+  nom             String
+  prenom          String
+  dateNaissance   DateTime
+  lieuNaissance   String?
+  sexe            String?
+  email           String
+  telephone       String?
+  parentNom       String?
+  parentTelephone String?
+  statut          String   @default("soumis") // soumis/test/entretien/admis/refuse/inscrit
+  dateSoumission  DateTime @default(now())
+  dateDecision    DateTime?
+  parcoursAnterieur String?
+  etablissementOrigine String?
+  dossierComplet  Boolean  @default(false)
+  notesEntretien  String?
+
+  etapes          EtapeAdmission[]
+  tests           TestAdmission[]
+}
+
+model EtapeAdmission {
+  id              String   @id @default(cuid())
+  candidatureId   String
+  candidature     CandidatureAdmission @relation(fields: [candidatureId], references: [id])
+  etape           String   // depot_dossier/test_admission/entretien/decision/finalisation
+  statut          String   @default("en_attente") // en_attente/valide/refuse
+  date            DateTime @default(now())
+  valideParId     String?
+  commentaire     String?
+}
+
+model TestAdmission {
+  id              String   @id @default(cuid())
+  candidatureId   String
+  candidature     CandidatureAdmission @relation(fields: [candidatureId], references: [id])
+  matiere         String
+  date            DateTime
+  note            Float?
+  sur             Float    @default(20)
+  appreciation    String?
+  evalueParId     String?
+}
+
+// --------------------------------------------------------------------
+// POINT 9 — EMPLOI DU TEMPS RÉCURRENT (Partie B Pédagogique)
+// --------------------------------------------------------------------
+
+model EmploiTemps {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  classeId        String?
+  classe          Classe?  @relation(fields: [classeId], references: [id])
+  enseignantId    String?
+  matiereId       String?
+  salleId         String?
+  jour            String   // lundi/mardi/...
+  heureDebut      String   // "08:00"
+  heureFin        String   // "10:00"
+  recurrenceRule  String?  // iCal RRULE, ex: "FREQ=WEEKLY;UNTIL=20260630"
+  dateDebut       DateTime
+  dateFin         DateTime?
+  statut          String   @default("actif") // actif/suspendu/termine
+  creeParId       String?
+  dateCreation    DateTime @default(now())
+
+  seancesGenereesIds String? // JSON
+}
+
+model CreneauHebdo {
+  id              String   @id @default(cuid())
+  emploiTempsId   String
+  emploiTemps     EmploiTemps @relation(fields: [emploiTempsId], references: [id])
+  jourSemaine     Int      // 0=dim, 1=lun, ..., 6=sam
+  heureDebut      String
+  heureFin        String
+  salleId         String?
+  matiereId       String?
+  enseignantId    String?
+  classeId        String?
+  type            String   @default("cours") // cours/etude/recreation/pause_midi
+}
+
+// --------------------------------------------------------------------
+// POINT 10 — DEVOIRS & RENDUS (Partie B Pédagogique)
+// --------------------------------------------------------------------
+
+model Devoir {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  matiereId       String?
+  enseignantId    String
+  intitule        String
+  description     String?
+  dateAssignation DateTime @default(now())
+  dateRendu       DateTime
+  sur             Float    @default(20)
+  coefficient     Float    @default(1)
+  type            String   @default("devoir") // devoir/dm/projet/expose
+  pieceJointeUrl  String?
+  statut          String   @default("assigne") // assigne/ramasse/corrige/rendu
+  cahierTexteId   String?
+
+  rendus          RenduDevoir[]
+}
+
+model RenduDevoir {
+  id              String   @id @default(cuid())
+  devoirId        String
+  devoir          Devoir    @relation(fields: [devoirId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  dateRendu       DateTime @default(now())
+  contenuUrl      String?
+  commentaireEleve String?
+  note            Float?
+  appreciation    String?
+  corrigeParId    String?
+  dateCorrection  DateTime?
+  statut          String   @default("rendu") // rendu/en_correction/corrige/absent
+}
+
+// --------------------------------------------------------------------
+// POINT 11 — CAHIER DE TEXTES (Partie B Pédagogique)
+// --------------------------------------------------------------------
+
+model CahierTexte {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  matiereId       String?
+  enseignantId    String
+  periodeId       String?
+  statut          String   @default("actif")
+  dateCreation    DateTime @default(now())
+
+  entrees         EntreeCahierTexte[]
+}
+
+model EntreeCahierTexte {
+  id              String   @id @default(cuid())
+  cahierTexteId   String
+  cahierTexte     CahierTexte @relation(fields: [cahierTexteId], references: [id])
+  seanceId        String?
+  dateCours       DateTime
+  contenu         String   // ce qui a été fait en cours
+  travailAFaire   String?  // devoirs pour la prochaine séance
+  ressourcesUrl   String?
+  statut          String   @default("brouillon") // brouillon/publie/valide
+  valideParId     String?
+  dateValidation  DateTime?
+}
+
+// --------------------------------------------------------------------
+// POINT 12 — CONSEILS DE CLASSE (Partie B Pédagogique)
+// --------------------------------------------------------------------
+
+model ConseilClasse {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  periodeId       String
+  date            DateTime
+  salle           String?
+  statut          String   @default("planifie") // planifie/en_cours/termine/annule
+  compteRendu     String?
+  presidentId     String?
+
+  membres         MembreConseil[]
+  deliberations   DeliberationConseil[]
+}
+
+model MembreConseil {
+  id              String   @id @default(cuid())
+  conseilId       String
+  conseil         ConseilClasse @relation(fields: [conseilId], references: [id])
+  utilisateurId   String
+  role             String   // president/enseignant/parent_delegue/eleve_delegue/invite
+  present          Boolean @default(false)
+  observation     String?
+}
+
+model DeliberationConseil {
+  id              String   @id @default(cuid())
+  conseilId       String
+  conseil         ConseilClasse @relation(fields: [conseilId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  decision        String   // passage/redoublement/exclusion_orientation/doublement
+  mention         String?  // encouragements/felicitations/tableau_honneur
+  appreciationGenerale String?
+  objectifSuivant String?
+  avis            String?
+
+  votes           VoteConseil[]
+}
+
+model VoteConseil {
+  id              String   @id @default(cuid())
+  deliberationId  String
+  deliberation    DeliberationConseil @relation(fields: [deliberationId], references: [id])
+  membreId        String
+  membre          MembreConseil @relation(fields: [membreId], references: [id])
+  vote            String   // pour/contre/abstention
+  date            DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 13 — DISPENSES (Partie B Pédagogique)
+// --------------------------------------------------------------------
+
+model Dispense {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  matiereId       String?
+  motif           String   // medical/sportif/religieux/autre
+  description     String
+  dateDebut       DateTime
+  dateFin         DateTime?
+  justificatifUrl String?
+  statut          String   @default("demandee") // demandee/validee/refusee
+  valideParId     String?
+  dateValidation  DateTime?
+}
+
+// --------------------------------------------------------------------
+// POINT 14 — WORKFLOW JUSTIFICATION D'ABSENCE (Partie B Présences)
+// --------------------------------------------------------------------
+
+model JustificationAbsence {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  presenceId      String?
+  dateAbsence     DateTime
+  dureeHeures     Float?
+  motif           String   // maladie/familial/rendez_vous_medical/ceremonie/transport/autre
+  description     String?
+  justificatifUrl String?
+  statut          String   @default("soumis") // soumis/valide/rejete
+  soumisParId     String?
+  valideParId     String?
+  dateSoumission   DateTime @default(now())
+  dateValidation  DateTime?
+  commentaireValidation String?
+}
+
+// --------------------------------------------------------------------
+// POINT 15 — BUDGETS PRÉVISIONNELS (Partie B Finances)
+// --------------------------------------------------------------------
+
+model Budget {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  anneeScolaireId String
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  libelle         String
+  dateDebut       DateTime
+  dateFin         DateTime
+  statut          String   @default("brouillon") // brouillon/valide/cloture
+  valideParId     String?
+  dateValidation  DateTime?
+
+  lignes          LigneBudget[]
+}
+
+model LigneBudget {
+  id              String   @id @default(cuid())
+  budgetId        String
+  budget          Budget   @relation(fields: [budgetId], references: [id])
+  categorie       String   // recettes/depenses
+  sousCategorie   String   // frais_scolarite/subventions/fonctionnement/salaries/equipement
+  libelle         String
+  montantPrevu    Float
+  montantRealise  Float    @default(0)
+  devise          String
+  pourcentageRealise Float  @default(0)
+  dateDerniereMaj  DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 16 — COMPTABILITÉ GÉNÉRALE (Partie B Finances)
+// --------------------------------------------------------------------
+
+model CompteComptable {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  numero          String
+  libelle         String
+  type             String   // actif/passif/produit/charge
+  parent          String?
+  solde           Float    @default(0)
+  devise          String
+  actif           Boolean  @default(true)
+
+  lignesEcriture  LigneEcriture[]
+}
+
+model JournalComptable {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  code            String   // VE/ACH/VTE/BQ/OD
+  libelle         String
+  type            String   // achat/vente/banque/operations_diverses
+
+  ecritures       EcritureComptable[]
+}
+
+model EcritureComptable {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  journalId       String
+  journal         JournalComptable @relation(fields: [journalId], references: [id])
+  date            DateTime @default(now())
+  numeroPiece     String?
+  libelle         String
+  statut          String   @default("brouillon") // brouiller/valide/annule
+  valideParId     String?
+  dateValidation  DateTime?
+  pieceJustificativeUrl String?
+
+  lignes          LigneEcriture[]
+}
+
+model LigneEcriture {
+  id              String   @id @default(cuid())
+  ecritureId      String
+  ecriture        EcritureComptable @relation(fields: [ecritureId], references: [id])
+  compteId        String
+  compte          CompteComptable @relation(fields: [compteId], references: [id])
+  libelle         String
+  debit           Float    @default(0)
+  credit          Float    @default(0)
+}
+
+// --------------------------------------------------------------------
+// POINT 17 — FOURNISSEURS & COMMANDES (Partie B Finances)
+// --------------------------------------------------------------------
+
+model Fournisseur {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String
+  type            String   // fournisseur_prestataire/sous_traitant
+  contact         String?
+  email           String?
+  telephone       String?
+  adresse         String?
+  rib             String?
+  siret           String?
+  statut          String   @default("actif") // actif/bloque/blackliste
+  dateCreation    DateTime @default(now())
+
+  commandes       CommandeFournisseur[]
+  factures        FactureFournisseur[]
+}
+
+model CommandeFournisseur {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  fournisseurId   String
+  fournisseur     Fournisseur @relation(fields: [fournisseurId], references: [id])
+  numero          String
+  dateCommande    DateTime @default(now())
+  dateLivraisonPrevue DateTime?
+  dateLivraisonEffective DateTime?
+  montantTotal    Float
+  devise          String
+  statut          String   @default("brouillon") // brouillon/validee/envoyee/recue_partiel/recue_totale/annulee
+  valideeParId    String?
+
+  lignes          LigneCommande[]
+  receptions      ReceptionCommande[]
+}
+
+model LigneCommande {
+  id              String   @id @default(cuid())
+  commandeId      String
+  commande        CommandeFournisseur @relation(fields: [commandeId], references: [id])
+  designation     String
+  quantite        Float
+  unite           String?
+  prixUnitaire    Float
+  montantLigne    Float
+  recu            Boolean  @default(false)
+}
+
+model ReceptionCommande {
+  id              String   @id @default(cuid())
+  commandeId      String
+  commande        CommandeFournisseur @relation(fields: [commandeId], references: [id])
+  dateReception   DateTime @default(now())
+  quantiteRecue   Float
+  bonLivraisonUrl String?
+  controleQualite Boolean @default(false)
+  commentaire     String?
+  receptionneParId String?
+}
+
+// --------------------------------------------------------------------
+// POINT 18 — FACTURES & PAIEMENTS FOURNISSEURS (Partie B Finances)
+// --------------------------------------------------------------------
+
+model FactureFournisseur {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  fournisseurId   String
+  fournisseur     Fournisseur @relation(fields: [fournisseurId], references: [id])
+  numero          String
+  dateEmission    DateTime
+  dateReception   DateTime @default(now())
+  dateEcheance    DateTime?
+  montantHT       Float
+  montantTVA      Float    @default(0)
+  montantTTC      Float
+  devise          String
+  statut          String   @default("recue") // recue/controlee/payee/annulee/en_retard
+  controleeParId  String?
+  dateControle    DateTime?
+  fichierUrl      String?
+  commandeId      String?
+
+  paiements       PaiementFournisseur[]
+}
+
+model PaiementFournisseur {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  factureId       String
+  facture         FactureFournisseur @relation(fields: [factureId], references: [id])
+  datePaiement    DateTime @default(now())
+  montant         Float
+  devise          String
+  mode            String   // virement/cheque/especes/carte
+  reference      String?
+  payeParId       String?
+}
+
+// --------------------------------------------------------------------
+// POINT 19 — AVOIRS / CREDIT NOTES ÉCOLE (Partie B Finances)
+// --------------------------------------------------------------------
+
+model AvoirEcole {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  numero          String
+  dateEmission    DateTime @default(now())
+  montant         Float
+  devise          String
+  motif           String
+  paiementLieId   String?
+  factureFournisseurId String?
+  statut          String   @default("emis") // emis/utilise/annule
+  emisParId       String?
+}
+
+// --------------------------------------------------------------------
+// POINT 20 — MESSAGERIE INTERNE (Partie B Communication)
+// --------------------------------------------------------------------
+
+model Conversation {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  titre           String
+  type            String   @default("direct") // direct/groupe/annonce/classe
+  creeParId       String?
+  dateCreation    DateTime @default(now())
+  dernierMessageAt DateTime?
+
+  participants    ConversationParticipant[]
+  messages        Message[]
+}
+
+model ConversationParticipant {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  utilisateurId   String
+  role            String   @default("membre") // admin/membre/lecture_seule
+  dateAjout       DateTime @default(now())
+  dernierLectureAt DateTime?
+  archive         Boolean  @default(false)
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  expediteurId    String
+  contenu         String
+  dateEnvoi       DateTime @default(now())
+  supprime        Boolean  @default(false)
+  luPar           String?  // JSON array of user IDs
+
+  piecesJointes   PieceJointe[]
+}
+
+model PieceJointe {
+  id              String   @id @default(cuid())
+  messageId        String
+  message          Message  @relation(fields: [messageId], references: [id])
+  nomFichier       String
+  url              String
+  taille           Int?
+  mimeType         String?
+  dateUpload       DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 21 — ANNONCES / PUBLICATIONS (Partie B Communication)
+// --------------------------------------------------------------------
+
+model Annonce {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  titre           String
+  contenu         String
+  auteurId        String?
+  datePublication DateTime?
+  dateExpiration  DateTime?
+  statut          String   @default("brouillon") // brouillon/publie/archive/expire
+  cible           String   // toute_ecole/cycle/niveau/classe/personnel/parents
+  cibleIds        String?  // JSON array when cible=cycle/niveau/classe
+  pinned          Boolean  @default(false)
+  pieceJointeUrl  String?
+
+  lectures        AnnonceLecture[]
+}
+
+model AnnonceLecture {
+  id              String   @id @default(cuid())
+  annonceId       String
+  annonce         Annonce  @relation(fields: [annonceId], references: [id])
+  utilisateurId   String
+  dateLecture     DateTime @default(now())
+
+  @@unique([annonceId, utilisateurId])
+}
+
+// --------------------------------------------------------------------
+// POINT 22 — SMS LOG (Partie B Communication)
+// --------------------------------------------------------------------
+
+model SmsLog {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  notificationId  String?
+  destinataire    String
+  expediteur      String?
+  message         String
+  provider        String   // twilio/orange_api/vonage/local
+  providerMessageId String?
+  statut          String   @default("en_attente") // en_attente/envoye/delivre/echec/rejete
+  coutUnitaire    Float    @default(0)
+  coutTotal       Float    @default(0)
+  segments        Int      @default(1)
+  dateEnvoi       DateTime?
+  dateLivraison   DateTime?
+  dateCreation    DateTime @default(now())
+  codeErreur      String?
+  tentative       Int      @default(0)
+}
+
+// --------------------------------------------------------------------
+// POINT 23 — PUSH NOTIFICATIONS & DEVICES (Partie B Communication)
+// --------------------------------------------------------------------
+
+model DeviceMobile {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  plateforme      String   // ios/android/web/pwa
+  deviceToken     String
+  deviceModel     String?
+  osVersion       String?
+  appVersion      String?
+  langue          String?
+  actif           Boolean  @default(true)
+  dateInscription DateTime @default(now())
+  derniereActivite DateTime?
+}
+
+model PushToken {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  token           String
+  provider        String   // fcm/apns/web_push
+  deviceId        String?
+  actif           Boolean  @default(true)
+  dateCreation    DateTime @default(now())
+}
+
+model PushNotificationLog {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  notificationId  String?
+  pushTokenId     String
+  titre           String
+  corps           String
+  statut          String   @default("en_attente") // en_attente/envoye/delivre/echec
+  providerMessageId String?
+  dateEnvoi       DateTime?
+  dateLivraison   DateTime?
+  dateCreation    DateTime @default(now())
+  clic            Boolean  @default(false)
+}
+
+// --------------------------------------------------------------------
+// POINT 24 — SESSIONS ACTIVES (Partie B Sécurité)
+// --------------------------------------------------------------------
+
+model SessionUtilisateur {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  tokenHash       String
+  fingerprint     String?  // hash du navigateur/device
+  adresseIp       String?
+  userAgent       String?
+  deviceType      String?  // desktop/mobile/tablet
+  localisation    String?  // ville/pays
+  dateCreation    DateTime @default(now())
+  dateDerniereActivite DateTime?
+  dateExpiration  DateTime
+  expireManuellement Boolean @default(false)
+  active          Boolean  @default(true)
+}
+
+// --------------------------------------------------------------------
+// POINT 25 — 2FA COMPLET (Partie B Sécurité)
+// --------------------------------------------------------------------
+
+model TwoFactorMethod {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  methode         String   // totp/sms/email/backup_codes
+  secret           String?
+  telephone        String?
+  email            String?
+  actif            Boolean @default(true)
+  dateActivation   DateTime @default(now())
+  derniereUtilisation DateTime?
+}
+
+model TwoFactorBackupCode {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  codeHash        String
+  utilise          Boolean @default(false)
+  dateUtilisation DateTime?
+  dateGeneration   DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 26 — TOKENS D'AUTHENTIFICATION (Partie B Sécurité)
+// --------------------------------------------------------------------
+
+model JetonAuth {
+  id              String   @id @default(cuid())
+  utilisateurId   String?
+  email           String
+  type            String   // reset_password/verify_email/magic_link/change_email/2fa_challenge
+  tokenHash       String
+  expireLe        DateTime
+  utilise         Boolean  @default(false)
+  dateUtilisation DateTime?
+  dateCreation    DateTime @default(now())
+  adresseIp       String?
+  userAgent       String?
+}
+
+model TentativeConnexion {
+  id              Int      @id @default(autoincrement())
+  utilisateurId   String?
+  email           String
+  adresseIp       String?
+  userAgent       String?
+  succes          Boolean
+  motifEchec      String?
+  date            DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 27 — API TOKENS PUBLICS (Partie B API publique)
+// --------------------------------------------------------------------
+
+model ApiToken {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  nom             String
+  description      String?
+  tokenHash       String
+  prefix          String   // 8 premiers caractères visibles
+  scopes          String   @default("[]") // JSON
+  tauxLimiteHoraire Int   @default(1000)
+  actif           Boolean  @default(true)
+  dateCreation    DateTime @default(now())
+  dateExpiration  DateTime?
+  dernierUsage    DateTime?
+  totalRequettes  Int      @default(0)
+
+  logs            ApiTokenLog[]
+}
+
+model ApiTokenLog {
+  id              Int      @id @default(autoincrement())
+  apiTokenId      String
+  apiToken        ApiToken @relation(fields: [apiTokenId], references: [id])
+  endpoint        String
+  methode         String
+  statut          Int
+  tempsReponse    Int
+  adresseIp       String?
+  date            DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 28 — WEBHOOKS SORTANTS (Partie B API publique)
+// --------------------------------------------------------------------
+
+model WebhookSortant {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  url             String
+  secret          String?
+  events          String   @default("[]") // JSON array of event codes
+  actif           Boolean  @default(true)
+  dateCreation    DateTime @default(now())
+  dernierEnvoi    DateTime?
+
+  livraisons      WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  webhookId       String
+  webhook         WebhookSortant @relation(fields: [webhookId], references: [id])
+  event           String
+  payload         String   // JSON
+  statutHttp      Int?
+  reponseCorps    String?
+  tentative       Int      @default(0)
+  statut          String   @default("en_attente") // en_attente/livre/echec
+  dateCreation    DateTime @default(now())
+  dateEnvoi       DateTime?
+  prochaineTentative DateTime?
+}
+
+// --------------------------------------------------------------------
+// POINT 29 — DEMANDES D'EFFACEMENT RGPD (Partie B RGPD)
+// --------------------------------------------------------------------
+
+model DemandeEffacement {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  utilisateurId   String?
+  cibleType       String   // eleve/parent/personnel/utilisateur
+  cibleId         String
+  motif           String   // droit_effacement/obligation_legale/demande_sujet
+  description     String?
+  statut          String   @default("recu") // recu/en_cours/anonymise/refuse
+  dateDemande     DateTime @default(now())
+  dateTraitement  DateTime?
+  traiteParId     String?
+  donneesAnonymisees String? // JSON log
+}
+
+// --------------------------------------------------------------------
+// POINT 30 — EXPORT DONNÉES / PORTABILITÉ (Partie B RGPD)
+// --------------------------------------------------------------------
+
+model ExportDonnees {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  utilisateurId   String?
+  cibleType       String
+  cibleId         String
+  format          String   @default("json") // json/csv/zip
+  statut          String   @default("en_cours") // en_cours/genere/echec/expire
+  fichierUrl      String?
+  tailleOctets    Int?
+  dateDemande     DateTime @default(now())
+  dateGeneration  DateTime?
+  dateExpiration  DateTime?
+}
+
+// --------------------------------------------------------------------
+// POINT 31 — CONSENTEMENTS (Partie B RGPD)
+// --------------------------------------------------------------------
+
+model ConsentementImage {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  accord          Boolean  @default(false)
+  usage           String   // site_web/reseaux_sociaux/plaquette/presse/exposition_interne
+  dateAccord      DateTime?
+  valideParParentId String?
+  duree           String?  // annee_scolaire/perpetuel/campagne
+  dateCreation    DateTime @default(now())
+  dateMaj         DateTime @updatedAt
+}
+
+model ConsentementCommunication {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  utilisateurId   String?
+  eleveId         String?
+  canal           String   // email/sms/push/courrier
+  accord          Boolean  @default(false)
+  dateAccord      DateTime?
+  dateRetrait     DateTime?
+  motif           String?
+}
+
+// --------------------------------------------------------------------
+// POINT 32 — REGISTRE DES TRAITEMENTS (Partie B RGPD Article 30)
+// --------------------------------------------------------------------
+
+model RegistreTraitement {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  nom             String
+  finalite        String
+  baseLegale      String   // consentement/contrat/obligation_legale/interet_vital/mission_publique/interet_legitime
+  donneesTraitees String   // JSON
+  categoriesPersonnes String // JSON: eleves/parents/personnels...
+  destinataires   String?
+  transfertsHorsUE String?
+  dureeConservation String
+  mesuresSecurite  String?
+  responsable     String?
+  dpo             String?
+  dateCreation    DateTime @default(now())
+  dateMaj         DateTime @updatedAt
+}
+
+// --------------------------------------------------------------------
+// POINT 33 — DOMAINE PERSONNALISÉ & THÈME (Partie A SaaS)
+// --------------------------------------------------------------------
+
+model DomainePersonnalise {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  domaine         String   @unique
+  verifie         Boolean  @default(false)
+  enAttente       Boolean  @default(true)
+  enregistrementCname String?
+  certificatSSL   String?
+  certificatExpireLe DateTime?
+  dateAjout       DateTime @default(now())
+  dateVerification DateTime?
+}
+
+model ThemeEcole {
+  id              String   @id @default(cuid())
+  ecoleId         String   @unique
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  couleurPrimaire  String @default("#0f766e")
+  couleurSecondaire String @default("#0ea5e9")
+  couleurAccent   String   @default("#f59e0b")
+  couleurFond     String   @default("#f9fafb")
+  logoSidebarUrl  String?
+  faviconUrl      String?
+  policeFamille   String   @default("Inter")
+  customCssUrl    String?
+  nomProduit      String?  // nom personnalisé affiché (white-label)
+  dateMaj         DateTime @updatedAt
+}
+
+// --------------------------------------------------------------------
+// POINT 34 — FEATURE FLAGS, QUOTAS, STRIPE WEBHOOKS (Partie A SaaS)
+// --------------------------------------------------------------------
+
+model FeatureFlag {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  description     String?
+  actifGlobal     Boolean  @default(false)
+  rolloutPourcentage Int   @default(0)
+  dateCreation    DateTime @default(now())
+  dateMaj         DateTime @updatedAt
+
+  ecoles          FeatureFlagEcole[]
+}
+
+model FeatureFlagEcole {
+  id              String   @id @default(cuid())
+  featureFlagId   String
+  featureFlag     FeatureFlag @relation(fields: [featureFlagId], references: [id])
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  actif           Boolean  @default(false)
+  dateActivation  DateTime @default(now())
+
+  @@unique([featureFlagId, ecoleId])
+}
+
+model QuotaUsage {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  periode         String   // "2026-08" pour mensuel, "2026" pour annuel
+  ressource       String   // eleves/sms_envoyes/storage_go/api_calls
+  consommation    Int      @default(0)
+  limite          Int?
+  pourcentage     Float    @default(0)
+  alerte80        Boolean  @default(false)
+  alerte100       Boolean  @default(false)
+  dateDerniereMaj  DateTime @default(now())
+
+  @@unique([ecoleId, periode, ressource])
+}
+
+model StripeEvent {
+  id              String   @id @default(cuid())
+  eventIdStripe   String   @unique
+  type            String   // invoice.payment_succeeded/customer.subscription_updated/...
+  donnees         String   // JSON
+  traite          Boolean  @default(false)
+  dateReception   DateTime @default(now())
+  dateTraitement  DateTime?
+  erreur          String?
+}
+
+model AvoirSaas {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  factureSaasLieeId String?
+  numero          String
+  dateEmission    DateTime @default(now())
+  montant         Float
+  devise          String
+  motif           String   // remboursement/erreur_facturation/annulation_abonnement
+  statut          String   @default("emis") // emis/utilise/annule
+  stripeCreditNoteId String?
+}
+
+// --------------------------------------------------------------------
+// POINT 35 — PLANS D'ACCOMPAGNEMENT PPS/PAP/PAI/PAPSI (Partie C.2 Inclusion)
+// --------------------------------------------------------------------
+
+model PlanAccompagnement {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  type            String   // PPS/PAP/PAI/PAPSI
+  dateMiseEnPlace  DateTime @default(now())
+  dateDebut       DateTime
+  dateFin         DateTime?
+  statut          String   @default("actif") // actif/en_revision/suspendu/clos
+  diagnostic      String?
+  objectifsGeneraux String?
+  frequenceSuivi  String?  // mensuel/trimestriel/annuel
+  redigeParId     String?
+  valideParId     String?
+  dateValidation  DateTime?
+
+  membres         MembreEquipeEducatif[]
+  objectifs      ObjectifPlan[]
+  revisions       RevisionPlan[]
+}
+
+model MembreEquipeEducatif {
+  id              String   @id @default(cuid())
+  planAccompagnementId String
+  planAccompagnement PlanAccompagnement @relation(fields: [planAccompagnementId], references: [id])
+  utilisateurId   String
+  role             String   // referent/enseignant/orthophoniste/psychologue/ergotherapeute/parent/medecin/avs
+  dateInclusion    DateTime @default(now())
+}
+
+model ObjectifPlan {
+  id              String   @id @default(cuid())
+  planAccompagnementId String
+  planAccompagnement PlanAccompagnement @relation(fields: [planAccompagnementId], references: [id])
+  description     String
+  domaine          String   // scolaire/social/comportemental/therapeutique
+  indicateurs     String?
+  echeance       DateTime?
+  atteint         Boolean  @default(false)
+  dateEvaluation  DateTime?
+}
+
+model RevisionPlan {
+  id              String   @id @default(cuid())
+  planAccompagnementId String
+  planAccompagnement PlanAccompagnement @relation(fields: [planAccompagnementId], references: [id])
+  date            DateTime @default(now())
+  motif           String
+  constats        String
+  ajustements     String?
+  redigeParId     String?
+}
+
+// --------------------------------------------------------------------
+// POINT 36 — TEMPLATES PDF, DOCUMENTS GÉNÉRÉS, SIGNATURE, RAPPORTS (Partie B/D)
+// --------------------------------------------------------------------
+
+model TemplateDocument {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  code            String   // bulletin/facture/certificat_scolarite/convocation/releve_notes
+  libelle         String
+  type            String   // html_template/latex/docx_template
+  contenuTemplate String
+  variablesDisponibles String? // JSON
+  langue          String   @default("fr")
+  actif           Boolean  @default(true)
+  dateCreation    DateTime @default(now())
+  dateMaj         DateTime @updatedAt
+}
+
+model DocumentGenere {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  templateId      String?
+  template        TemplateDocument? @relation(fields: [templateId], references: [id])
+  cibleType       String
+  cibleId         String
+  titre           String
+  format          String   @default("pdf") // pdf/docx/html
+  fichierUrl      String
+  tailleOctets    Int?
+  version         Int      @default(1)
+  genereParId     String?
+  dateGeneration  DateTime @default(now())
+  hashContenu     String?
+
+  signatures      SignatureElectronique[]
+}
+
+model SignatureElectronique {
+  id              String   @id @default(cuid())
+  documentGenereId String
+  documentGenere  DocumentGenere @relation(fields: [documentGenereId], references: [id])
+  signataireId    String
+  signataireNom   String
+  hashDocument    String
+  certificat      String?
+  horodatageRFC3161 String?
+  dateSignature   DateTime @default(now())
+  adresseIp       String?
+  userAgent       String?
+  niveau          String   @default("simple") // simple/qualifie/avance (eIDAS)
+}
+
+model RapportSauvegarde {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  utilisateurId   String
+  nom             String
+  type             String   // kpi_tableau_bord/listing/agregat
+  configuration   String   // JSON: filtres + colonnes + période
+  format          String   @default("table") // table/chart/export_pdf
+  partage         Boolean  @default(false)
+  dateCreation    DateTime @default(now())
+  derniereExecution DateTime?
+}
+
+model WidgetDashboard {
+  id              String   @id @default(cuid())
+  utilisateurId   String
+  titre           String
+  type            String   // kpi/chart/tableau/iframe
+  source          String   // sql/endpoint/manuel
+  configuration   String   // JSON
+  position        Int      @default(0)
+  taille          String   @default("md") // sm/md/lg/xl
+  actif           Boolean  @default(true)
+  dateCreation    DateTime @default(now())
+}
+
+// --------------------------------------------------------------------
+// POINT 37 — HIÉRARCHIE SALLES, RÉCURRENCE iCal, ÉQUIPEMENTS (Partie C.1)
+// --------------------------------------------------------------------
+
+model Batiment {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String
+  adresse         String?
+  nombreEtages    Int      @default(1)
+  accessibilitePMR Boolean @default(false)
+  dateConstruction DateTime?
+  dateMaj         DateTime @updatedAt
+
+  etages          Etage[]
+  salles          Salle[]
+}
+
+model Etage {
+  id              String   @id @default(cuid())
+  batimentId      String
+  batiment        Batiment @relation(fields: [batimentId], references: [id])
+  numero          Int
+  libelle         String
+  planUrl         String?
+
+  salles          Salle[]
+}
+
+model SalleEquipement {
+  id              String   @id @default(cuid())
+  salleId         String
+  salle           Salle    @relation(fields: [salleId], references: [id])
+  type            String   // videoprojecteur/TBI/ordinateur/climatisation/prises_accessibilite
+  quantite        Int      @default(1)
+  etat            String   @default("fonctionnel") // fonctionnel/panne/maintenance
+  dateDerniereMaintenance DateTime?
+}
+
+// --------------------------------------------------------------------
+// EXTENSIONS DES MODÈLES EXISTANTS (back-relations)
+// --------------------------------------------------------------------
+
+// Ecole — ajouter back-relations (seront fusionnées lors du format)
+// Note: Prisma gère automatiquement les back-relations via @relation,
+// pas besoin de modifier Ecole manuellement.

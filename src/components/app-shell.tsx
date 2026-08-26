@@ -11,6 +11,7 @@ import {
   LayoutDashboard, Building2, Users, GraduationCap, ClipboardList, CalendarDays,
   BookOpen, Bus, BookMarked, Calendar, FileCheck, MessageSquare, Shield,
   ScrollText, Wallet, School, User as UserIcon, ChevronDown, Bell, Menu, X,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,13 +36,14 @@ import SecuriteModule from './modules/securite';
 import CommunicationModule from './modules/communication';
 import AuditModule from './modules/audit';
 import ParentPortalModule from './modules/parent-portal';
+import V4ModulesModule from './modules/v4-modules';
 
 export type Portal = 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve';
 
 export type ModuleId =
   | 'dashboard' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
-  | 'rdv' | 'securite' | 'communication' | 'audit' | 'parent_portal';
+  | 'rdv' | 'securite' | 'communication' | 'audit' | 'parent_portal' | 'v4_modules';
 
 type ModuleDef = {
   id: ModuleId;
@@ -66,6 +68,7 @@ const MODULES: ModuleDef[] = [
   { id: 'securite', label: 'Sécurité site', icon: Shield, portals: ['super_admin', 'direction'] },
   { id: 'communication', label: 'Communication', icon: MessageSquare, portals: ['super_admin', 'direction'] },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText, portals: ['super_admin', 'direction'] },
+  { id: 'v4_modules', label: 'Modules V4 (37 failles)', icon: CheckCircle2, portals: ['super_admin', 'direction'] },
   { id: 'parent_portal', label: 'Portail Parent (démonstration)', icon: UserIcon, portals: ['parent'] },
 ];
 
@@ -122,6 +125,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'securite': return <SecuriteModule {...props} />;
       case 'communication': return <CommunicationModule {...props} />;
       case 'audit': return <AuditModule {...props} />;
+      case 'v4_modules': return <V4ModulesModule {...props} />;
       case 'parent_portal': return <ParentPortalModule {...props} mode="full" />;
       default: return null;
     }
