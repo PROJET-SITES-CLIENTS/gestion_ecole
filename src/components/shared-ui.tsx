@@ -1,0 +1,227 @@
+'use client';
+
+// Composants UI partagés utilisés par tous les modules.
+
+import { ReactNode, useState, useTransition } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Plus, X, Eye, Pencil } from 'lucide-react';
+import { statutColor, statutLabel } from '@/lib/format';
+
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
+        {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+export function StatCard({ title, value, sub, icon: Icon, color = 'emerald' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
+  const colorMap: Record<string, string> = {
+    emerald: 'bg-emerald-50 text-emerald-700',
+    rose: 'bg-rose-50 text-rose-700',
+    amber: 'bg-amber-50 text-amber-700',
+    blue: 'bg-blue-50 text-blue-700',
+    purple: 'bg-purple-50 text-purple-700',
+    gray: 'bg-gray-100 text-gray-700',
+  };
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{title}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+          </div>
+          {Icon && (
+            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorMap[color]}`}>
+              <Icon className="h-5 w-5" />
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function StatusBadge({ statut }: { statut: string }) {
+  return <Badge variant="outline" className={`text-xs ${statutColor(statut)}`}>{statutLabel(statut)}</Badge>;
+}
+
+export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée' }: {
+  columns: { key: string; label: string; render?: (row: any) => ReactNode }[];
+  rows: any[];
+  emptyLabel?: string;
+}) {
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+      <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+        <Table>
+          <TableHeader className="sticky top-0 bg-gray-50 z-10">
+            <TableRow>
+              {columns.map(c => <TableHead key={c.key} className="text-xs font-semibold uppercase tracking-wider text-gray-600">{c.label}</TableHead>)}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="text-center text-gray-500 py-8">{emptyLabel}</TableCell>
+              </TableRow>
+            ) : rows.map((r, i) => (
+              <TableRow key={r.id ?? i}>
+                {columns.map(c => (
+                  <TableCell key={c.key} className="text-sm">
+                    {c.render ? c.render(r) : (r as any)[c.key] ?? '—'}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+export function FormField({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium text-gray-700">{label} {required && <span className="text-rose-500">*</span>}</Label>
+      {children}
+    </div>
+  );
+}
+
+type FieldDef = {
+  name: string;
+  label: string;
+  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox';
+  options?: { value: string; label: string }[];
+  required?: boolean;
+  placeholder?: string;
+};
+
+export function ModalForm({
+  trigger, title, fields, action, defaultValues,
+}: {
+  trigger: ReactNode;
+  title: string;
+  fields: FieldDef[];
+  action: (formData: FormData) => Promise<any>;
+  defaultValues?: Record<string, any>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      await action(formData);
+      setOpen(false);
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {fields.map(f => (
+            <FormField key={f.name} label={f.label} required={f.required}>
+              {f.type === 'textarea' ? (
+                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={defaultValues?.[f.name]} required={f.required} />
+              ) : f.type === 'select' ? (
+                <select
+                  name={f.name}
+                  defaultValue={defaultValues?.[f.name] ?? ''}
+                  required={f.required}
+                  className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">— Choisir —</option>
+                  {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : f.type === 'checkbox' ? (
+                <Checkbox name={f.name} defaultChecked={defaultValues?.[f.name]} />
+              ) : (
+                <Input
+                  type={f.type ?? 'text'}
+                  name={f.name}
+                  placeholder={f.placeholder}
+                  defaultValue={defaultValues?.[f.name]}
+                  required={f.required}
+                  step={f.type === 'number' ? '0.01' : undefined}
+                />
+              )}
+            </FormField>
+          ))}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={pending}>Annuler</Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending} className="bg-emerald-600 hover:bg-emerald-700">
+              {pending ? 'Enregistrement…' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function SectionBlock({ title, description, children, action }: { title: string; description?: string; children: ReactNode; action?: ReactNode }) {
+  return (
+    <Card className="mb-6">
+      <CardHeader className="pb-3 flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-base">{title}</CardTitle>
+          {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+        </div>
+        {action}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+  return (
+    <div className="text-center py-12 px-4 border border-dashed border-gray-200 rounded-lg bg-gray-50">
+      <h3 className="text-sm font-medium text-gray-900">{title}</h3>
+      {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex justify-between py-2 border-b border-gray-100 last:border-0">
+      <dt className="text-sm text-gray-500">{label}</dt>
+      <dd className="text-sm font-medium text-gray-900 text-right">{value ?? '—'}</dd>
+    </div>
+  );
+}
+
+export const CreateButton = ({ label, onClick }: { label: string; onClick?: () => void }) => (
+  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 gap-1" onClick={onClick}>
+    <Plus className="h-4 w-4" /> {label}
+  </Button>
+);
+
+export { Plus, X, Eye, Pencil };

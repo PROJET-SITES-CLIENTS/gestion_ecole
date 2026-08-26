@@ -1,0 +1,1235 @@
+// ====================================================================
+// SaaS Plateforme de Gestion Scolaire — Schéma Prisma complet
+// Couvre: SaaS, fondations, élèves, personnel, pédagogique (chiffré
+// + compétences), présences, vie scolaire, finances, RH, services,
+// salles, examens officiels, RDV, sécurité physique, communication,
+// audit, conformité mineurs.
+// ====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ====================================================================
+// PARTIE A — COUCHE SaaS (multi-écoles, plans, abonnements, factures)
+// ====================================================================
+
+model Ecole {
+  id              String   @id @default(cuid())
+  nom             String
+  slug            String   @unique
+  pays            String   @default("SN")
+  devise          String   @default("XOF")
+  fuseauHoraire   String   @default("Africa/Dakar")
+  logoUrl         String?
+  dateCreation    DateTime @default(now())
+  statut          String   @default("essai") // essai/actif/suspendu/resilie
+  deletedAt      DateTime?
+
+  abonnements     Abonnement[]
+  facturesSaas    FactureSaas[]
+  anneesScolaires AnneeScolaire[]
+  cycles          Cycle[]
+  matieres        Matiere[]
+  salles          Salle[]
+  manuels         ManuelScolaire[]
+  calendrier      CalendrierScolaire[]
+  eleves          Eleve[]
+  personnels      Personnel[]
+  utilisateurs    Utilisateur[]
+  roles           Role[]
+  modesMessage     ModeleMessage[]
+  notifications   Notification[]
+  permissions     Permission[]
+  frais           Frais[]
+  paiements        Paiement[]
+  depenses        Depense[]
+  articlesStock   StockArticle[]
+  examensOfficiels ExamenOfficiel[]
+  cantines        CantineInscription[]
+  transports      TransportInscription[]
+  lignesTransport TransportLigne[]
+  biblioLivres    BiblioLivre[]
+  visiteurs       Visiteur[]
+  plans           PlanTarifaire? @relation("EcolePlanCourant", fields: [planCourantId], references: [id])
+  planCourantId   String?
+}
+
+model PlanTarifaire {
+  id              String   @id @default(cuid())
+  nom             String
+  prixMensuel     Float
+  prixAnnuel      Float
+  devise          String   @default("XOF")
+  limiteEleves    Int?
+  modulesInclus   String   @default("[]") // JSON array as text
+  dureeEssaiJours Int      @default(14)
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  abonnements     Abonnement[]
+  ecoleCourant   Ecole[]   @relation("EcolePlanCourant")
+}
+
+model Abonnement {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  planId          String
+  plan            PlanTarifaire @relation(fields: [planId], references: [id])
+  dateDebut       DateTime @default(now())
+  dateFin         DateTime?
+  statut          String   @default("essai") // essai/actif/suspendu/resilie
+  modeFacturation String   @default("mensuel") // mensuel/annuel
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  factures        FactureSaas[]
+}
+
+model FactureSaas {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  abonnementId    String
+  abonnement      Abonnement @relation(fields: [abonnementId], references: [id])
+  periode         String   // "2026-08"
+  montant         Float
+  devise          String
+  statut          String   @default("impayee") // payee/impayee/en_retard
+  modePaiement    String?
+  dateEmission    DateTime @default(now())
+  datePaiement    DateTime?
+}
+
+// ====================================================================
+// PARTIE B — FONDATIONS ACADEMIQUES
+// ====================================================================
+
+model AnneeScolaire {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  ecole        Ecole    @relation(fields: [ecoleId], references: [id])
+  libelle      String   // "2026-2027"
+  dateDebut    DateTime
+  dateFin      DateTime
+  active       Boolean  @default(false)
+
+  periodes     Periode[]
+  classes      Classe[]
+  programmes   Programme[]
+  calendrier   CalendrierScolaire[]
+  listesFourn  ListeFourniture[]
+
+  @@unique([ecoleId, libelle])
+}
+
+model Cycle {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  code            String   // MAT/PRIM/COLL/LYC
+  libelle         String
+  ordre           Int
+  modeEvaluation  String   @default("chiffre") // chiffre/competences
+
+  sections        Section[]
+  competences     Competence[]
+  reglesCalcul    RegleCalculMoyenne[]
+
+  @@unique([ecoleId, code])
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  cycleId   String
+  cycle     Cycle   @relation(fields: [cycleId], references: [id])
+  code      String
+  libelle   String
+
+  niveaux   Niveau[]
+}
+
+model Niveau {
+  id        String   @id @default(cuid())
+  sectionId String
+  section   Section  @relation(fields: [sectionId], references: [id])
+  code      String
+  libelle   String
+  ordre     Int
+
+  classes   Classe[]
+  programmes Programme[]
+  frais     Frais[]
+  manuels   ManuelScolaire[]
+  listesFourn ListeFourniture[]
+  examens   ExamenOfficiel[]
+}
+
+model Classe {
+  id                  String   @id @default(cuid())
+  niveauId            String
+  niveau              Niveau   @relation(fields: [niveauId], references: [id])
+  anneeScolaireId    String
+  anneeScolaire      AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  ecoleId             String
+  code                String
+  libelle             String
+  capaciteMax         Int?
+  enseignantPrincipalId String?
+
+  eleves              Eleve[]
+  seances             Seance[]
+  evaluations         Evaluation[]
+  historiqueClasses   EleveHistoriqueClasse[]
+  avancements         AvancementProgramme[]
+  reunionsCollectives ReunionCollective[]
+  inscriptionsCantine CantineInscription[]
+  inscriptionsTransport TransportInscription[]
+
+  @@unique([ecoleId, code, anneeScolaireId])
+}
+
+// ====================================================================
+// PARTIE B — UTILISATEURS, RÔLES, PERMISSIONS (RBAC)
+// ====================================================================
+
+model Utilisateur {
+  id                  String   @id @default(cuid())
+  ecoleId             String?
+  ecole               Ecole?   @relation(fields: [ecoleId], references: [id])
+  email               String
+  motDePasseHash      String
+  telephone           String?
+  nom                 String
+  prenom              String
+  type                String   // parent/personnel/eleve/super_admin
+  actif               Boolean  @default(true)
+  twofaActive         Boolean  @default(false)
+  derniereConnexion   DateTime?
+  tentativesEchouees  Int      @default(0)
+  verrouilleJusqua    DateTime?
+  consentementPortail Boolean  @default(false)
+  consentementDate    DateTime?
+  createdAt           DateTime @default(now())
+  deletedAt           DateTime?
+
+  personnel           Personnel?
+  parent              ParentTuteur?
+  eleve               Eleve?
+  roles               UtilisateurRole[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@unique([ecoleId, email])
+}
+
+model Role {
+  id              String   @id @default(cuid())
+  ecoleId         String?
+  ecole           Ecole?   @relation(fields: [ecoleId], references: [id])
+  code            String   // direction/enseignant/parent/eleve/comptabilite/secretariat/surveillant
+  libelle         String
+  twofaRequis     Boolean  @default(false)
+
+  permissions     RolePermission[]
+  utilisateurs    UtilisateurRole[]
+  personnelRoles  PersonnelRole[]
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  libelle     String
+  module      String
+
+  roles       RolePermission[]
+  ecoles      Ecole[]
+}
+
+model RolePermission {
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UtilisateurRole {
+  utilisateurId String
+  role           Role       @relation(fields: [roleId], references: [id])
+  roleId         String
+  utilisateur    Utilisateur @relation(fields: [utilisateurId], references: [id])
+  dateDebut      DateTime   @default(now())
+  dateFin        DateTime?
+
+  @@id([utilisateurId, roleId])
+}
+
+// ====================================================================
+// PARTIE B — ÉLÈVES + INCLUSION (C.2)
+// ====================================================================
+
+model Eleve {
+  id                          String   @id @default(cuid())
+  ecoleId                     String
+  ecole                       Ecole    @relation(fields: [ecoleId], references: [id])
+  matricule                   String?
+  nom                         String
+  prenom                      String
+  dateNaissance               DateTime
+  lieuNaissance               String?
+  sexe                        String?
+  photoUrl                    String?
+  statut                      String   @default("actif") // actif/diplome/transfere/exclu
+  dateInscription             DateTime @default(now())
+  dateSortie                  DateTime?
+  motifSortie                 String?
+  classeActuelleId            String?
+  classeActuelle              Classe?  @relation(fields: [classeActuelleId], references: [id])
+  adresse                     String?  // JSON
+  allergies                   String?
+  conditionMedicale           String?
+  contactUrgence              String?  // JSON
+  consentementPortailEleve    Boolean  @default(false)
+  consentementPortailEleveDate DateTime?
+  consentementPhotoInterne    Boolean  @default(false)
+  consentementPhotoExterne    Boolean  @default(false)
+  utilisateurId               String?  @unique
+  utilisateur                 Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  deletedAt                   DateTime?
+
+  parents                     EleveParent[]
+  documents                   DocumentEleve[]
+  historiqueClasses            EleveHistoriqueClasse[]
+  besoinsSpecifiques          BesoinSpecifique[]
+  amenagements                Amenagement[]
+  presences                   Presence[]
+  notes                       Note[]
+  evaluationsCompetence       EvaluationCompetence[]
+  bulletins                   Bulletin[]
+  echeances                   EcheanceFrais[]
+  paiements                   Paiement[]
+  incidents                   Incident[]
+  attributionsManuel          AttributionManuel[]
+  autorisationsSortie         AutorisationSortie[]
+  sortiesAnticipees           SortieAnticipee[]
+  inscriptionsCantine         CantineInscription[]
+  inscriptionsTransport       TransportInscription[]
+  pretsBiblio                 BiblioPret[]
+  rdvs                        Rdv[]
+  inscriptionsExamenOfficiel  InscriptionExamenOfficiel[]
+
+  @@unique([ecoleId, matricule])
+}
+
+model ParentTuteur {
+  id                  String   @id @default(cuid())
+  ecoleId             String
+  utilisateurId       String?  @unique
+  utilisateur          Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  nom                 String
+  prenom              String
+  telephone           String?
+  email               String?
+  profession          String?
+  lienAvecEleve       String   // pere/mere/tuteur_legal
+
+  eleves              EleveParent[]
+  paiements           Paiement[]
+  rdvs                Rdv[]
+}
+
+model EleveParent {
+  eleveId              String
+  eleve                Eleve       @relation(fields: [eleveId], references: [id])
+  parentId             String
+  parent               ParentTuteur @relation(fields: [parentId], references: [id])
+  autoriteParentale    Boolean     @default(true)
+
+  @@id([eleveId, parentId])
+}
+
+model EleveHistoriqueClasse {
+  id          String   @id @default(cuid())
+  eleveId     String
+  eleve       Eleve    @relation(fields: [eleveId], references: [id])
+  classeId    String
+  classe      Classe   @relation(fields: [classeId], references: [id])
+  dateEntree  DateTime
+  dateSortie  DateTime?
+  motif       String?
+}
+
+model DocumentEleve {
+  id            String   @id @default(cuid())
+  eleveId       String
+  eleve         Eleve    @relation(fields: [eleveId], references: [id])
+  type          String   // acte_naissance/cv/certificat_medical/diplome
+  fichierUrl    String
+  confidentiel Boolean  @default(false)
+  dateAjout     DateTime @default(now())
+  ajouteParId   String
+}
+
+model BesoinSpecifique {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  type            String   // trouble_apprentissage/handicap_moteur/deficit_visuel/auditif/autre
+  description     String
+  dateDiagnostic  DateTime?
+  documentJustificatifUrl String?
+  confidentiel    Boolean  @default(true)
+  creeLe          DateTime @default(now())
+
+  amenagements    Amenagement[]
+}
+
+model Amenagement {
+  id                    String   @id @default(cuid())
+  eleveId               String
+  eleve                 Eleve    @relation(fields: [eleveId], references: [id])
+  besoinSpecifiqueId    String?
+  besoinSpecifique      BesoinSpecifique? @relation(fields: [besoinSpecifiqueId], references: [id])
+  typeAmenagement       String   // tiers_temps/AVS/materiel_adapte/amenagement_pedagogique
+  description           String
+  dateDebut             DateTime
+  dateFin               DateTime?
+  valideParId           String
+}
+
+// ====================================================================
+// PARTIE B — PERSONNEL & RH
+// ====================================================================
+
+model Personnel {
+  id                  String   @id @default(cuid())
+  ecoleId             String
+  ecole               Ecole    @relation(fields: [ecoleId], references: [id])
+  utilisateurId       String?  @unique
+  utilisateur         Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  matricule           String?
+  nom                 String
+  prenom              String
+  dateNaissance       DateTime?
+  sexe                String?
+  telephone           String?
+  email               String?
+  adresse             String?
+  photoUrl            String?
+  dateEmbauche        DateTime
+  dateSortie          DateTime?
+  motifSortie         String?
+  statut              String   @default("actif")
+  typeContrat         String?  // CDI/CDD/vacataire/stagiaire
+  salaireBrut         Float?
+  cvUrl               String?
+  diplomePrincipal    String?
+  numeroSecuriteSociale String?
+  contactUrgence      String?  // JSON
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+
+  roles                PersonnelRole[]
+  seances              Seance[]
+  evaluationsDonnees  Evaluation[]
+  avancementsDonnes   AvancementProgramme[]
+  conges               Conge[]
+  creneauxRdv         CreneauRdv[]
+  evaluationsRh       EvaluationPersonnel[]
+  remplacementsAbsents     Remplacement[] @relation("RemplacementsAbsents")
+  remplacementsRemplacants Remplacement[] @relation("RemplacementsRemplacants")
+
+  @@unique([ecoleId, matricule])
+}
+
+model PersonnelRole {
+  personnelId String
+  personnel    Personnel @relation(fields: [personnelId], references: [id])
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  classeId     String?
+  matiereId    String?
+  dateDebut    DateTime   @default(now())
+  dateFin      DateTime?
+
+  @@id([personnelId, roleId, dateDebut])
+}
+
+model Conge {
+  id              String   @id @default(cuid())
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  type            String   // annuel/maladie/maternite/exceptionnel
+  dateDebut       DateTime
+  dateFin         DateTime
+  statut          String   @default("demande")
+  motif           String?
+  justificatifUrl String?
+  traiteParId     String?
+
+  remplacements   Remplacement[]
+}
+
+model Remplacement {
+  id                  String   @id @default(cuid())
+  congeId             String?
+  conge               Conge?   @relation(fields: [congeId], references: [id])
+  personnelAbsentId     String
+  personnelAbsent       Personnel @relation("RemplacementsAbsents", fields: [personnelAbsentId], references: [id])
+  personnelRemplacantId String
+  personnelRemplacant   Personnel @relation("RemplacementsRemplacants", fields: [personnelRemplacantId], references: [id])
+  dateDebut           DateTime
+  dateFin             DateTime
+  statut              String   @default("planifie")
+}
+
+model EvaluationPersonnel {
+  id                String   @id @default(cuid())
+  personnelId       String
+  personnel         Personnel @relation(fields: [personnelId], references: [id])
+  evaluateurId      String
+  periode           String   // "2026-S1"
+  criteres          String   // JSON
+  commentaireGlobal String?
+  dateEvaluation    DateTime @default(now())
+}
+
+// ====================================================================
+// PARTIE B — PÉDAGOGIQUE (le cœur)
+// ====================================================================
+
+model Matiere {
+  id          String   @id @default(cuid())
+  ecoleId     String
+  ecole       Ecole    @relation(fields: [ecoleId], references: [id])
+  code        String
+  libelle     String
+  coefficient Float    @default(1.0)
+  couleur     String?
+
+  programmes  Programme[]
+  seances     Seance[]
+  evaluations Evaluation[]
+  competences Competence[]
+  manuels     ManuelScolaire[]
+
+  @@unique([ecoleId, code])
+}
+
+model Programme {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  matiereId       String
+  matiere         Matiere   @relation(fields: [matiereId], references: [id])
+  niveauId        String
+  niveau          Niveau   @relation(fields: [niveauId], references: [id])
+  anneeScolaireId String
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  titre           String
+  objectifs       String?
+  volumeHorairePrevu Int?
+  publie          Boolean  @default(false)
+
+  chapitres      Chapitre[]
+}
+
+model Chapitre {
+  id                  String   @id @default(cuid())
+  programmeId         String
+  programme           Programme @relation(fields: [programmeId], references: [id])
+  titre               String
+  ordre               Int
+  volumeHorairePrevu  Int?
+  contenu             String?
+  ressources          String?  // JSON
+
+  avancements         AvancementProgramme[]
+}
+
+model AvancementProgramme {
+  id            String   @id @default(cuid())
+  chapitreId    String
+  chapitre      Chapitre @relation(fields: [chapitreId], references: [id])
+  classeId      String
+  classe        Classe   @relation(fields: [classeId], references: [id])
+  enseignantId  String
+  enseignant    Personnel @relation(fields: [enseignantId], references: [id])
+  pourcentage   Float    @default(0)
+  dateMaj       DateTime @default(now())
+  commentaire    String?
+
+  @@unique([chapitreId, classeId])
+}
+
+model Seance {
+  id              String   @id @default(cuid())
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  matiereId       String
+  matiere         Matiere  @relation(fields: [matiereId], references: [id])
+  enseignantId    String
+  enseignant      Personnel @relation(fields: [enseignantId], references: [id])
+  chapitreId      String?
+  date            DateTime
+  heureDebut      String   // HH:mm
+  heureFin        String
+  salleId         String?
+  contenuPrevu    String?
+  contenuRealise  String?
+  statut          String   @default("planifiee") // planifiee/passee/annulee
+
+  presences       Presence[]
+  reservationSalle ReservationSalle?
+}
+
+model Periode {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  anneeScolaireId String
+  anneeScolaire  AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  libelle        String
+  code            String
+  dateDebut       DateTime
+  dateFin         DateTime
+  typeBulletin    String   // primaire/college_lycee
+
+  evaluations     Evaluation[]
+  bulletins       Bulletin[]
+  evaluationsCompetence EvaluationCompetence[]
+
+  @@unique([ecoleId, code])
+}
+
+model Evaluation {
+  id                  String   @id @default(cuid())
+  ecoleId             String
+  classeId            String
+  classe              Classe   @relation(fields: [classeId], references: [id])
+  matiereId           String
+  matiere             Matiere  @relation(fields: [matiereId], references: [id])
+  enseignantId        String
+  enseignant          Personnel @relation(fields: [enseignantId], references: [id])
+  type                String   // devoir/composition/interrogation
+  intitule            String
+  date                DateTime
+  sur                 Float    @default(20)
+  coefficient         Float    @default(1.0)
+  periodeId           String
+  periode             Periode  @relation(fields: [periodeId], references: [id])
+  statut              String   @default("planifiee")
+  calculeDansMoyenne  Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  notes               Note[]
+}
+
+model Note {
+  id                       String   @id @default(cuid())
+  eleveId                  String
+  eleve                    Eleve    @relation(fields: [eleveId], references: [id])
+  evaluationId             String
+  evaluation               Evaluation @relation(fields: [evaluationId], references: [id])
+  valeur                   Float?
+  absent                   Boolean  @default(false)
+  dispense                 Boolean  @default(false)
+  commentaire              String?
+  saisiParId               String
+  dateSaisie               DateTime @default(now())
+  synchroniseDepuisHorsLigne Boolean @default(false)
+
+  @@unique([eleveId, evaluationId])
+}
+
+model RegleCalculMoyenne {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  cycleId         String
+  cycle           Cycle    @relation(fields: [cycleId], references: [id])
+  methode         String   @default("moyenne_ponderee")
+  inclutAbsents  Boolean  @default(false)
+  notePlancher    Float?
+  notePlafond     Float?
+  arrondi         Int      @default(2)
+  reglesSpecifiques String? // JSON
+}
+
+model Bulletin {
+  id                      String   @id @default(cuid())
+  eleveId                 String
+  eleve                   Eleve    @relation(fields: [eleveId], references: [id])
+  classeId                String
+  periodeId               String
+  periode                 Periode  @relation(fields: [periodeId], references: [id])
+  version                 Int      @default(1)
+  statut                  String   @default("en_construction")
+  // en_construction / en_attente_validation_pp / valide_pp / en_attente_direction / publie / rectifie
+  moyennes                String?  // JSON
+  moyenneGenerale         Float?
+  rang                    Int?
+  appreciationGenerale    String?
+  decisionConseil         String?
+  pdfUrl                  String?
+  creeParId               String
+  dateCreation            DateTime @default(now())
+  dateValidationPp        DateTime?
+  validePpParId           String?
+  dateValidationDirection DateTime?
+  valideDirectionParId    String?
+  datePublication         DateTime?
+
+  @@unique([eleveId, periodeId, version])
+}
+
+// Évaluation par compétences (maternelle / cycles non chiffrés)
+model Competence {
+  id          String   @id @default(cuid())
+  ecoleId     String
+  cycleId     String
+  cycle       Cycle    @relation(fields: [cycleId], references: [id])
+  matiereId   String?
+  matiere     Matiere?  @relation(fields: [matiereId], references: [id])
+  libelle     String
+  ordre       Int
+
+  evaluations EvaluationCompetence[]
+}
+
+model EvaluationCompetence {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  competenceId    String
+  competence      Competence @relation(fields: [competenceId], references: [id])
+  periodeId       String
+  periode         Periode  @relation(fields: [periodeId], references: [id])
+  niveauAcquisition String // non_acquis/en_cours/acquis/maitrise
+  commentaire     String?
+  evalueParId     String
+  date            DateTime @default(now())
+
+  @@unique([eleveId, competenceId, periodeId])
+}
+
+// ====================================================================
+// PARTIE B — PRÉSENCES (déjà couvert par Presence + Seance)
+// ====================================================================
+// (Le model Presence est déclaré dans la section Pédagogique car attaché à une Seance.)
+
+model Presence {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  seanceId        String
+  seance          Seance   @relation(fields: [seanceId], references: [id])
+  statut          String   // present/absent/retard/excuse
+  minuteRetard    Int?
+  motifAbsence    String?
+  justificatifUrl String?
+  saisiParId      String
+  dateSaisie      DateTime @default(now())
+  synchroniseDepuisHorsLigne Boolean @default(false)
+
+  @@unique([eleveId, seanceId])
+}
+
+// ====================================================================
+// PARTIE B — VIE SCOLAIRE / DISCIPLINE
+// ====================================================================
+
+model Incident {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  dateHeure       DateTime
+  lieu            String?
+  type            String   // comportement/violence/fraude/autre
+  description     String
+  gravite         String   // leger/modere/grave
+  declareParId   String
+  temoins         String?  // JSON
+
+  sanctions       Sanction[]
+}
+
+model Sanction {
+  id              String   @id @default(cuid())
+  incidentId      String
+  incident        Incident  @relation(fields: [incidentId], references: [id])
+  type            String   // avertissement/retenue/exclusion/convocation
+  description     String
+  dateDebut       DateTime?
+  dateFin         DateTime?
+  dureeHeures     Int?
+  statut          String   @default("decidee")
+  decideParId     String
+  notifieParents  Boolean  @default(false)
+  dateNotification DateTime?
+}
+
+// ====================================================================
+// PARTIE B — FINANCES / COMPTABILITÉ
+// ====================================================================
+
+model Frais {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  libelle         String
+  type            String   // scolarite/inscription/cantine/transport/activite
+  montant         Float
+  devise          String
+  periodicite     String?  // unique/mensuel/trimestriel/annuel
+  niveauId        String?
+  niveau          Niveau?  @relation(fields: [niveauId], references: [id])
+  anneeScolaireId String
+
+  echeances       EcheanceFrais[]
+}
+
+model EcheanceFrais {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  fraisId         String
+  frais           Frais    @relation(fields: [fraisId], references: [id])
+  montant         Float
+  devise          String
+  dateEcheance    DateTime
+  montantPaye     Float    @default(0)
+  statut          String   @default("impayee")
+  source          String?
+  dateCreation    DateTime @default(now())
+
+  paiements       PaiementEcheance[]
+}
+
+model Paiement {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String?
+  eleve           Eleve?   @relation(fields: [eleveId], references: [id])
+  parentId        String?
+  parent          ParentTuteur? @relation(fields: [parentId], references: [id])
+  montant         Float
+  devise          String
+  modePaiement    String   // espece/cheque/virement/carte/mobile_money
+  referenceTransaction String?
+  datePaiement    DateTime @default(now())
+  encaisseParId   String
+  recuUrl         String?
+
+  echeances       PaiementEcheance[]
+}
+
+model PaiementEcheance {
+  paiementId          String
+  paiement            Paiement   @relation(fields: [paiementId], references: [id])
+  echeanceId          String
+  echeance            EcheanceFrais @relation(fields: [echeanceId], references: [id])
+  montantApplique     Float
+
+  @@id([paiementId, echeanceId])
+}
+
+model Depense {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  categorie       String
+  description     String
+  montant         Float
+  devise          String
+  dateDepense     DateTime
+  fournisseur     String?
+  justificatifUrl String?
+  validee         Boolean  @default(false)
+  valideeParId    String?
+  dateValidation  DateTime?
+}
+
+model StockArticle {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String
+  categorie       String?
+  quantite        Int      @default(0)
+  seuilAlerte     Int?
+  unite           String?
+  prixUnitaire    Float?
+
+  mouvements       MouvementStock[]
+}
+
+model MouvementStock {
+  id              String   @id @default(cuid())
+  articleId       String
+  article         StockArticle @relation(fields: [articleId], references: [id])
+  type            String   // entree/sortie
+  quantite        Int
+  motif           String?
+  dateMouvement    DateTime @default(now())
+  effectueParId   String
+}
+
+// ====================================================================
+// PARTIE C.1 — SALLES, RÉSERVATIONS, CALENDRIER SCOLAIRE
+// ====================================================================
+
+model Salle {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String
+  type            String   // classe/labo/informatique/sport/polyvalente
+  capacite        Int
+  equipements     String   @default("[]") // JSON list
+
+  reservations    ReservationSalle[]
+
+  @@unique([ecoleId, nom])
+}
+
+model ReservationSalle {
+  id              String   @id @default(cuid())
+  salleId         String
+  salle           Salle    @relation(fields: [salleId], references: [id])
+  seanceId        String?  @unique
+  seance          Seance?  @relation(fields: [seanceId], references: [id])
+  date            DateTime
+  heureDebut      String
+  heureFin        String
+  reserveParId    String
+  motif           String?
+  createdAt       DateTime @default(now())
+}
+
+model CalendrierScolaire {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  anneeScolaireId String
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  type            String   // jour_ferie/vacances/journee_pedagogique/evenement
+  libelle         String
+  dateDebut       DateTime
+  dateFin         DateTime
+}
+
+// ====================================================================
+// PARTIE C.4 — EXAMENS OFFICIELS
+// ====================================================================
+
+model ExamenOfficiel {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String   // CEPE/BEPC/BAC
+  anneeScolaireId String
+  niveauId        String
+  niveau          Niveau   @relation(fields: [niveauId], references: [id])
+  dateDebut       DateTime
+  dateFin         DateTime
+
+  inscriptions    InscriptionExamenOfficiel[]
+}
+
+model InscriptionExamenOfficiel {
+  id                  String   @id @default(cuid())
+  examenOfficielId    String
+  examenOfficiel      ExamenOfficiel @relation(fields: [examenOfficielId], references: [id])
+  eleveId             String
+  eleve               Eleve    @relation(fields: [eleveId], references: [id])
+  numeroTable         String?
+  centreExamen        String?
+  statut              String   @default("inscrit") // inscrit/convoque/presente/absent
+  resultat            String?  // admis/ajourne/mention
+  amenagementAppliqueId String?
+  certificatUrl       String?
+
+  @@unique([examenOfficielId, eleveId])
+}
+
+// ====================================================================
+// PARTIE C.5 — RDV PARENTS-PROFS
+// ====================================================================
+
+model CreneauRdv {
+  id              String   @id @default(cuid())
+  personnelId     String
+  personnel       Personnel @relation(fields: [personnelId], references: [id])
+  date            DateTime
+  heureDebut      String
+  heureFin        String
+  statut          String   @default("disponible") // disponible/reserve/annule
+  lieu            String   // presentiel/visio
+  lienVisio       String?
+
+  rdvs            Rdv[]
+}
+
+model Rdv {
+  id              String   @id @default(cuid())
+  creneauRdvId    String
+  creneauRdv      CreneauRdv @relation(fields: [creneauRdvId], references: [id])
+  parentId        String
+  parent          ParentTuteur @relation(fields: [parentId], references: [id])
+  eleveId         String?
+  eleve           Eleve?   @relation(fields: [eleveId], references: [id])
+  motif           String?
+  statut          String   @default("confirme") // confirme/annule/honore/absence
+  createdAt       DateTime @default(now())
+}
+
+model ReunionCollective {
+  id              String   @id @default(cuid())
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  date            DateTime
+  heure           String
+  lieu            String
+  description     String?
+}
+
+// ====================================================================
+// PARTIE C.6 — MANUELS & FOURNITURES
+// ====================================================================
+
+model ManuelScolaire {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  titre           String
+  matiereId       String?
+  matiere         Matiere?  @relation(fields: [matiereId], references: [id])
+  niveauId        String?
+  niveau          Niveau?  @relation(fields: [niveauId], references: [id])
+  editeur         String?
+  anneeEdition    Int?
+  quantiteStock   Int      @default(0)
+
+  attributions    AttributionManuel[]
+}
+
+model AttributionManuel {
+  id                  String   @id @default(cuid())
+  manuelScolaireId    String
+  manuelScolaire      ManuelScolaire @relation(fields: [manuelScolaireId], references: [id])
+  eleveId             String
+  eleve               Eleve    @relation(fields: [eleveId], references: [id])
+  dateAttribution      DateTime
+  dateRestitutionPrevue DateTime?
+  etatRemise          String   // bon usage endommage
+  etatRetour          String?
+  statut              String   @default("en_cours") // en_cours/rendu/perdu/facture
+  echeanceFraisGenereeId String?
+}
+
+model ListeFourniture {
+  id              String   @id @default(cuid())
+  niveauId        String
+  niveau          Niveau   @relation(fields: [niveauId], references: [id])
+  anneeScolaireId String
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  contenu         String   // JSON
+  publiee         Boolean  @default(false)
+  datePublication DateTime?
+}
+
+// ====================================================================
+// PARTIE C.7 — SÉCURITÉ PHYSIQUE
+// ====================================================================
+
+model Visiteur {
+  id                  String   @id @default(cuid())
+  ecoleId             String
+  ecole               Ecole    @relation(fields: [ecoleId], references: [id])
+  nom                 String
+  motifVisite         String
+  personneVisiteeId   String?
+  dateHeureEntree     DateTime @default(now())
+  dateHeureSortie     DateTime?
+  pieceIdentiteVerifiee Boolean @default(false)
+  badgeNumero         String?
+}
+
+model AutorisationSortie {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  nomPersonneAutorisee String
+  lienAvecEleve   String?
+  telephone       String?
+  photoUrl        String?
+  active          Boolean  @default(true)
+  valideeParId    String
+}
+
+model SortieAnticipee {
+  id              String   @id @default(cuid())
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  date            DateTime
+  heure           String
+  autorisationSortieId String?
+  recupereParNom  String
+  validationExceptionnelle Boolean @default(false)
+  valideParId     String
+  parentsNotifies Boolean @default(false)
+  dateSortie      DateTime @default(now())
+}
+
+// ====================================================================
+// PARTIE B.9 — SERVICES COMPLÉMENTAIRES (cantine, transport, biblio)
+// ====================================================================
+
+model CantineInscription {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  anneeScolaireId String
+  joursSemaine    String   // JSON array [1,3,5]
+  tarifJournalier Float
+  actif           Boolean  @default(true)
+}
+
+model TransportLigne {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  nom             String
+  vehicule        String?
+  chauffeurId      String?
+
+  arrets          TransportArret[]
+  inscriptions    TransportInscription[]
+}
+
+model TransportArret {
+  id              String   @id @default(cuid())
+  ligneId         String
+  ligne           TransportLigne @relation(fields: [ligneId], references: [id])
+  nom             String
+  ordre           Int
+  heure           String
+}
+
+model TransportInscription {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve    @relation(fields: [eleveId], references: [id])
+  classeId        String
+  classe          Classe   @relation(fields: [classeId], references: [id])
+  ligneId         String
+  ligne           TransportLigne @relation(fields: [ligneId], references: [id])
+  arretMonteeId   String?
+  arretDescenteId String?
+  tarif          Float
+  actif           Boolean  @default(true)
+}
+
+model BiblioLivre {
+  id                  String   @id @default(cuid())
+  ecoleId             String
+  ecole               Ecole    @relation(fields: [ecoleId], references: [id])
+  isbn                String?
+  titre               String
+  auteur              String?
+  editeur             String?
+  anneePublication    Int?
+  exemplairesTotal    Int
+  exemplairesDisponibles Int
+  categorie           String?
+  cote                String?
+
+  prets               BiblioPret[]
+}
+
+model BiblioPret {
+  id                  String   @id @default(cuid())
+  livreId             String
+  livre               BiblioLivre @relation(fields: [livreId], references: [id])
+  eleveId             String
+  eleve               Eleve    @relation(fields: [eleveId], references: [id])
+  datePret            DateTime
+  dateRetourPrevue    DateTime
+  dateRetourEffective  DateTime?
+  statut              String   @default("en_cours")
+  penaliteGeneree     Float    @default(0)
+}
+
+// ====================================================================
+// PARTIE B.11 — COMMUNICATION / NOTIFICATIONS
+// ====================================================================
+
+model ModeleMessage {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  code            String   // rappel_echeance/bulletin_publie/absence_signalee
+  sujet           String
+  corps           String
+  canaux          String   @default("[\"in_app\"]") // JSON
+  langue          String   @default("fr")
+  actif           Boolean  @default(true)
+
+  notifications   Notification[]
+
+  @@unique([ecoleId, code, langue])
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  destinataireType String
+  destinataireId   String?
+  destinataire     Utilisateur? @relation(fields: [destinataireId], references: [id])
+  modeleMessageId  String?
+  modeleMessage    ModeleMessage? @relation(fields: [modeleMessageId], references: [id])
+  sujet            String?
+  corps            String
+  canal            String   // sms/email/push/in_app
+  statut          String   @default("en_attente")
+  contexte        String?  // JSON
+  dateCreation     DateTime @default(now())
+  dateEnvoi       DateTime?
+  dateLecture     DateTime?
+}
+
+// ====================================================================
+// PARTIE C.8 + B — JOURNAL D'AUDIT IMMUABLE
+// ====================================================================
+
+model AuditLog {
+  id              Int      @id @default(autoincrement())
+  ecoleId         String?
+  utilisateurId   String?
+  utilisateur     Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  action          String
+  cibleType       String?
+  cibleId         String?
+  details         String?  // JSON
+  adresseIp       String?
+  userAgent       String?
+  dateAction      DateTime @default(now())
+}
