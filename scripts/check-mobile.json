@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Cette capture montre une **interface d'application complète et fonctionnelle**. Il s'agit d'un tableau de bord de gestion scolaire affichant des statistiques (élèves, personnels, encaissements, présence) et des alertes sur les échéances impayées, sans aucun problème d'affichage.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1787809836,
+  "id": "202608271350349b6c3b5731264cd9",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "202608271350349b6c3b5731264cd9",
+  "usage": {
+    "completion_tokens": 69,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 3734,
+    "prompt_tokens_details": {
+      "cached_tokens": 2
+    },
+    "total_tokens": 3803
+  }
+}

@@ -145,3 +145,24 @@ Stage Summary:
 - L'interface s'affiche désormais quel que soit le fuseau horaire du navigateur utilisateur
 - Fichiers modifiés : src/lib/format.ts, src/components/modules/audit.tsx
 - Captures de validation : scripts/screen-tz-fix.png, scripts/screen-final-tz.png
+
+---
+Task ID: FIX-INTERFACE-V2
+Agent: Super Z (main)
+Task: "L'interface ne s'affiche pas" (2e signalement) — diagnostic exhaustif + durcissement
+
+Work Log:
+- Diagnostic complet de la chaîne : dev :3000, prod :3100, gateway :81 — tous HTTP 200, toutes les 19 ressources statiques en 200, HTML SSR complet (176 Ko)
+- Testé navigateur via gateway (:81) desktop + émulation iPhone 14 — 0 erreur, rendu complet confirmé visuellement par VLM
+- Vérifié : pas de service worker, pas de PWA, en-têtes no-cache corrects via Caddy gateway
+- Vérifié dev.log : toutes les requêtes GET / en 200 (~300ms), aucune erreur
+- Corrections apportées :
+  * layout.tsx : métadonnées scaffold Z.ai remplacées par branding ScolaGestion V4 + lang="fr"
+  * Redémarrage PROPRE des deux serveurs (le dev server tournait depuis 03:06 et avait traversé le rebuild prod → risque d'état mixte)
+- Vérifications finales : tsc 0 erreur, build OK, test gateway complet (Élèves, Sécurité) sans aucune erreur
+
+Stage Summary:
+- Diagnostic : l'application est 100% fonctionnelle côté serveur sur toute la chaîne (gateway inclus)
+- Hypothèse restante : cache navigateur utilisateur OU onglet ouvert depuis avant le correctif hydration OU lien preview obsolète
+- Serveurs redémarrés proprement : dev :3000 (HMR), prod :3100, gateway :81
+- Titre onglet désormais "ScolaGestion V4 — Plateforme SaaS de Gestion Scolaire"
