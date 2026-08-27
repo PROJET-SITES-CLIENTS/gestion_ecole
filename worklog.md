@@ -1,6 +1,35 @@
 # Worklog — ScolaGestion V4 complet
 
 ---
+Task ID: FIX-HYDRATION
+Agent: main
+Task: Correction erreur hydratation React (mismatch IDs Radix useId) signalée par l'utilisateur
+
+Work Log:
+- Reproduction : erreur "A tree hydrated but some attributes didn't match" avec diff id="radix-_R_dqndlb_" (client) vs "radix-_R_1nindlb_" (serveur) sur les DropdownMenuTrigger du header AppShell — présente en dev ET en production
+- Diagnostic par isolement :
+  - Page minimale avec DropdownMenu → erreur reproduite
+  - Repro 100% vierge (Next + React + Radix pur, sans shadcn/Prisma/Tailwind) dans tests/hydration-repro → erreur reproduite → BUG DE PLATEFORME confirmé (React 19.2.3 useId + SSR Next 16.1.3), pas un défaut applicatif
+  - Combos testés : React 19.1.0 / 19.2.8 × Next 16.1.3 / 16.3.3
+- Fix appliqué : upgrade next 16.1.3 → 16.3.3 + react/react-dom 19.2.3 → 19.2.8 (save-exact)
+- Méthodologie de test corrigée en cours de route : la console agent-browser cumule l'historique → tests initiaux faussés ; protocole rigoureux établi (console --clear AVANT reload)
+- Validation post-fix (protocole rigoureux) :
+  - Page principale : 3 rechargements → 0 erreur hydratation
+  - Dev server (port 3000) : 0 erreur ; Production (port 3100) : 0 erreur
+  - Navigation modules (V4, Élèves, Finances, Sécurité) : OK
+  - Fiche élève : Historique des classes + Dossier documentaire OK
+  - Server action : création visiteur "Test Hydration Fix" → créée ET listée ✓
+  - 0 erreur JS runtime, 0 erreur console
+- Nettoyage : pages de test supprimées (test-hydration, test-static), repro tests/hydration-repro supprimée, base re-seedée (donnée de test purgée), .next reconstruit proprement
+- Vérifications complémentaires : tsc 0 erreur, prisma validate OK, build production OK
+
+Stage Summary:
+- Cause racine : bug de plateforme React 19.2.3 (format useId) × Next 16.1.3 SSR — corrigé en amont dans les versions ultérieures
+- Fix : upgrades verrouillées next@16.3.3, react@19.2.8, react-dom@19.2.8
+- 0 régression : navigation, données, server actions, hydratation tous validés au navigateur
+- Captures : post-upgrade-eleves.png, post-upgrade-fiche-eleve.png, post-upgrade-final.png
+
+---
 Task ID: AUDIT-COMPLET
 Agent: main
 Task: Audit complet post-implémentation des 37 failles — recherche d'erreurs persistantes
