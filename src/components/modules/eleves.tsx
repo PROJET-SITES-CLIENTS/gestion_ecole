@@ -22,6 +22,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const besoinsSpecifiques = initialData.besoinsSpecifiques ?? [];
   const amenagements = initialData.amenagements ?? [];
   const documents = initialData.documents ?? [];
+  const historiquesClasse = initialData.historiquesClasse ?? [];
   const attributionsManuel = initialData.attributionsManuel ?? [];
   const manuels = initialData.manuels ?? [];
   const autorisationsSortie = initialData.autorisationsSortie ?? [];
@@ -38,6 +39,8 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const eleveAmenagements = amenagements.filter((a: any) => a.eleveId === selectedEleveId);
   const eleveManuels = attributionsManuel.filter((a: any) => a.eleveId === selectedEleveId);
   const eleveAutorisations = autorisationsSortie.filter((a: any) => a.eleveId === selectedEleveId);
+  const eleveDocuments = documents.filter((d: any) => d.eleveId === selectedEleveId);
+  const eleveHistorique = historiquesClasse.filter((h: any) => h.eleveId === selectedEleveId);
   const eleveIncidents = incidentsEleve.filter((i: any) => i.eleveId === selectedEleveId);
 
   const consentementsEnAttente = eleves.filter((e: any) => !e.consentementPortailEleve).length;
@@ -137,6 +140,53 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                           <InfoRow label="Date d'inscription" value={formatDate(eleve.dateInscription)} />
                           <InfoRow label="Classe actuelle" value={classeEleve?.libelle} />
                         </dl>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">Historique des classes</CardTitle></CardHeader>
+                      <CardContent>
+                        {eleveHistorique.length === 0 ? (
+                          <p className="text-sm text-gray-500">Aucun historique enregistré — première année dans l'établissement.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {eleveHistorique.map((h: any) => (
+                              <div key={h.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                <div>
+                                  <div className="text-sm font-medium">{classes.find((c: any) => c.id === h.classeId)?.libelle ?? h.classeId}</div>
+                                  <div className="text-xs text-gray-500">{formatDate(h.dateEntree)} → {h.dateSortie ? formatDate(h.dateSortie) : 'en cours'}</div>
+                                </div>
+                                {h.motif && <Badge variant="outline" className="text-xs">{h.motif}</Badge>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">Dossier documentaire</CardTitle></CardHeader>
+                      <CardContent>
+                        {eleveDocuments.length === 0 ? (
+                          <p className="text-sm text-gray-500">Aucun document associé à cet élève.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {eleveDocuments.map((d: any) => (
+                              <div key={d.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-gray-400" />
+                                  <div>
+                                    <div className="text-sm font-medium">
+                                      {d.type === 'acte_naissance' ? 'Acte de naissance' : d.type === 'certificat_medical' ? 'Certificat médical' : d.type === 'diplome' ? 'Diplôme' : d.type === 'cv' ? 'CV' : d.type}
+                                    </div>
+                                    <div className="text-xs text-gray-500">Ajouté le {formatDate(d.dateAjout)}</div>
+                                  </div>
+                                </div>
+                                {d.confidentiel && <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-xs">Confidentiel</Badge>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
 

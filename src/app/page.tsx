@@ -92,6 +92,8 @@ export default async function Home() {
     plansAccompagnement,
     templatesDocument, documentsGeneres, signaturesElectroniques, rapportsSauvegardes,
     batiments, etages, salleEquipements,
+    permissions, rolePermissions, utilisateurRoles,
+    documentsEleve, historiquesClasse, listesFourniture,
   ] = await Promise.all([
     db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true } }),
     db.cycle.findMany({ where: { ecoleId: ecole.id }, orderBy: { ordre: 'asc' } }),
@@ -221,6 +223,13 @@ export default async function Home() {
     db.batiment.findMany({ where: { ecoleId: ecole.id }, include: { etages: true } }),
     db.etage.findMany(),
     db.salleEquipement.findMany(),
+    // === AUDIT COMPLÉMENT — RBAC, documents, historique, fournitures ===
+    db.permission.findMany({ include: { roles: true } }),
+    db.rolePermission.findMany(),
+    db.utilisateurRole.findMany(),
+    db.documentEleve.findMany(),
+    db.eleveHistoriqueClasse.findMany(),
+    db.listeFourniture.findMany(),
   ]);
 
   // Données agrégées et structurées pour le shell
@@ -236,13 +245,17 @@ export default async function Home() {
     // Fondations
     cycles, sections, niveaux, classes,
     roles,
+    permissions,
+    rolePermissions,
+    utilisateurRoles,
 
     // Élèves
     eleves,
     parents,
     besoinsSpecifiques,
     amenagements,
-    documents: [] as any[],
+    documents: documentsEleve,
+    historiquesClasse,
 
     // Personnel & RH
     personnels,
@@ -287,6 +300,7 @@ export default async function Home() {
     biblioPrets,
     manuels,
     attributionsManuel,
+    listesFourniture,
 
     // Salles & calendrier
     salles,

@@ -5,7 +5,7 @@
 // ====================================================================
 
 import { useTransition } from 'react';
-import { Bus, BookMarked, Utensils, Package, Users } from 'lucide-react';
+import { Bus, BookMarked, Utensils, Package, Users, ClipboardList } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
 import { formatDate, formatMontant } from '@/lib/format';
@@ -19,6 +19,8 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
   const biblioPrets = initialData.biblioPrets ?? [];
   const manuels = initialData.manuels ?? [];
   const attributionsManuel = initialData.attributionsManuel ?? [];
+  const listesFourniture = initialData.listesFourniture ?? [];
+  const niveaux = initialData.niveaux ?? [];
   const eleves = initialData.eleves ?? [];
   const classes = initialData.classes ?? [];
   const [pending, startTransition] = useTransition();
@@ -131,6 +133,27 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
             emptyLabel="Aucune attribution de manuel"
           />
         </div>
+      </SectionBlock>
+
+      <SectionBlock title="Listes de fournitures" description="Fournitures demandées par niveau, publication aux familles">
+        <DataTable
+          columns={[
+            { key: 'niveau', label: 'Niveau', render: (l) => niveaux.find((n: any) => n.id === l.niveauId)?.libelle ?? '—' },
+            { key: 'articles', label: 'Articles', render: (l) => { try { return `${JSON.parse(l.contenu).length} article(s)`; } catch { return '—'; } } },
+            { key: 'datePublication', label: 'Publiée le', render: (l) => l.datePublication ? formatDate(l.datePublication) : '—' },
+            { key: 'publiee', label: 'Statut', render: (l) => <StatusBadge statut={l.publiee ? 'publie' : 'en_attente'} /> },
+            {
+              key: 'detail', label: 'Détail', render: (l) => {
+                try {
+                  const items = JSON.parse(l.contenu) as { article: string; quantite: number }[];
+                  return <span className="text-xs text-gray-500">{items.slice(0, 3).map((i) => `${i.article} ×${i.quantite}`).join(', ')}{items.length > 3 ? '…' : ''}</span>;
+                } catch { return '—'; }
+              },
+            },
+          ]}
+          rows={listesFourniture}
+          emptyLabel="Aucune liste de fournitures"
+        />
       </SectionBlock>
     </div>
   );

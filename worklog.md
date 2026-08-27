@@ -1,6 +1,35 @@
 # Worklog — ScolaGestion V4 complet
 
 ---
+Task ID: AUDIT-COMPLET
+Agent: main
+Task: Audit complet post-implémentation des 37 failles — recherche d'erreurs persistantes
+
+Work Log:
+- TypeScript strict (tsc --noEmit) : 27 erreurs détéctées dans 8 modules UI (masquées par ignoreBuildErrors)
+  - Correction : FieldDef étendu (defaultValue, step) dans shared-ui.tsx + helper valueOf()
+  - Correction : 8 appels startTransition wrappés avec `void` (Promise<{ok}> ≠ Promise<void>)
+  - Correction : paramètre `date` de ConsentementRow rendu optionnel
+  - Correction : clé dupliquée `en_cours` dans statutColor (format.ts)
+- Schéma Prisma : 5 coquilles `fields: atierId]` → `fields: [matiereId]` (lignes 597, 643, 683, 764, 1084) — tolérées par le parseur mais corrigées + regenerate + db push
+- Seed non idempotent (P2002 sur slug) : ajout wipeAll() avec tri topologique via Prisma DMMF → ré-exécutable N fois
+- 21 tables vides détectées → comblées dans seed.ts (RBAC, bulletins, congés+remplacements, programmes+chapitres+avancement, règles de moyenne, compétences, évaluations RH, documents, historique, réservations, inscriptions examens, réunions, fournitures, sorties, cantine, paiement-échéances)
+- 4 datasets invisibles en UI → corrigés :
+  - page.tsx : 6 nouvelles requêtes (permissions, rolePermissions, utilisateurRoles, documentEleve, eleveHistoriqueClasse, listeFourniture) + placeholder `documents: []` remplacé
+  - eleves.tsx : cartes Historique des classes + Dossier documentaire dans l'onglet Identité
+  - securite.tsx : section RBAC (matrice permissions × rôles + utilisateurs habilités)
+  - services.tsx : section Listes de fournitures avec parsing JSON contenu
+- next.config.ts : ignoreBuildErrors retiré → validation TS stricte au build
+- tsconfig.json : exclusion examples/skills/tests (hors périmètre app)
+- Vérifications finales : tsc 0 erreur, prisma valid, seed 3× OK, 162/162 tables remplies, build prod OK, HTTP 200, test navigateur réel (RBAC + fiche élève + fournitures OK), 0 erreur console JS
+
+Stage Summary:
+- Audit : 6 catégories d'erreurs trouvées et corrigées (TS, schéma, seed, données, UI, config build)
+- Base : 162/162 tables avec données de démo cohérentes
+- UI : 4 nouvelles sections fonctionnelles (captures : audit-securite-rbac.png, audit-eleve-dossier.png)
+- Garde-fous : validation TypeScript désormais bloquante au build
+
+---
 Task ID: 1-37
 Agent: main
 Task: Audit et correction complète des 37 failles identifiées vs cahier des charges V4

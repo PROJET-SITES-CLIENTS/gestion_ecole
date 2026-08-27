@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { useTransition } from 'react';
-import { Shield, UserCheck, LogOut, AlertTriangle } from 'lucide-react';
+import { Shield, UserCheck, LogOut, AlertTriangle, KeyRound } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime } from '@/lib/format';
@@ -16,6 +16,11 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
   const autorisations = initialData.autorisationsSortie ?? [];
   const sorties = initialData.sortiesAnticipees ?? [];
   const eleves = initialData.eleves ?? [];
+  const roles = initialData.roles ?? [];
+  const permissions = initialData.permissions ?? [];
+  const rolePermissions = initialData.rolePermissions ?? [];
+  const utilisateurRoles = initialData.utilisateurRoles ?? [];
+  const utilisateurs = initialData.utilisateurs ?? [];
   const [pending, startTransition] = useTransition();
 
   const visiteursPresents = visiteurs.filter((v: any) => !v.dateHeureSortie).length;
@@ -106,6 +111,59 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
           rows={sorties}
           emptyLabel="Aucune sortie anticipée enregistrée"
         />
+      </SectionBlock>
+
+      <SectionBlock
+        title="Habilitations & rôles (RBAC)"
+        description="Matrice des permissions par rôle et utilisateurs habilités"
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 pr-4 font-medium text-gray-500">Permission</th>
+                <th className="text-left py-2 pr-4 font-medium text-gray-500">Module</th>
+                {roles.map((r: any) => (
+                  <th key={r.id} className="py-2 px-3 font-medium text-gray-700 text-center">{r.libelle}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {permissions.map((p: any) => (
+                <tr key={p.id} className="border-b border-gray-50">
+                  <td className="py-2 pr-4">
+                    <div className="font-medium">{p.libelle}</div>
+                    <div className="text-[10px] text-gray-400 font-mono">{p.code}</div>
+                  </td>
+                  <td className="py-2 pr-4 text-gray-500">{p.module}</td>
+                  {roles.map((r: any) => {
+                    const has = rolePermissions.some((rp: any) => rp.roleId === r.id && rp.permissionId === p.id);
+                    return (
+                      <td key={r.id} className="py-2 px-3 text-center">
+                        {has ? <span className="text-emerald-600">✓</span> : <span className="text-gray-300">—</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4">
+          <h4 className="text-sm font-medium mb-2">Utilisateurs par rôle</h4>
+          <div className="flex flex-wrap gap-2">
+            {utilisateurRoles.map((ur: any) => {
+              const u = utilisateurs.find((x: any) => x.id === ur.utilisateurId);
+              const r = roles.find((x: any) => x.id === ur.roleId);
+              if (!u || !r) return null;
+              return (
+                <Badge key={`${ur.utilisateurId}-${ur.roleId}`} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                  <KeyRound className="h-3 w-3 mr-1" />{u.prenom} {u.nom} — {r.libelle}
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
       </SectionBlock>
     </div>
   );
