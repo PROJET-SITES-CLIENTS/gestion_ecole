@@ -4,6 +4,7 @@
 // Module Journal d'audit — traçabilité exhaustive immuable
 // ====================================================================
 
+import { useEffect, useState } from 'react';
 import { ScrollText, Activity, ShieldAlert } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, SectionBlock } from '@/components/shared-ui';
 import { formatDateTime } from '@/lib/format';
@@ -15,10 +16,16 @@ export default function AuditModule({ initialData }: { initialData: any }) {
   // KPIs
   const actionsSensibles = logs.filter((l: any) => /paiement|note|support|bulletin|sanction/.test(l.action)).length;
   const supportConnexions = logs.filter((l: any) => l.action === 'support.connexion_en_tant_que').length;
-  const dernieres24h = logs.filter((l: any) => {
-    const d = new Date(l.dateAction);
-    return Date.now() - d.getTime() < 24 * 60 * 60 * 1000;
-  }).length;
+
+  // KPI "dernières 24h" calculé APRÈS montage : Date.now() pendant le rendu
+  // produirait un résultat différent entre serveur et client (hydration mismatch).
+  const [dernieres24h, setDernieres24h] = useState(0);
+  useEffect(() => {
+    setDernieres24h(logs.filter((l: any) => {
+      const d = new Date(l.dateAction);
+      return Date.now() - d.getTime() < 24 * 60 * 60 * 1000;
+    }).length);
+  }, [logs]);
 
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">

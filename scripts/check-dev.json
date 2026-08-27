@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Cette capture d'écran montre l'interface complète de la plateforme ScolaGestion, plus précisément le tableau de bord de la section \"Direction\". L'interface s'affiche correctement sans écran blanc ni erreur, présentant une barre latérale de navigation, des indicateurs clés (12 élèves actifs, 6 personnels, 300 000 XOF encaissés, 80% de présence) et une alerte concernant des échéances impayées. Il s'agit donc d'une application fonctionnelle et entièrement visible.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1787808647,
+  "id": "20260827133042c3a0134ba0314c4b",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "20260827133042c3a0134ba0314c4b",
+  "usage": {
+    "completion_tokens": 119,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 939,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_tokens": 1058
+  }
+}

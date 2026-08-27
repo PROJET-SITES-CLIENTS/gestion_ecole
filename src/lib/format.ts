@@ -8,7 +8,14 @@ export function formatMontant(montant: number | null | undefined, devise = "XOF"
 export function formatDate(date: Date | string | null | undefined, opts?: Intl.DateTimeFormatOptions): string {
   if (!date) return "-";
   const d = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("fr-FR", opts ?? { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  // timeZone "UTC" explicite : garantit un rendu IDENTIQUE côté serveur et client
+  // (sinon Intl.DateTimeFormat utilise le fuseau local de la machine, différent
+  // entre le serveur SSR et le navigateur => hydration mismatch React 19).
+  const options: Intl.DateTimeFormatOptions = {
+    ...(opts ?? { day: "2-digit", month: "2-digit", year: "numeric" }),
+    timeZone: "UTC",
+  };
+  return new Intl.DateTimeFormat("fr-FR", options).format(d);
 }
 
 export function formatDateTime(date: Date | string | null | undefined): string {

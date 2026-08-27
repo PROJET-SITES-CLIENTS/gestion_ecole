@@ -120,3 +120,28 @@ Stage Summary:
   * Chaude : #7B0B0A, #4A3522, #BE4D0B, #704D27, #BC730A, #9D672B
 - Livrable : download/verification-palettes.png (comparaison original vs extrait)
 - En attente : instruction utilisateur sur l'usage de ces palettes (thème ScolaGestion ?)
+
+---
+Task ID: FIX-HYDRATION-TZ
+Agent: Super Z (main)
+Task: "L'interface ne s'affiche pas" — résolution du hydration mismatch React 19 (radix-_R_ id mismatch)
+
+Work Log:
+- Diagnostic : les 2 serveurs (dev :3000, prod :3100) répondaient HTTP 200 et rendaient correctement en navigateur headless local (même fuseau UTC que le serveur)
+- Cause racine identifiée : src/lib/format.ts → formatDate/formatDateTime utilisaient Intl.DateTimeFormat("fr-FR") SANS timeZone explicite
+  → Le serveur SSR rendait les dates en UTC, le navigateur de l'utilisateur les hydratait dans SON fuseau horaire
+  → contenu texte différent → React 19 détectait le mismatch, jetait le HTML serveur et re-rendait tout
+  → les useId de Radix changeaient → erreur "id=radix-_R_dqndlb_ vs radix-_R_1nindlb_" + interface cassée
+- Preuve : 48+ usages de formatDate/formatDateTime dans les modules, dont le dashboard par défaut (direction.tsx lignes 77, 90, 106, 121)
+- Correctif 1 : format.ts — option timeZone: "UTC" forcée dans formatDate → rendu 100% déterministe serveur/client
+- Correctif 2 : modules/audit.tsx — KPI "dernières 24h" basé sur Date.now() déplacé dans useState + useEffect (calcul post-mount)
+- Composants UI non utilisés confirmés inoffensifs (chart.tsx, calendar.tsx, sidebar.tsx jamais importés)
+- Vérifications : tsc --noEmit 0 erreur ; npm run build OK ; serveur prod relancé sur :3100 (ancien processus tué, PID 6618)
+- Tests navigateur avec fuseaux simulés (TZ env var) : Europe/Paris (UTC+2) et America/Los_Angeles (UTC-8)
+  → 0 erreur d'hydration, 0 warning console, modules Dashboard/Audit/Finances OK, KPI "Dernières 24h" fonctionnel
+
+Stage Summary:
+- Hydration mismatch RÉSOLU : formatage de dates déterministe (timeZone UTC) + KPI temps réel post-mount
+- L'interface s'affiche désormais quel que soit le fuseau horaire du navigateur utilisateur
+- Fichiers modifiés : src/lib/format.ts, src/components/modules/audit.tsx
+- Captures de validation : scripts/screen-tz-fix.png, scripts/screen-final-tz.png
