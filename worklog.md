@@ -98,3 +98,25 @@ Stage Summary:
 - UI : nouveau module "Modules V4 (37 failles)" avec KPIs + 37 sections détaillées
 - Couverture V4 atteinte : 100% des 37 failles identifiées
 - Démo fonctionnelle : http://localhost:3000/ → onglet "Modules V4 (37 failles)"
+
+---
+Task ID: PALETTES-EXTRACT
+Agent: Super Z (main)
+Task: Analyse de l'image de palettes de couleurs uploadée (clr 1.png)
+
+Work Log:
+- Image analysée via VLM (glm-5v-turbo) : 4 palettes de 6 couleurs en grille 2x2 sur fond noir
+- 3 passes d'échantillonnage pixel (PIL) : scan par quadrants → centres de pastilles → mode statistique (couleur dominante quantifiée, >500 px dominants par pastille)
+- Découverte clé : les pastilles sont des couleurs PLATES avec bords antialiasés → la moyenne RGB est faussée, seul le mode statistique est fiable
+- Image de vérification générée + validée par VLM : fidélité confirmée
+- Scripts persistés : scripts/extract-palette*.py, scripts/profile-drop.py, scripts/make-verification.py
+- Résultat JSON : scripts/palettes-extraites.json
+
+Stage Summary:
+- 4 palettes × 6 couleurs = 24 codes hex exacts extraits :
+  * Neutre : #2C2C2C, #BDAB9D, #525252, #D0C7BE, #AEAEAE, #FFFFFF
+  * Froide : #083360, #086014, #0D6287, #5A860B, #02A0C3, #9AB311
+  * Vive   : #D20001, #5309B8, #ED850A, #2C6FC0, #EED73C, #7DC643
+  * Chaude : #7B0B0A, #4A3522, #BE4D0B, #704D27, #BC730A, #9D672B
+- Livrable : download/verification-palettes.png (comparaison original vs extrait)
+- En attente : instruction utilisateur sur l'usage de ces palettes (thème ScolaGestion ?)

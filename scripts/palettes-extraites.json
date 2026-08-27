@@ -1,0 +1,34 @@
+{
+  "neutre": {
+    "noir": "#2C2C2C",
+    "taupe": "#BDAB9D",
+    "gris-fonce": "#525252",
+    "beige": "#D0C7BE",
+    "gris-clair": "#AEAEAE",
+    "blanc": "#FFFFFF"
+  },
+  "froide": {
+    "bleu-indigo": "#083360",
+    "vert-foret": "#086014",
+    "bleu-ocean": "#0D6287",
+    "vert-feuille": "#5A860B",
+    "turquoise": "#02A0C3",
+    "vert-clair": "#9AB311"
+  },
+  "vive": {
+    "rouge": "#D20001",
+    "violet": "#5309B8",
+    "orange": "#ED850A",
+    "bleu": "#2C6FC0",
+    "jaune": "#EED73C",
+    "vert": "#7DC643"
+  },
+  "chaude": {
+    "rouge": "#7B0B0A",
+    "chocolat": "#4A3522",
+    "coral": "#BE4D0B",
+    "marron": "#704D27",
+    "orange": "#BC730A",
+    "caramel": "#9D672B"
+  }
+}
