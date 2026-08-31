@@ -61,6 +61,16 @@ async function wipeAll() {
     }
   }
 
+  // Tables de jointure implicites many-to-many : absentes du DMMF, il faut
+  // les vider en SQL brut, sinon leurs lignes deviennent orphelines à chaque
+  // re-seed (violation PRAGMA foreign_key_check).
+  const implicitJoinTables = ["_EcoleToPermission"];
+  for (const t of implicitJoinTables) {
+    try {
+      await db.$executeRawUnsafe(`DELETE FROM "${t}";`);
+    } catch { /* table absente : schéma sans cette relation */ }
+  }
+
   try {
     await db.$executeRawUnsafe("PRAGMA foreign_keys = ON;");
   } catch { /* non bloquant */ }

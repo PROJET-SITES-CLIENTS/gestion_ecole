@@ -11,7 +11,7 @@ import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock } from '@/co
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
 
-export default function DirectionModule({ initialData, mode = 'dashboard' }: { initialData: any; mode?: 'dashboard' | 'full' }) {
+export default function DirectionModule({ initialData, mode = 'dashboard', portalLabel = 'Direction' }: { initialData: any; mode?: 'dashboard' | 'full'; portalLabel?: string }) {
   const eleves = initialData.eleves ?? [];
   const personnels = initialData.personnels ?? [];
   const echeances = initialData.echeances ?? [];
@@ -35,7 +35,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard' }: { i
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
       <PageHeader
-        title={mode === 'dashboard' ? 'Tableau de bord — Direction' : 'Direction'}
+        title={mode === 'dashboard' ? `Tableau de bord — ${portalLabel}` : 'Direction'}
         subtitle={`Année scolaire ${initialData.anneeScolaire?.libelle ?? '—'} · ${classes.length} classes`}
       />
 

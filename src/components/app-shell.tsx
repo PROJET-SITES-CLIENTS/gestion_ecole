@@ -119,7 +119,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
         if (portal === 'super_admin') return <SaasModule {...props} mode="dashboard" />;
         if (portal === 'parent') return <ParentPortalModule {...props} mode="dashboard" />;
         if (portal === 'eleve') return <ElevePortalModule {...props} mode="dashboard" />;
-        return <DirectionModule {...props} mode="dashboard" />;
+        return <DirectionModule {...props} mode="dashboard" portalLabel={portal === 'enseignant' ? 'Enseignant' : 'Direction'} />;
       case 'saas': return <SaasModule {...props} mode="full" />;
       case 'eleves': return <ElevesModule {...props} />;
       case 'personnel': return <PersonnelModule {...props} />;
