@@ -166,3 +166,30 @@ Stage Summary:
 - Hypothèse restante : cache navigateur utilisateur OU onglet ouvert depuis avant le correctif hydration OU lien preview obsolète
 - Serveurs redémarrés proprement : dev :3000 (HMR), prod :3100, gateway :81
 - Titre onglet désormais "ScolaGestion V4 — Plateforme SaaS de Gestion Scolaire"
+
+---
+Task ID: VERIF-ULTRA-COMPLETE
+Agent: Super Z (main)
+Task: Vérification ultra-complète de bout en bout demandée par l'utilisateur
+
+Work Log:
+- Infrastructure : dev :3000, prod :3100 (rebuild + relance après crash), gateway :81 — tous HTTP 200, tsc 0 erreur, build OK
+- Base de données : audit-db.ts → 162/162 tables remplies, 0 table vide, invariants métier OK
+- Fausse alerte schema : "fields: atierId]" à l'affichage = artefact ANSI ([m mangé par le terminal) ; octets réels = [matiereId] corrects, prisma validate OK
+- Test E2E modules : 15/15 modules OK via gateway (0 erreur JS chacun)
+- DÉFAUT #1 TROUVÉ ET CORRIGÉ — Portail Élève cassé : sidebar vide (aucun module n'avait 'eleve' dans portals) + dashboard Direction affiché à un élève
+  * Créé src/components/modules/eleve-portal.tsx (moyenne, bulletins, notes, emploi du temps, absences, échéances, incidents, RDV, notifications)
+  * Câblé dans app-shell.tsx : ModuleId 'eleve_portal', dashboard élève, handlePortalEleve, bascule directe du dropdown
+- DÉFAUT #2 TROUVÉ ET CORRIGÉ — Notifications invisibles : findFirst({type:'personnel'}) sans tri renvoyait Aïssatou Ba (enseignante) au lieu d'Awa Diop (direction@vinci.sn, destinataire des notifications du seed)
+  * page.tsx : ciblage déterministe email startsWith 'direction@' avec fallback
+  * Résultat : badge cloche affiche 2, les 2 notifications visibles (dashboard + cloche)
+- Interactions testées : onglets fiche élève (Identité/Besoins/Manuels), formulaire inscription ÉLÈVE complet (remplissage → POST server action → création EL-411609 en base → visible après rechargement → élève de test supprimé), sélecteurs natifs (select M / Sixième A), date picker
+- API /api → {"message":"Hello, world!"} OK
+- Test final : 21/21 OK (1 chargement + 15 modules + 5 portails), 0 erreur, badge notifications "2"
+- Scripts persistés : e2e-modules.sh, e2e-portails.sh, e2e-final.sh, check-destructuring.py, test-assets.sh
+
+Stage Summary:
+- ÉTAT FINAL : application 100% fonctionnelle de bout en bout (lecture + écriture)
+- 2 défauts réels découverts et corrigés lors de cette vérification : portail Élève vide, notifications jamais affichées
+- Production rebuildée avec les correctifs, serveurs : dev :3000 / prod :3100 / gateway :81
+- Captures : screen-eleve-portal.png, screen-final-global.png

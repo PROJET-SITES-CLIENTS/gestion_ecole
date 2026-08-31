@@ -36,6 +36,7 @@ import SecuriteModule from './modules/securite';
 import CommunicationModule from './modules/communication';
 import AuditModule from './modules/audit';
 import ParentPortalModule from './modules/parent-portal';
+import ElevePortalModule from './modules/eleve-portal';
 import V4ModulesModule from './modules/v4-modules';
 
 export type Portal = 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve';
@@ -43,7 +44,7 @@ export type Portal = 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'el
 export type ModuleId =
   | 'dashboard' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
-  | 'rdv' | 'securite' | 'communication' | 'audit' | 'parent_portal' | 'v4_modules';
+  | 'rdv' | 'securite' | 'communication' | 'audit' | 'parent_portal' | 'eleve_portal' | 'v4_modules';
 
 type ModuleDef = {
   id: ModuleId;
@@ -53,7 +54,7 @@ type ModuleDef = {
 };
 
 const MODULES: ModuleDef[] = [
-  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, portals: ['super_admin', 'direction', 'enseignant', 'parent'] },
+  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, portals: ['super_admin', 'direction', 'enseignant', 'parent', 'eleve'] },
   { id: 'saas', label: 'Couche SaaS', icon: Building2, portals: ['super_admin'] },
   { id: 'eleves', label: 'Élèves', icon: Users, portals: ['super_admin', 'direction', 'enseignant'] },
   { id: 'personnel', label: 'Personnel', icon: GraduationCap, portals: ['super_admin', 'direction'] },
@@ -70,6 +71,7 @@ const MODULES: ModuleDef[] = [
   { id: 'audit', label: "Journal d'audit", icon: ScrollText, portals: ['super_admin', 'direction'] },
   { id: 'v4_modules', label: 'Modules V4 (37 failles)', icon: CheckCircle2, portals: ['super_admin', 'direction'] },
   { id: 'parent_portal', label: 'Portail Parent (démonstration)', icon: UserIcon, portals: ['parent'] },
+  { id: 'eleve_portal', label: 'Portail Élève (démonstration)', icon: UserIcon, portals: ['eleve'] },
 ];
 
 const PORTAL_LABELS: Record<Portal, string> = {
@@ -101,6 +103,12 @@ export default function AppShell({ initialData }: { initialData: any }) {
     setActive('parent_portal');
   };
 
+  // Pour le portail élève, on bascule directement sur le portail élève
+  const handlePortalEleve = () => {
+    setPortal('eleve');
+    setActive('eleve_portal');
+  };
+
   const school = initialData.ecole;
   const notifications = initialData.notifications ?? [];
 
@@ -110,6 +118,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'dashboard':
         if (portal === 'super_admin') return <SaasModule {...props} mode="dashboard" />;
         if (portal === 'parent') return <ParentPortalModule {...props} mode="dashboard" />;
+        if (portal === 'eleve') return <ElevePortalModule {...props} mode="dashboard" />;
         return <DirectionModule {...props} mode="dashboard" />;
       case 'saas': return <SaasModule {...props} mode="full" />;
       case 'eleves': return <ElevesModule {...props} />;
@@ -127,6 +136,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'audit': return <AuditModule {...props} />;
       case 'v4_modules': return <V4ModulesModule {...props} />;
       case 'parent_portal': return <ParentPortalModule {...props} mode="full" />;
+      case 'eleve_portal': return <ElevePortalModule {...props} mode="full" />;
       default: return null;
     }
   };
@@ -234,7 +244,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
               <DropdownMenuLabel>Changer de portail (démo)</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {(['super_admin', 'direction', 'enseignant', 'parent', 'eleve'] as Portal[]).map(p => (
-                <DropdownMenuItem key={p} onClick={() => p === 'parent' ? handlePortalParent() : handlePortalChange(p)}>
+                <DropdownMenuItem key={p} onClick={() => p === 'parent' ? handlePortalParent() : p === 'eleve' ? handlePortalEleve() : handlePortalChange(p)}>
                   <div className="flex items-center gap-2">
                     {portal === p && <span className="h-2 w-2 rounded-full bg-emerald-600" />}
                     <span>{PORTAL_LABELS[p]}</span>

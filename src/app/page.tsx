@@ -29,8 +29,14 @@ export default async function Home() {
   // Super-admin éditeur (le 1er)
   const superAdmin = await db.utilisateur.findFirst({ where: { type: 'super_admin' } });
 
-  // Direction (le 1er personnel de l'école)
-  const dirUtilisateur = await db.utilisateur.findFirst({ where: { ecoleId: ecole.id, type: 'personnel' } });
+  // Direction : le compte de direction (démo : direction@…) est ciblé explicitement,
+  // car findFirst sans tri renvoie un personnel arbitraire (enseignant, etc.),
+  // ce qui rendait les notifications de la direction invisibles.
+  const dirUtilisateur =
+    (await db.utilisateur.findFirst({
+      where: { ecoleId: ecole.id, type: 'personnel', email: { startsWith: 'direction@' } },
+    })) ??
+    (await db.utilisateur.findFirst({ where: { ecoleId: ecole.id, type: 'personnel' } }));
   const dirUserId = dirUtilisateur?.id ?? 'system';
 
   // Données SaaS cross-tenant
