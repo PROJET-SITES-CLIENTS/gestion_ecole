@@ -7,7 +7,9 @@
 
 import { useState, useTransition } from 'react';
 import { GraduationCap, Users, CalendarOff, FileText, Eye } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, InfoRow, EmptyState } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, InfoRow, EmptyState, ModalForm, CreateButton } from '@/components/shared-ui';
+import { Button } from '@/components/ui/button';
+import * as actions from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { formatMontant, formatDate, initiales } from '@/lib/format';
@@ -132,6 +134,79 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               </div>
             ) : <EmptyState title="Aucun personnel sélectionné" />}
           </SectionBlock>
+
+        <div className="lg:col-span-3">
+          <SectionBlock
+            title="Workflow congés & remplacements (RH)"
+            description="Demande → validation/refus direction → planification du remplacement (contrôles de chevauchement automatiques)"
+            action={
+              <ModalForm
+                trigger={<CreateButton label="Demande de congé" />}
+                title="Enregistrer une demande de congé"
+                fields={[
+                  { name: 'personnelId', label: 'Personnel', type: 'select', options: personnels.map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })), required: true },
+                  { name: 'type', label: 'Type', type: 'select', options: [
+                    { value: 'annuel', label: 'Congé annuel' },
+                    { value: 'maladie', label: 'Maladie' },
+                    { value: 'maternite', label: 'Maternité' },
+                    { value: 'exceptionnel', label: 'Exceptionnel' },
+                  ], required: true },
+                  { name: 'dateDebut', label: 'Du', type: 'date', required: true },
+                  { name: 'dateFin', label: 'Au', type: 'date', required: true },
+                  { name: 'motif', label: 'Motif', type: 'textarea' },
+                ]}
+                action={actions.demanderConge}
+              />
+            }
+          >
+            <DataTable
+              columns={[
+                { key: 'personnel', label: 'Personnel', render: (c) => { const p = personnels.find((x: any) => x.id === c.personnelId); return p ? `${p.prenom} ${p.nom}` : '—'; } },
+                { key: 'type', label: 'Type' },
+                { key: 'dateDebut', label: 'Du', render: (c) => formatDate(c.dateDebut) },
+                { key: 'dateFin', label: 'Au', render: (c) => formatDate(c.dateFin) },
+                { key: 'motif', label: 'Motif' },
+                { key: 'statut', label: 'Statut', render: (c) => <StatusBadge statut={c.statut} /> },
+                {
+                  key: 'actions', label: 'Actions', render: (c) => c.statut === 'demande' ? (
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => startTransition(async () => { await actions.traiterConge(c.id, 'valide'); })}>Valider</Button>
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => startTransition(async () => { await actions.traiterConge(c.id, 'refuse'); })}>Refuser</Button>
+                    </div>
+                  ) : c.statut === 'valide' ? (
+                    <ModalForm
+                      trigger={<Button size="sm" variant="outline">Remplacement</Button>}
+                      title="Planifier le remplacement"
+                      fields={[
+                        { name: 'congeId', type: 'hidden', label: 'Congé', defaultValue: c.id },
+                        { name: 'personnelRemplacantId', label: 'Remplaçant', type: 'select', options: personnels.filter((p: any) => p.id !== c.personnelId && p.statut === 'actif').map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })), required: true },
+                        { name: 'dateDebut', label: 'Du', type: 'date', defaultValue: c.dateDebut?.toISOString().slice(0, 10), required: true },
+                        { name: 'dateFin', label: 'Au', type: 'date', defaultValue: c.dateFin?.toISOString().slice(0, 10), required: true },
+                      ]}
+                      action={actions.assignerRemplacement}
+                    />
+                  ) : null,
+                },
+              ]}
+              rows={conges}
+              emptyLabel="Aucune demande de congé"
+            />
+          </SectionBlock>
+
+          <SectionBlock title="Remplacements planifiés" description="Personnel absent → remplaçant affecté">
+            <DataTable
+              columns={[
+                { key: 'absent', label: 'Absent', render: (r) => { const p = personnels.find((x: any) => x.id === r.personnelAbsentId); return p ? `${p.prenom} ${p.nom}` : '—'; } },
+                { key: 'remplacant', label: 'Remplaçant', render: (r) => { const p = personnels.find((x: any) => x.id === r.personnelRemplacantId); return p ? `${p.prenom} ${p.nom}` : '—'; } },
+                { key: 'dateDebut', label: 'Du', render: (r) => formatDate(r.dateDebut) },
+                { key: 'dateFin', label: 'Au', render: (r) => formatDate(r.dateFin) },
+                { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
+              ]}
+              rows={remplacements}
+              emptyLabel="Aucun remplacement planifié"
+            />
+          </SectionBlock>
+        </div>
         </div>
       </div>
     </div>

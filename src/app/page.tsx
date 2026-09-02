@@ -1,59 +1,76 @@
 // ====================================================================
-// Page principale — charge toutes les données initiales et les passe
-// au shell applicatif côté client.
+// Page principale — authentification OBLIGATOIRE (P0).
+// - Session absente → redirection /login
+// - Portail dérivé du compte connecté (plus de sélecteur de démo)
+// - Payload : datasets AFFICHÉS uniquement (35 requêtes invisibles
+//   purgées — audit P3) et secrets exclus par select (audit P0 :
+//   plus aucun motDePasseHash / tokenHash / secret côté client)
 // ====================================================================
 
 import { db } from '@/lib/db';
+import { redirect } from 'next/navigation';
 import AppShell from '@/components/app-shell';
+import { getSessionCourante, portailDuCompte } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+const ECOLE_DEMO_SLUG = 'vinci';
+
 export default async function Home() {
-  // École démo (slug "vinci")
-  const ecole = await db.ecole.findFirst({
-    where: { slug: 'vinci' },
-    include: { plans: true },
-  });
+  // ---- Session (P0) : pas de session → login ----
+  const session = await getSessionCourante();
+  if (!session) redirect('/login');
+
+  const portal = portailDuCompte(session.utilisateur.type, session.permissions);
+
+  // ---- École de travail : celle de l'utilisateur, sinon école démo
+  // (super-admin éditeur = vue cross-tenant) ----
+  const ecole = session.utilisateur.ecoleId
+    ? await db.ecole.findFirst({ where: { id: session.utilisateur.ecoleId }, include: { plans: true } })
+    : await db.ecole.findFirst({ where: { slug: ECOLE_DEMO_SLUG }, include: { plans: true } });
 
   if (!ecole) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h1 className="text-xl font-semibold mb-2">Base de données vide</h1>
-          <p className="text-sm text-gray-500">Exécutez le script de seed : <code>bunx tsx scripts/seed.ts</code></p>
+          <h1 className="text-xl font-semibold mb-2">Aucune école associée à ce compte</h1>
+          <p className="text-sm text-gray-500">Contactez l&apos;administrateur de la plateforme ou exécutez le seed.</p>
         </div>
       </div>
     );
   }
 
-  // Super-admin éditeur (le 1er)
-  const superAdmin = await db.utilisateur.findFirst({ where: { type: 'super_admin' } });
-
-  // Direction : le compte de direction (démo : direction@…) est ciblé explicitement,
-  // car findFirst sans tri renvoie un personnel arbitraire (enseignant, etc.),
-  // ce qui rendait les notifications de la direction invisibles.
+  // Direction : ciblage déterministe (email direction@, fallback createdAt).
   const dirUtilisateur =
     (await db.utilisateur.findFirst({
       where: { ecoleId: ecole.id, type: 'personnel', email: { startsWith: 'direction@' } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
     })) ??
-    (await db.utilisateur.findFirst({ where: { ecoleId: ecole.id, type: 'personnel' } }));
+    (await db.utilisateur.findFirst({
+      where: { ecoleId: ecole.id, type: 'personnel' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    }));
   const dirUserId = dirUtilisateur?.id ?? 'system';
 
-  // Données SaaS cross-tenant
-  const [ecoles, plans, facturesSaas, totalElevesGeres] = await Promise.all([
-    db.ecole.findMany({ include: { plans: true } }),
-    db.planTarifaire.findMany(),
-    db.factureSaas.findMany(),
-    db.eleve.count(),
-  ]);
+  // ---- Données SaaS cross-tenant (super-admin uniquement) ----
+  const [ecoles, plans, facturesSaas, totalElevesGeres] = session.utilisateur.type === 'super_admin'
+    ? await Promise.all([
+        db.ecole.findMany({ select: { id: true, nom: true, slug: true, pays: true, devise: true, statut: true } }),
+        db.planTarifaire.findMany(),
+        db.factureSaas.findMany(),
+        db.eleve.count(),
+      ])
+    : [[], [], [], 0];
 
-  // Données de l'école démo — tout en parallèle
+  // ---- Données de l'école — datasets AFFICHÉS uniquement ----
   const [
-    anneeScolaire, cycles, sections, niveaux, classes,
-    eleves, personnels, parents, utilisateurs,
+    anneeScolaire, niveaux, classes,
+    eleves, personnels, parents,
     periodes, matieres, programmes, avancements,
     seances, presences,
-    evaluations, notes, bulletins, evalsCompetence, competences, reglesCalcul,
+    evaluations, notes, bulletins, evalsCompetence, competences,
     incidents, sanctions,
     frais, echeances, paiements, depenses, articlesStock, mouvementsStock,
     salles, reservations, calendrier,
@@ -67,49 +84,44 @@ export default async function Home() {
     manuels, attributionsManuel,
     besoinsSpecifiques, amenagements,
     conges, remplacements, evaluationsRh, roles,
-    // === EXTENSION V4 — 37 FAILLES ===
-    tickets, signalementsMineurs, partenairesExternes, mesuresProtection,
-    verificationsAntecedents, habilitationsPenales,
-    bulletinsPaie, variablesPaie,
-    offresEmploi, candidatures, entretiensRecrutement,
-    stages, conventionsStage, soldesConge,
+    // === EXTENSION V4 — datasets réellement affichés ===
+    tickets, signalementsMineurs,
+    verificationsAntecedents,
+    bulletinsPaie,
+    offresEmploi,
+    stages, soldesConge,
     candidaturesAdmission,
-    emploisTemps, creneauxHebdo,
-    devoirs, rendusDevoir,
-    cahiersTexte, entreesCahierTexte,
-    conseilsClasse, deliberationsConseil,
+    emploisTemps,
+    devoirs,
+    cahiersTexte,
+    conseilsClasse,
     dispenses,
     justificationsAbsence,
-    budgets, lignesBudget,
-    comptesComptables, journauxComptables, ecrituresComptable,
-    fournisseurs, commandesFournisseur, facturesFournisseur, paiementsFournisseur,
+    budgets,
+    ecrituresComptable,
+    fournisseurs, facturesFournisseur,
     avoirsEcole,
-    conversations, messages, piecesJointes,
-    annonces,
-    smsLogs, devicesMobiles, pushNotificationLogs,
-    sessionsUtilisateur, twoFactorMethods, tentativesConnexion,
-    jetonsAuth,
-    apiTokens, apiTokenLogs,
-    webhooksSortants, webhookDeliveries,
-    demandesEffacement, exportsDonnees,
-    consentementsImage, consentementsCommunication, registreTraitements,
-    domainesPersonnalises, themesEcole,
-    featureFlags, featureFlagEcoles, quotaUsages, stripeEvents, avoirsSaas,
+    conversations, annonces,
+    smsLogs,
+    pushNotificationLogs,
+    // Sécurité & conformité (selects SANS secrets — P0)
+    tentativesConnexion,
+    avoirsSaas,
+    demandesEffacement,
+    consentementsImage,
+    domainesPersonnalises,
+    quotaUsages,
     plansAccompagnement,
-    templatesDocument, documentsGeneres, signaturesElectroniques, rapportsSauvegardes,
-    batiments, etages, salleEquipements,
-    permissions, rolePermissions, utilisateurRoles,
-    documentsEleve, historiquesClasse, listesFourniture,
+    batiments,
+    // === SANTÉ & INFIRMERIE (P2) ===
+    fichesSante, passagesInfirmerie, vaccinations,
   ] = await Promise.all([
-    db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true } }),
-    db.cycle.findMany({ where: { ecoleId: ecole.id }, orderBy: { ordre: 'asc' } }),
-    db.section.findMany(),
+    db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true }, orderBy: { dateDebut: 'desc' } }),
     db.niveau.findMany(),
     db.classe.findMany({ where: { ecoleId: ecole.id } }),
     db.eleve.findMany({ where: { ecoleId: ecole.id }, orderBy: { nom: 'asc' } }),
     db.personnel.findMany({ where: { ecoleId: ecole.id }, orderBy: { nom: 'asc' } }),
-    db.parentTuteur.findMany({ where: { ecoleId: ecole.id } }),
-    db.utilisateur.findMany({ where: { ecoleId: ecole.id } }),
+    db.parentTuteur.findMany({ where: { ecoleId: ecole.id }, include: { eleves: { include: { eleve: true } } } }),
     db.periode.findMany({ where: { ecoleId: ecole.id } }),
     db.matiere.findMany({ where: { ecoleId: ecole.id } }),
     db.programme.findMany({ where: { ecoleId: ecole.id } }),
@@ -121,7 +133,6 @@ export default async function Home() {
     db.bulletin.findMany(),
     db.evaluationCompetence.findMany(),
     db.competence.findMany({ where: { ecoleId: ecole.id } }),
-    db.regleCalculMoyenne.findMany({ where: { ecoleId: ecole.id } }),
     db.incident.findMany(),
     db.sanction.findMany(),
     db.frais.findMany({ where: { ecoleId: ecole.id } }),
@@ -142,7 +153,11 @@ export default async function Home() {
     db.autorisationSortie.findMany(),
     db.sortieAnticipee.findMany({ orderBy: { dateSortie: 'desc' } }),
     db.modeleMessage.findMany({ where: { ecoleId: ecole.id } }),
-    db.notification.findMany({ where: { ecoleId: ecole.id, destinataireId: dirUserId }, orderBy: { dateCreation: 'desc' } }),
+    // Notifications DU COMPTE CONNECTÉ (plus seulement la direction)
+    db.notification.findMany({
+      where: { ecoleId: ecole.id, destinataireId: session.utilisateur.id },
+      orderBy: { dateCreation: 'desc' },
+    }),
     db.auditLog.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateAction: 'desc' }, take: 100 }),
     db.cantineInscription.findMany({ where: { ecoleId: ecole.id } }),
     db.transportLigne.findMany({ where: { ecoleId: ecole.id } }),
@@ -158,227 +173,195 @@ export default async function Home() {
     db.remplacement.findMany(),
     db.evaluationPersonnel.findMany(),
     db.role.findMany({ where: { ecoleId: ecole.id } }),
-    // === EXTENSION V4 — chargement des 37 failles ===
+    // === EXTENSION V4 ===
     db.ticket.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateCreation: 'desc' }, include: { messages: true } }),
     db.signalementMineur.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateSignalement: 'desc' } }),
-    db.partenaireExterne.findMany(),
-    db.mesureProtection.findMany(),
     db.verificationAntecedents.findMany({ where: { ecoleId: ecole.id } }),
-    db.habilitationPenale.findMany({ where: { ecoleId: ecole.id } }),
     db.bulletinPaie.findMany({ where: { ecoleId: ecole.id }, orderBy: { periode: 'desc' }, include: { lignes: true, cotisations: true } }),
-    db.variablePaie.findMany({ where: { ecoleId: ecole.id } }),
     db.offreEmploi.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateOuverture: 'desc' } }),
-    db.candidature.findMany({ include: { offre: true } }),
-    db.entretienRecrutement.findMany(),
     db.stage.findMany({ where: { ecoleId: ecole.id } }),
-    db.conventionStage.findMany(),
     db.soldeConge.findMany({ where: { ecoleId: ecole.id } }),
     db.candidatureAdmission.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateSoumission: 'desc' } }),
-    db.emploiTemps.findMany({ where: { ecoleId: ecole.id }, include: { creneauHebdos: true } }),
-    db.creneauHebdo.findMany(),
+    db.emploiTemps.findMany({ where: { ecoleId: ecole.id } }),
     db.devoir.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateRendu: 'desc' } }),
-    db.renduDevoir.findMany(),
     db.cahierTexte.findMany({ where: { ecoleId: ecole.id }, include: { entrees: true } }),
-    db.entreeCahierTexte.findMany(),
     db.conseilClasse.findMany({ where: { ecoleId: ecole.id }, include: { membres: true, deliberations: true } }),
-    db.deliberationConseil.findMany(),
     db.dispense.findMany({ where: { ecoleId: ecole.id } }),
     db.justificationAbsence.findMany({ where: { ecoleId: ecole.id } }),
     db.budget.findMany({ where: { ecoleId: ecole.id }, include: { lignes: true } }),
-    db.ligneBudget.findMany(),
-    db.compteComptable.findMany({ where: { ecoleId: ecole.id } }),
-    db.journalComptable.findMany({ where: { ecoleId: ecole.id } }),
-    db.ecritureComptable.findMany({ where: { ecoleId: ecole.id }, include: { lignes: true } }),
+    db.ecritureComptable.findMany({ include: { lignes: true } }),
     db.fournisseur.findMany({ where: { ecoleId: ecole.id } }),
-    db.commandeFournisseur.findMany({ where: { ecoleId: ecole.id }, include: { lignes: true } }),
     db.factureFournisseur.findMany({ where: { ecoleId: ecole.id } }),
-    db.paiementFournisseur.findMany({ where: { ecoleId: ecole.id } }),
     db.avoirEcole.findMany({ where: { ecoleId: ecole.id } }),
     db.conversation.findMany({ where: { ecoleId: ecole.id }, include: { participants: true, messages: true } }),
-    db.message.findMany(),
-    db.pieceJointe.findMany(),
     db.annonce.findMany({ where: { ecoleId: ecole.id }, orderBy: { datePublication: 'desc' } }),
     db.smsLog.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateCreation: 'desc' } }),
-    db.deviceMobile.findMany(),
     db.pushNotificationLog.findMany({ where: { ecoleId: ecole.id } }),
-    db.sessionUtilisateur.findMany(),
-    db.twoFactorMethod.findMany(),
-    db.tentativeConnexion.findMany({ orderBy: { date: 'desc' } }),
-    db.jetonAuth.findMany(),
-    db.apiToken.findMany({ where: { ecoleId: ecole.id } }),
-    db.apiTokenLog.findMany(),
-    db.webhookSortant.findMany({ where: { ecoleId: ecole.id } }),
-    db.webhookDelivery.findMany(),
-    db.demandeEffacement.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateDemande: 'desc' } }),
-    db.exportDonnees.findMany({ where: { ecoleId: ecole.id } }),
-    db.consentementImage.findMany({ where: { ecoleId: ecole.id } }),
-    db.consentementCommunication.findMany({ where: { ecoleId: ecole.id } }),
-    db.registreTraitement.findMany({ where: { ecoleId: ecole.id } }),
-    db.domainePersonnalise.findMany({ where: { ecoleId: ecole.id } }),
-    db.themeEcole.findMany({ where: { ecoleId: ecole.id } }),
-    db.featureFlag.findMany({ include: { ecoles: true } }),
-    db.featureFlagEcole.findMany(),
-    db.quotaUsage.findMany({ where: { ecoleId: ecole.id } }),
-    db.stripeEvent.findMany(),
+    // --- Sécurité : SANS SECRETS (P0) ---
+    db.tentativeConnexion.findMany({ orderBy: { date: 'desc' }, take: 30, select: { id: true, email: true, succes: true, motifEchec: true, date: true, utilisateurId: true } }),
     db.avoirSaas.findMany({ where: { ecoleId: ecole.id } }),
+    db.demandeEffacement.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateDemande: 'desc' } }),
+    db.consentementImage.findMany({ where: { ecoleId: ecole.id } }),
+    db.domainePersonnalise.findMany({ where: { ecoleId: ecole.id } }),
+    db.quotaUsage.findMany({ where: { ecoleId: ecole.id } }),
     db.planAccompagnement.findMany({ where: { ecoleId: ecole.id }, include: { membres: true, objectifs: true, revisions: true } }),
-    db.templateDocument.findMany({ where: { ecoleId: ecole.id } }),
-    db.documentGenere.findMany({ where: { ecoleId: ecole.id }, include: { signatures: true } }),
-    db.signatureElectronique.findMany(),
-    db.rapportSauvegarde.findMany({ where: { ecoleId: ecole.id } }),
     db.batiment.findMany({ where: { ecoleId: ecole.id }, include: { etages: true } }),
-    db.etage.findMany(),
-    db.salleEquipement.findMany(),
-    // === AUDIT COMPLÉMENT — RBAC, documents, historique, fournitures ===
-    db.permission.findMany({ include: { roles: true } }),
-    db.rolePermission.findMany(),
-    db.utilisateurRole.findMany(),
-    db.documentEleve.findMany(),
-    db.eleveHistoriqueClasse.findMany(),
-    db.listeFourniture.findMany(),
+    // === SANTÉ & INFIRMERIE (P2) ===
+    db.ficheSante.findMany({ where: { ecoleId: ecole.id } }),
+    db.passageInfirmerie.findMany({ where: { ecoleId: ecole.id }, orderBy: { datePassage: 'desc' } }),
+    db.vaccination.findMany({ where: { ecoleId: ecole.id } }),
   ]);
 
-  // Données agrégées et structurées pour le shell
+  // ---- Utilisateurs : select SANS motDePasseHash (P0 purge secrets) ----
+  const utilisateurs = await db.utilisateur.findMany({
+    where: { ecoleId: ecole.id },
+    select: {
+      id: true, ecoleId: true, email: true, nom: true, prenom: true, type: true,
+      actif: true, derniereConnexion: true, createdAt: true, telephone: true,
+    },
+  });
+  const sessionsUtilisateur = await db.sessionUtilisateur.findMany({
+    select: { id: true, utilisateurId: true, dateCreation: true, dateDerniereActivite: true, dateExpiration: true, active: true, userAgent: true },
+    where: { dateCreation: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) } },
+    orderBy: { dateCreation: 'desc' },
+  });
+  const twoFactorMethods = await db.twoFactorMethod.findMany({
+    select: { id: true, utilisateurId: true, methode: true, actif: true, dateActivation: true, derniereUtilisation: true },
+  });
+  const jetonsAuth = await db.jetonAuth.findMany({
+    select: { id: true, email: true, type: true, expireLe: true, utilise: true, dateCreation: true },
+  });
+  const apiTokens = await db.apiToken.findMany({
+    where: { ecoleId: ecole.id },
+    select: { id: true, nom: true, prefix: true, scopes: true, actif: true, dateCreation: true, dateExpiration: true },
+  });
+  const permissions = await db.permission.findMany({ include: { roles: true } });
+  const rolePermissions = await db.rolePermission.findMany();
+  const utilisateurRoles = await db.utilisateurRole.findMany();
+  const documentsEleve = await db.documentEleve.findMany();
+  const historiquesClasse = await db.eleveHistoriqueClasse.findMany();
+  const listesFourniture = await db.listeFourniture.findMany();
+
+  // ---- Identité réelle du portail connecté (P2) ----
+  // Parent → ses enfants ; Élève → lui-même.
+  let parentId: string | null = null;
+  let eleveIdSession: string | null = null;
+  const enfantsIds: string[] = [];
+  if (portal === 'parent') {
+    const parent = await db.parentTuteur.findFirst({ where: { utilisateurId: session.utilisateur.id } });
+    if (parent) {
+      parentId = parent.id;
+      const liens = await db.eleveParent.findMany({ where: { parentId: parent.id }, select: { eleveId: true } });
+      enfantsIds.push(...liens.map((l) => l.eleveId));
+    }
+  }
+  if (portal === 'eleve') {
+    const eleveLie = await db.eleve.findFirst({ where: { utilisateurId: session.utilisateur.id } });
+    if (eleveLie) {
+      eleveIdSession = eleveLie.id;
+      enfantsIds.push(eleveLie.id);
+    }
+  }
+
   const initialData = {
     ecole,
     anneeScolaire,
-    ecoles,
-    plans,
-    facturesSaas,
-    totalElevesGeres,
-    superAdmin,
+    ecoles, plans, facturesSaas, totalElevesGeres,
+
+    // Session (P0) — identité, portail, permissions
+    session: {
+      utilisateur: session.utilisateur,
+      portal,
+      permissions: [...session.permissions],
+      parentId,
+      eleveId: eleveIdSession,
+      enfantsIds,
+    },
 
     // Fondations
-    cycles, sections, niveaux, classes,
-    roles,
-    permissions,
-    rolePermissions,
-    utilisateurRoles,
+    niveaux, classes,
+    roles, permissions, rolePermissions, utilisateurRoles,
 
     // Élèves
-    eleves,
-    parents,
-    besoinsSpecifiques,
-    amenagements,
+    eleves, parents,
+    besoinsSpecifiques, amenagements,
     documents: documentsEleve,
     historiquesClasse,
 
     // Personnel & RH
-    personnels,
-    conges,
-    remplacements,
-    evaluationsRh,
+    personnels, conges, remplacements, evaluationsRh,
 
     // Pédagogique
-    matieres,
-    programmes,
-    avancements,
-    seances,
-    periodes,
-    evaluations,
-    notes,
-    bulletins,
-    competences,
-    evalsCompetence,
-    reglesCalcul,
+    matieres, programmes, avancements, seances, periodes,
+    evaluations, notes, bulletins,
+    competences, evalsCompetence,
 
     // Présences
     presences,
 
     // Vie scolaire
-    incidents,
-    sanctions,
+    incidents, sanctions,
 
     // Finances
-    frais,
-    echeances,
-    paiements,
-    depenses,
-    articlesStock,
-    mouvementsStock,
+    frais, echeances, paiements, depenses,
+    articlesStock, mouvementsStock,
 
     // Services
-    cantines,
-    transports,
-    lignesTransport,
-    arrets,
-    biblioLivres,
-    biblioPrets,
-    manuels,
-    attributionsManuel,
-    listesFourniture,
+    cantines, transports, lignesTransport, arrets,
+    biblioLivres, biblioPrets,
+    manuels, attributionsManuel, listesFourniture,
 
     // Salles & calendrier
-    salles,
-    reservations,
-    calendrier,
+    salles, reservations, calendrier, emploisTemps,
 
     // Examens officiels
-    examensOfficiels,
-    inscriptionsExamen,
+    examensOfficiels, inscriptionsExamen,
 
     // RDV
-    creneauxRdv,
-    rdvs,
-    reunionsCollectives,
+    creneauxRdv, rdvs, reunionsCollectives,
 
     // Sécurité
-    visiteurs,
-    autorisationsSortie,
-    sortiesAnticipees,
+    visiteurs, autorisationsSortie, sortiesAnticipees,
 
     // Communication
-    modelesMessage,
-    notifications,
+    modelesMessage, notifications,
 
     // Audit
     auditLogs,
 
-    // Utilisateurs
-    utilisateurs,
+    // Utilisateurs (SANS secrets)
+    utilisateurs, sessionsUtilisateur, twoFactorMethods, tentativesConnexion, jetonsAuth, apiTokens,
 
-    // User IDs pour les actions
+    // Santé & infirmerie (P2)
+    fichesSante, passagesInfirmerie, vaccinations,
+
+    // Compatibilité
     dirUserId,
 
-    // === EXTENSION V4 — 37 FAILLES ===
-    // P0 / SaaS éditeur
+    // === EXTENSION V4 — 37 FAILLES (datasets affichés) ===
     tickets, avoirsSaas,
-    // Conformité mineurs
-    signalementsMineurs, partenairesExternes, mesuresProtection,
-    verificationsAntecedents, habilitationsPenales,
-    // RH complète
-    bulletinsPaie, variablesPaie, offresEmploi, candidatures,
-    entretiensRecrutement, stages, conventionsStage, soldesConge,
-    // Admissions
+    signalementsMineurs, verificationsAntecedents,
+    bulletinsPaie,
+    offresEmploi,
+    stages, soldesConge,
     candidaturesAdmission,
-    // Pédagogique+
-    emploisTemps, creneauxHebdo, devoirs, rendusDevoir,
-    cahiersTexte, entreesCahierTexte, conseilsClasse, deliberationsConseil,
+    devoirs,
+    cahiersTexte,
+    conseilsClasse,
     dispenses,
-    // Présences workflow
     justificationsAbsence,
-    // Finances complètes
-    budgets, lignesBudget,
-    comptesComptables, journauxComptables, ecrituresComptable,
-    fournisseurs, commandesFournisseur, facturesFournisseur, paiementsFournisseur,
+    budgets,
+    ecrituresComptable,
+    fournisseurs, facturesFournisseur,
     avoirsEcole,
-    // Communication riche
-    conversations, messages, piecesJointes, annonces,
-    smsLogs, devicesMobiles, pushNotificationLogs,
-    // Sécurité & Conformité
-    sessionsUtilisateur, twoFactorMethods, tentativesConnexion, jetonsAuth,
-    apiTokens, apiTokenLogs, webhooksSortants, webhookDeliveries,
-    demandesEffacement, exportsDonnees,
-    consentementsImage, consentementsCommunication, registreTraitements,
-    // SaaS éditeur (suite)
-    domainesPersonnalises, themesEcole,
-    featureFlags, featureFlagEcoles, quotaUsages, stripeEvents,
-    // Inclusion
+    conversations, annonces,
+    smsLogs, pushNotificationLogs,
+    demandesEffacement,
+    consentementsImage,
+    domainesPersonnalises,
+    quotaUsages,
     plansAccompagnement,
-    // Documents
-    templatesDocument, documentsGeneres, signaturesElectroniques, rapportsSauvegardes,
-    // Salles+
-    batiments, etages, salleEquipements,
+    batiments,
   };
 
   return <AppShell initialData={initialData} />;

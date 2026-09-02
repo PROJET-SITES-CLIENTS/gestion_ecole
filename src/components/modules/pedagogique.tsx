@@ -31,11 +31,11 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   const evalsCompetence = initialData.evalsCompetence ?? [];
   const programmes = initialData.programmes ?? [];
   const avancements = initialData.avancements ?? [];
-  const dirUserId = initialData.dirUserId ?? 'system';
 
   const [selectedEvalId, setSelectedEvalId] = useState<string | null>(evaluations[0]?.id ?? null);
   const [selectedBulletinId, setSelectedBulletinId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [erreurNotes, setErreurNotes] = useState<string | null>(null);
 
   const evalSelectionnee = evaluations.find((e: any) => e.id === selectedEvalId);
   const elevesDeLaClasse = evalSelectionnee ? eleves.filter((e: any) => e.classeActuelleId === evalSelectionnee.classeId) : [];
@@ -57,10 +57,18 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             Astuce : saisir "abs" pour un absent — la note n'entrera pas dans le calcul de la moyenne.
           </p>
         </CardHeader>
+        {erreurNotes && (
+          <div className="mx-6 mb-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+            {erreurNotes}
+          </div>
+        )}
         <CardContent>
-          <form action={async (formData) => { await actions.saisirNotes(formData); }} className="space-y-3">
+          <form action={async (formData) => {
+            setErreurNotes(null);
+            const r = await actions.saisirNotes(formData);
+            if (r && r.ok === false) setErreurNotes(r.error);
+          }} className="space-y-3">
             <input type="hidden" name="evaluationId" value={evalSelectionnee.id} />
-            <input type="hidden" name="saisiParId" value={dirUserId} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {elevesDeLaClasse.map((e: any) => {
                 const n = notesPourEval.find((x: any) => x.eleveId === e.id);
@@ -98,24 +106,29 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             columns={[
               { key: 'eleve', label: 'Élève', render: (b) => { const e = eleves.find((x: any) => x.id === b.eleveId); return e ? `${e.prenom} ${e.nom}` : '—'; } },
               { key: 'version', label: 'V' },
-              { key: 'moyenneGenerale', label: 'Moy.' },
+              {key: 'moyenneGenerale', label: 'Moy.' },
+              { key: 'rang', label: 'Rang', render: (b) => b.rang ? `${b.rang}ᵉ` : '—' },
+              { key: 'appreciationGenerale', label: 'Appréciation', render: (b) => <span className="text-xs text-gray-600 line-clamp-1">{b.appreciationGenerale ?? '—'}</span> },
               { key: 'statut', label: 'Statut', render: (b) => <StatusBadge statut={b.statut} /> },
               { key: 'dateCreation', label: 'Créé', render: (b) => formatDate(b.dateCreation) },
               {
                 key: 'actions', label: 'Actions', render: (b) => (
                   <div className="flex gap-1 flex-wrap">
+                    <Button size="sm" variant="outline" onClick={() => setSelectedBulletinId(b.id)}>
+                      Détail
+                    </Button>
                     {b.statut === 'en_construction' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'valide_pp', dirUserId, 'pp'); })}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'valide_pp', 'pp'); })}>
                         Valider PP
                       </Button>
                     )}
                     {b.statut === 'valide_pp' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'publie', dirUserId, 'direction'); })}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'publie', 'direction'); })}>
                         Publier
                       </Button>
                     )}
                     {b.statut === 'publie' && (
-                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'rectifie', dirUserId, 'direction'); })}>
+                      <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.changerStatutBulletin(b.id, 'rectifie', 'direction'); })}>
                         Rectifier
                       </Button>
                     )}
@@ -135,8 +148,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             fields={[
               { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
               { name: 'periodeId', label: 'Période', type: 'select', options: periodes.map((p: any) => ({ value: p.id, label: p.libelle })), required: true },
-              { name: 'classeId', label: 'Classe', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
-              { name: 'creeParId', label: 'Créé par', defaultValue: dirUserId, type: 'text' },
+              { name: 'classeId', label: 'Classe', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })), required: true },
             ]}
             action={actions.genererBulletin}
           />
@@ -165,6 +177,12 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                     <span>Moyenne générale</span>
                     <span>{b.moyenneGenerale ?? '—'}/20</span>
                   </div>
+                  {(b.rang || b.appreciationGenerale) && (
+                    <div className="flex items-center justify-between text-sm pt-1">
+                      <span className="text-gray-600">Rang {b.rang ? `${b.rang}ᵉ de la classe` : '—'}</span>
+                      <span className="text-gray-600 italic">{b.appreciationGenerale ?? ''}</span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

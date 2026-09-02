@@ -101,6 +101,9 @@ model Ecole {
   documentGeneres            DocumentGenere[]
   rapportSauvegardes         RapportSauvegarde[]
   batiments                  Batiment[]
+  fichesSante                FicheSante[]
+  passagesInfirmerie         PassageInfirmerie[]
+  vaccinations               Vaccination[]
 }
 
 model PlanTarifaire {
@@ -385,6 +388,9 @@ model Eleve {
   justificationAbsences      JustificationAbsence[]
   consentementImages         ConsentementImage[]
   planAccompagnements        PlanAccompagnement[]
+  ficheSante                 FicheSante?
+  passagesInfirmerie         PassageInfirmerie[]
+  vaccinations               Vaccination[]
 
   @@unique([ecoleId, matricule])
 }
@@ -875,6 +881,10 @@ model EcheanceFrais {
   dateCreation DateTime @default(now())
 
   paiements PaiementEcheance[]
+
+  // Idempotence de la génération d'échéances (audit T1) :
+  // un même élève ne peut avoir qu'une échéance par (frais, date).
+  @@unique([eleveId, fraisId, dateEcheance])
 }
 
 model Paiement {
@@ -2807,3 +2817,63 @@ model SalleEquipement {
 // Ecole — ajouter back-relations (seront fusionnées lors du format)
 // Note: Prisma gère automatiquement les back-relations via @relation,
 // pas besoin de modifier Ecole manuellement.
+
+// --------------------------------------------------------------------
+// SANTÉ & INFIRMERIE (P2 — complétude gestion scolaire)
+// --------------------------------------------------------------------
+
+model FicheSante {
+  id                     String   @id @default(cuid())
+  ecoleId                String
+  ecole                  Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId                String   @unique
+  eleve                  Eleve    @relation(fields: [eleveId], references: [id])
+  groupeSanguin          String?
+  allergies              String?
+  traitementsEnCours     String?
+  antecedents            String?
+  medecinTraitant        String?
+  telephoneUrgence       String?
+  contactUrgenceNom      String?
+  autorisationTraitement Boolean  @default(false)
+  dateMiseAJour          DateTime @default(now())
+  misAJourParId          String?
+
+  passages     PassageInfirmerie[]
+  vaccinations Vaccination[]
+}
+
+model PassageInfirmerie {
+  id               String      @id @default(cuid())
+  ecoleId          String
+  ecole            Ecole       @relation(fields: [ecoleId], references: [id])
+  eleveId          String
+  eleve            Eleve       @relation(fields: [eleveId], references: [id])
+  ficheSanteId     String?
+  ficheSante       FicheSante? @relation(fields: [ficheSanteId], references: [id])
+  datePassage      DateTime    @default(now())
+  motif            String
+  symptomes        String?
+  soinsAdministres String?
+  temperature      Float?
+  personnelId      String?
+  issue            String      @default("retour_classe") // retour_classe/parents_contactes/depart_hopital/retour_domicile
+  parentsNotifies  Boolean     @default(false)
+  commentaire      String?
+}
+
+model Vaccination {
+  id              String      @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole       @relation(fields: [ecoleId], references: [id])
+  eleveId         String
+  eleve           Eleve       @relation(fields: [eleveId], references: [id])
+  vaccin          String
+  dateVaccination DateTime?
+  dateRappel      DateTime?
+  statut          String      @default("a_jour") // a_jour/rappel_prevu/manquant
+  certificatUrl   String?
+  note            String?
+  ficheSante      FicheSante? @relation(fields: [ficheSanteId], references: [id])
+  ficheSanteId    String?
+}

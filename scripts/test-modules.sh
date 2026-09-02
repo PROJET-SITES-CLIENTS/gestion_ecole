@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test systématique de tous les modules : clic → attente → erreurs console → titre principal
-MODULES=('Tableau de bord' 'Élèves' 'Personnel' 'Pédagogique' 'Présences' 'Vie scolaire' 'Finances' 'Services' 'Salles & Calendrier' 'Examens officiels' 'RDV parents-profs' 'Sécurité site' 'Communication' "Journal d'audit" 'Modules V4 (37 failles)')
+MODULES=('Tableau de bord' 'Élèves' 'Personnel' 'Pédagogique' 'Présences' 'Vie scolaire' 'Finances' 'Services' 'Santé & Infirmerie' 'Salles & Calendrier' 'Examens officiels' 'RDV parents-profs' 'Sécurité site' 'Communication' "Journal d'audit" 'Modules V4 (37 failles)')
 
 TOTAL_ERR=0
 for M in "${MODULES[@]}"; do

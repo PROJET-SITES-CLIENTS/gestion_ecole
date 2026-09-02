@@ -8,7 +8,8 @@
 // ====================================================================
 
 import { useTransition, useState } from 'react';
-import { Wallet, FileText, Package, TrendingDown, TrendingUp, Plus, Coins } from 'lucide-react';
+import { Wallet, FileText, Package, TrendingDown, TrendingUp, Plus, Coins, Printer } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, FormField } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,7 +28,6 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
   const mouvements = initialData.mouvementsStock ?? [];
   const classes = initialData.classes ?? [];
   const niveaux = initialData.niveaux ?? [];
-  const dirUserId = initialData.dirUserId ?? 'system';
   const devise = initialData.ecole?.devise ?? 'XOF';
   const [pending, startTransition] = useTransition();
 
@@ -74,19 +74,19 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
                     { value: 'carte', label: 'Carte' },
                     { value: 'mobile_money', label: 'Mobile Money' },
                   ], required: true },
-                  { name: 'encaisseParId', label: 'Encaissé par', defaultValue: dirUserId, type: 'text' },
                 ]}
                 action={actions.encaisserPaiement}
               />
             }
           >
-            <DataTable
+              <DataTable
               columns={[
                 { key: 'eleve', label: 'Élève', render: (p) => { const e = eleves.find((x: any) => x.id === p.eleveId); return e ? `${e.prenom} ${e.nom}` : '—'; } },
                 { key: 'montant', label: 'Montant', render: (p) => formatMontant(p.montant, p.devise) },
                 { key: 'modePaiement', label: 'Mode' },
                 { key: 'referenceTransaction', label: 'Référence' },
                 { key: 'datePaiement', label: 'Date', render: (p) => formatDateTime(p.datePaiement) },
+                { key: 'recu', label: 'Reçu', render: (p) => <RecuPaiement paiement={p} ecole={initialData.ecole} eleve={eleves.find((x: any) => x.id === p.eleveId)} /> },
               ]}
               rows={paiements}
               emptyLabel="Aucun paiement encaissé"
@@ -203,7 +203,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
                 { key: 'validee', label: 'Statut', render: (d) => d.validee ? <StatusBadge statut="validee" /> : <StatusBadge statut="en_attente" /> },
                 {
                   key: 'actions', label: 'Action', render: (d) => !d.validee ? (
-                    <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.validerDepense(d.id, dirUserId); })}>Valider</Button>
+                    <Button size="sm" variant="outline" onClick={() => startTransition(() => { void actions.validerDepense(d.id); })}>Valider</Button>
                   ) : null,
                 },
               ]}
@@ -237,7 +237,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
                 title="Enregistrer un mouvement de stock"
                 fields={[
                   { name: 'articleId', label: 'Article', type: 'select', options: articles.map((a: any) => ({ value: a.id, label: a.nom })), required: true },
-                  { name: 'type', label: 'Type', type: 'select', options: [{ value: 'entree', label: 'Entrée' }, { value: 'sortie', label: 'Sortie' }], required: true },
+                  { name: 'type', label: 'Type', type: 'select', options: [{ value: 'entree', label: 'Entrée (réapprovisionnement)' }, { value: 'sortie', label: 'Sortie (consommation/dotation)' }], required: true },
                   { name: 'quantite', label: 'Quantité', type: 'number', required: true },
                   { name: 'motif', label: 'Motif' },
                 ]}
@@ -260,5 +260,52 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+
+// --------------------------------------------------------------------
+// REÇU DE PAIEMENT IMPRIMABLE (P2)
+// --------------------------------------------------------------------
+function RecuPaiement({ paiement, ecole, eleve }: { paiement: any; ecole: any; eleve: any }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline"><Printer className="h-3 w-3 mr-1" />Reçu</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Reçu de paiement</DialogTitle></DialogHeader>
+        <div id="recu-paiement" className="border border-gray-300 rounded-lg p-4 bg-white text-sm">
+          <div className="text-center border-b border-gray-200 pb-3 mb-3">
+            <div className="font-bold text-base">{ecole?.nom ?? 'École'}</div>
+            <div className="text-xs text-gray-500">Reçu de paiement n° {paiement.referenceTransaction ?? paiement.id.slice(0, 8)}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between"><span className="text-gray-500">Élève</span><span className="font-medium">{eleve ? `${eleve.prenom} ${eleve.nom} (${eleve.matricule ?? '—'})` : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Montant</span><span className="font-bold">{formatMontant(paiement.montant, paiement.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Mode</span><span>{paiement.modePaiement}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Date</span><span>{formatDateTime(paiement.datePaiement)}</span></div>
+          </div>
+          <div className="border-t border-dashed border-gray-300 mt-3 pt-3 text-xs text-gray-500 text-center">
+            Document généré par ScolaGestion — conservez ce reçu justificatif.
+          </div>
+        </div>
+        <Button
+          size="sm"
+          className="bg-emerald-600 hover:bg-emerald-700 w-full"
+          onClick={() => {
+            const contenu = document.getElementById('recu-paiement')?.innerHTML ?? '';
+            const f = window.open('', '_blank', 'width=420,height=560');
+            if (f) {
+              f.document.write(`<html><head><title>Reçu ${paiement.referenceTransaction ?? ''}</title><style>body{font-family:system-ui,sans-serif;padding:24px;font-size:14px;color:#111} .font-bold{font-weight:700} .text-center{text-align:center} .flex{display:flex;justify-content:space-between;margin:4px 0} .border-b{border-bottom:1px solid #ddd;padding-bottom:12px;margin-bottom:12px} .border-t{border-top:1px dashed #ccc;margin-top:12px;padding-top:12px}</style></head><body>${contenu}</body></html>`);
+              f.document.close();
+              f.print();
+            }
+          }}
+        >
+          <Printer className="h-4 w-4 mr-2" />Imprimer le reçu
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

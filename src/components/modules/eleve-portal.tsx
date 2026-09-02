@@ -24,10 +24,11 @@ export default function ElevePortalModule({ initialData, mode = 'full' }: { init
   const sanctions = initialData.sanctions ?? [];
   const creneaux = initialData.creneauxRdv ?? [];
   const rdvs = initialData.rdvs ?? [];
-  const notifications = initialData.notifications ?? [];
+  const notifications = (initialData.notifications ?? []).filter((n: any) => n.destinataireId === initialData.session?.utilisateur?.id);
 
-  // Vue élève : on prend le 1er élève comme "moi" (démonstration)
-  const moi = eleves[0] ?? null;
+  // Élève RÉEL connecté (session) — fin du choix arbitraire de démo.
+  const session = initialData.session ?? {};
+  const moi = session.eleveId ? (eleves.find((e: any) => e.id === session.eleveId) ?? null) : (eleves[0] ?? null);
   const maClasse = moi ? classes.find((c: any) => c.id === moi.classeActuelleId) : null;
 
   // Mes notes (avec matière via évaluation)

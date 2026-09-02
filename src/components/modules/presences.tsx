@@ -21,7 +21,6 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
   const matieres = initialData.matieres ?? [];
   const classes = initialData.classes ?? [];
   const personnels = initialData.personnels ?? [];
-  const dirUserId = initialData.dirUserId ?? 'system';
 
   const [selectedSeanceId, setSelectedSeanceId] = useState<string | null>(seances[0]?.id ?? null);
   const [pending, startTransition] = useTransition();
@@ -87,7 +86,6 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
               <CardContent>
                 <form action={async (fd) => { await actions.saisirAppel(fd); }} className="space-y-2">
                   <input type="hidden" name="seanceId" value={seance.id} />
-                  <input type="hidden" name="saisiParId" value={dirUserId} />
                   {elevesClasse.map((e: any) => {
                     const p = presencesSeance.find((x: any) => x.eleveId === e.id);
                     return (

@@ -1,17 +1,18 @@
 'use client';
 
 // ====================================================================
-// Shell applicatif principal — gère la navigation entre les modules
-// et le sélecteur de "portail" (super-admin éditeur, direction, enseignant,
-// parent, élève) pour la démonstration de bout en bout.
+// Shell applicatif principal — navigation entre modules.
+// Portail dérivé du COMPTE CONNECTÉ (session) : plus de sélecteur
+// de démo. Déconnexion réelle (invalidation session serveur).
 // ====================================================================
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Building2, Users, GraduationCap, ClipboardList, CalendarDays,
   BookOpen, Bus, BookMarked, Calendar, FileCheck, MessageSquare, Shield,
-  ScrollText, Wallet, School, User as UserIcon, ChevronDown, Bell, Menu, X,
-  CheckCircle2,
+  ScrollText, Wallet, School, ChevronDown, Bell, Menu, X,
+  CheckCircle2, HeartPulse, LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,13 +39,14 @@ import AuditModule from './modules/audit';
 import ParentPortalModule from './modules/parent-portal';
 import ElevePortalModule from './modules/eleve-portal';
 import V4ModulesModule from './modules/v4-modules';
+import SanteModule from './modules/sante';
 
 export type Portal = 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve';
 
 export type ModuleId =
   | 'dashboard' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
-  | 'rdv' | 'securite' | 'communication' | 'audit' | 'parent_portal' | 'eleve_portal' | 'v4_modules';
+  | 'rdv' | 'securite' | 'communication' | 'audit' | 'sante' | 'parent_portal' | 'eleve_portal' | 'v4_modules';
 
 type ModuleDef = {
   id: ModuleId;
@@ -63,6 +65,7 @@ const MODULES: ModuleDef[] = [
   { id: 'vie_scolaire', label: 'Vie scolaire', icon: Shield, portals: ['super_admin', 'direction', 'enseignant'] },
   { id: 'finances', label: 'Finances', icon: Wallet, portals: ['super_admin', 'direction'] },
   { id: 'services', label: 'Services', icon: Bus, portals: ['super_admin', 'direction'] },
+  { id: 'sante', label: 'Santé & Infirmerie', icon: HeartPulse, portals: ['super_admin', 'direction'] },
   { id: 'salles', label: 'Salles & Calendrier', icon: School, portals: ['super_admin', 'direction'] },
   { id: 'examens', label: 'Examens officiels', icon: FileCheck, portals: ['super_admin', 'direction'] },
   { id: 'rdv', label: 'RDV parents-profs', icon: CalendarDays, portals: ['super_admin', 'direction', 'enseignant', 'parent'] },
@@ -70,8 +73,8 @@ const MODULES: ModuleDef[] = [
   { id: 'communication', label: 'Communication', icon: MessageSquare, portals: ['super_admin', 'direction'] },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText, portals: ['super_admin', 'direction'] },
   { id: 'v4_modules', label: 'Modules V4 (37 failles)', icon: CheckCircle2, portals: ['super_admin', 'direction'] },
-  { id: 'parent_portal', label: 'Portail Parent (démonstration)', icon: UserIcon, portals: ['parent'] },
-  { id: 'eleve_portal', label: 'Portail Élève (démonstration)', icon: UserIcon, portals: ['eleve'] },
+  { id: 'parent_portal', label: 'Portail Parent', icon: Users, portals: ['parent'] },
+  { id: 'eleve_portal', label: 'Portail Élève', icon: GraduationCap, portals: ['eleve'] },
 ];
 
 const PORTAL_LABELS: Record<Portal, string> = {
@@ -83,34 +86,21 @@ const PORTAL_LABELS: Record<Portal, string> = {
 };
 
 export default function AppShell({ initialData }: { initialData: any }) {
-  const [portal, setPortal] = useState<Portal>('direction');
+  const router = useRouter();
+  // Portail imposé par la SESSION (P0) — plus de bascule de démonstration.
+  const portal: Portal = initialData?.session?.portal ?? 'direction';
   const [active, setActive] = useState<ModuleId>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingLogout, startLogout] = useTransition();
 
-  const visibleModules = useMemo(() => MODULES.filter(m => m.portals.includes(portal)), [portal]);
-
-  // Si l'utilisateur change de portail, on bascule sur le dashboard si le module actuel n'est pas accessible
-  const handlePortalChange = (p: Portal) => {
-    setPortal(p);
-    if (!MODULES.find(m => m.id === active)?.portals.includes(p)) {
-      setActive('dashboard');
-    }
-  };
-
-  // Pour le portail parent, on bascule directement sur le portail parent
-  const handlePortalParent = () => {
-    setPortal('parent');
-    setActive('parent_portal');
-  };
-
-  // Pour le portail élève, on bascule directement sur le portail élève
-  const handlePortalEleve = () => {
-    setPortal('eleve');
-    setActive('eleve_portal');
-  };
+  const visibleModules = useMemo(() => MODULES.filter((m) => m.portals.includes(portal)), [portal]);
 
   const school = initialData.ecole;
   const notifications = initialData.notifications ?? [];
+  const sessionUser = initialData.session?.utilisateur;
+  const initiales = sessionUser
+    ? `${sessionUser.prenom?.[0] ?? ''}${sessionUser.nom?.[0] ?? ''}`.toUpperCase()
+    : 'SG';
 
   const renderModule = () => {
     const props = { initialData };
@@ -128,6 +118,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'vie_scolaire': return <VieScolaireModule {...props} />;
       case 'finances': return <FinancesModule {...props} />;
       case 'services': return <ServicesModule {...props} />;
+      case 'sante': return <SanteModule {...props} />;
       case 'salles': return <SallesModule {...props} />;
       case 'examens': return <ExamensModule {...props} />;
       case 'rdv': return <RdvModule {...props} />;
@@ -140,6 +131,15 @@ export default function AppShell({ initialData }: { initialData: any }) {
       default: return null;
     }
   };
+
+  function deconnexion() {
+    startLogout(async () => {
+      const { deconnexion: seDeconnecter } = await import('@/app/actions');
+      await seDeconnecter();
+      router.replace('/login');
+      router.refresh();
+    });
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900">
@@ -159,7 +159,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
-          {visibleModules.map(m => {
+          {visibleModules.map((m) => {
             const Icon = m.icon;
             const isActive = active === m.id;
             return (
@@ -178,7 +178,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
         </nav>
 
         <div className="px-3 py-3 border-t border-gray-200 bg-gray-50">
-          <div className="text-xs text-gray-500 mb-1">École courante (démo)</div>
+          <div className="text-xs text-gray-500 mb-1">École courante</div>
           <div className="text-sm font-medium truncate">{school?.nom ?? '—'}</div>
           <div className="text-xs text-gray-500 truncate">{school?.slug}.platforme.com</div>
         </div>
@@ -194,13 +194,13 @@ export default function AppShell({ initialData }: { initialData: any }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="flex-1 text-sm text-gray-600">
+          <div className="flex-1 text-sm text-gray-600 min-w-0 truncate">
             <span className="text-gray-400">{PORTAL_LABELS[portal]}</span>
             <span className="mx-2 text-gray-300">/</span>
-            <span className="font-medium text-gray-900">{MODULES.find(m => m.id === active)?.label}</span>
+            <span className="font-medium text-gray-900">{MODULES.find((m) => m.id === active)?.label}</span>
           </div>
 
-          {/* Notifications */}
+          {/* Notifications du compte connecté */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="relative">
@@ -227,30 +227,28 @@ export default function AppShell({ initialData }: { initialData: any }) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Sélecteur de portail (démo) */}
+          {/* Compte connecté (session) + déconnexion */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2">
                 <Avatar className="h-6 w-6">
-                  <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">
-                    {PORTAL_LABELS[portal].split(' ').map(w => w[0]).join('').slice(0, 2)}
-                  </AvatarFallback>
+                  <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{initiales}</AvatarFallback>
                 </Avatar>
-                <span className="hidden sm:inline">{PORTAL_LABELS[portal]}</span>
+                <span className="hidden sm:inline max-w-[140px] truncate">{sessionUser ? `${sessionUser.prenom} ${sessionUser.nom}` : PORTAL_LABELS[portal]}</span>
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Changer de portail (démo)</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>
+                <div className="text-sm font-medium">{sessionUser ? `${sessionUser.prenom} ${sessionUser.nom}` : '—'}</div>
+                <div className="text-xs text-gray-500 font-normal">{sessionUser?.email}</div>
+                <div className="mt-1"><Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">{PORTAL_LABELS[portal]}</Badge></div>
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {(['super_admin', 'direction', 'enseignant', 'parent', 'eleve'] as Portal[]).map(p => (
-                <DropdownMenuItem key={p} onClick={() => p === 'parent' ? handlePortalParent() : p === 'eleve' ? handlePortalEleve() : handlePortalChange(p)}>
-                  <div className="flex items-center gap-2">
-                    {portal === p && <span className="h-2 w-2 rounded-full bg-emerald-600" />}
-                    <span>{PORTAL_LABELS[p]}</span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuItem onClick={deconnexion} disabled={pendingLogout} className="text-rose-600 focus:text-rose-600">
+                <LogOut className="h-4 w-4 mr-2" />
+                {pendingLogout ? 'Déconnexion…' : 'Se déconnecter'}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
@@ -261,7 +259,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
 
         <footer className="bg-white border-t border-gray-200 py-2 px-4 text-xs text-gray-500 flex items-center justify-between">
           <span>ScolaGestion — Plateforme SaaS de Gestion Scolaire · Version 4 (cahier des charges complet)</span>
-          <span>Démo multi-tenant · École : {school?.nom ?? '—'}</span>
+          <span>Session authentifiée · École : {school?.nom ?? '—'}</span>
         </footer>
       </div>
     </div>

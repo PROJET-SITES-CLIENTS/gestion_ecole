@@ -15,7 +15,6 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
   const sanctions = initialData.sanctions ?? [];
   const eleves = initialData.eleves ?? [];
   const personnels = initialData.personnels ?? [];
-  const dirUserId = initialData.dirUserId ?? 'system';
   const [pending, startTransition] = useTransition();
 
   const incidentsGraves = incidents.filter((i: any) => i.gravite === 'grave').length;
@@ -47,7 +46,6 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
                 { value: 'grave', label: 'Grave' },
               ], required: true },
               { name: 'description', label: 'Description', type: 'textarea', required: true },
-              { name: 'declareParId', label: 'Déclaré par', defaultValue: dirUserId, type: 'text' },
             ]}
             action={actions.declarerIncident}
           />
@@ -104,7 +102,6 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
               { value: 'convocation', label: 'Convocation parent' },
             ], required: true },
             { name: 'description', label: 'Description', type: 'textarea', required: true },
-            { name: 'decideParId', label: 'Décidé par', defaultValue: dirUserId, type: 'text' },
           ]}
           action={actions.sanctionner}
         />

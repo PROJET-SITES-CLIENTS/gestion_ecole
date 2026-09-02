@@ -1,646 +1,1024 @@
 'use server';
 
-// Toutes les mutations principales du système, consolidées par souci de concision.
-// Chaque fonction valide les entrées, exécute l'action, journalise dans l'audit, et retourne un résultat.
+// ====================================================================
+// ACTIONS SERVEUR — adaptateur HTTP de la couche métier.
+// Chaque action : session OBLIGATOIRE → permission RBAC → validation
+// zod des FormData → contrôle de tenant (dans le métier) → résultat
+// typé { ok: true, ... } | { ok: false, error: string }.
+// Aucune exception ne fuit vers le client : tout est catché.
+// ====================================================================
 
-import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { requireSession, tenterConnexion, detruireSessionCourante, AuthError } from '@/lib/auth';
+import {
+  Ctx,
+  ActionError,
+  inscrireEleveCore,
+  ajouterBesoinSpecifiqueCore,
+  ajouterAmenagementCore,
+  activerConsentementPortailEleveCore,
+  creerEvaluationCore,
+  saisirNotesCore,
+  genererBulletinCore,
+  changerStatutBulletinCore,
+  saisirAppelCore,
+  encaisserPaiementCore,
+  creerFraisCore,
+  genererEcheancesClasseCore,
+  validerDepenseCore,
+  enregistrerDepenseCore,
+  enregistrerMouvementStockCore,
+  declarerIncidentCore,
+  sanctionnerCore,
+  sortieEleveCore,
+  enregistrerVisiteurCore,
+  envoyerNotificationCore,
+  creerModeleMessageCore,
+  creerSalleCore,
+  ajouterCalendrierCore,
+  ouvrirCreneauRdvCore,
+  inscrireElevesExamenCore,
+  envoyerConvocationsExamenCore,
+  saisirResultatExamenCore,
+  creerEcoleClientCore,
+  changerStatutEcoleCore,
+  creerPlanTarifaireCore,
+  demanderCongeCore,
+  traiterCongeCore,
+  assignerRemplacementCore,
+  inscrireCantineCore,
+  preterLivreCore,
+  retournerLivreCore,
+  attribuerManuelCore,
+  creerCreneauEdtCore,
+  cloturerAnneeScolaireCore,
+  enregistrerPassageInfirmerieCore,
+  enregistrerFicheSanteCore,
+  enregistrerVaccinationCore,
+} from '@/lib/business';
+import { getDirectionUserId } from '@/lib/business/commun';
+
+type Ok = { ok: true; [k: string]: unknown };
+type Err = { ok: false; error: string };
+export type ActionResult = Ok | Err;
 
 const ECOLE_DEMO_SLUG = 'vinci';
 
-async function getEcoleDemo() {
-  return await db.ecole.findFirst({ where: { slug: ECOLE_DEMO_SLUG } });
+function echec(error: unknown): Err {
+  if (error instanceof AuthError) return { ok: false, error: error.message };
+  if (error instanceof ActionError) return { ok: false, error: error.message };
+  if (error instanceof z.ZodError) {
+    const premier = (error as z.ZodError).issues[0];
+    return { ok: false, error: `Champ invalide : ${premier?.path.join('.') || 'formulaire'} — ${premier?.message ?? ''}` };
+  }
+  console.error('[action] erreur inattendue:', error);
+  return { ok: false, error: 'Une erreur inattendue est survenue. L\'incident a été journalisé.' };
 }
 
-async function getDirectionUserId(ecoleId: string) {
-  const u = await db.utilisateur.findFirst({ where: { ecoleId, type: 'personnel' } });
-  return u?.id ?? 'system';
+async function ctxSession(): Promise<Ctx> {
+  const s = await requireSession();
+  return { utilisateurId: s.utilisateur.id, ecoleId: s.utilisateur.ecoleId, type: s.utilisateur.type, permissions: s.permissions };
 }
 
-async function logAction(ecoleId: string | null, utilisateurId: string | null, action: string, cibleType?: string, cibleId?: string, details?: any) {
-  await db.auditLog.create({
-    data: { ecoleId, utilisateurId, action, cibleType, cibleId, details: details ? JSON.stringify(details) : null },
-  });
+async function ecoleIdDuCtx(ctx: Ctx): Promise<string> {
+  if (ctx.ecoleId) return ctx.ecoleId;
+  // super_admin éditeur : actions portant sur l'école démo
+  const ecole = await (await import('@/lib/db')).db.ecole.findFirst({ where: { slug: ECOLE_DEMO_SLUG } });
+  if (!ecole) throw new ActionError('École démo introuvable.', 'INTROUVABLE');
+  return ecole.id;
+}
+
+// Helpers zod
+const str = z.string().trim();
+const strReq = z.string().trim().min(1, 'obligatoire');
+const idReq = z.string().min(1, 'identifiant obligatoire');
+const numPos = z.coerce.number().positive('doit être positif');
+const numPosInt = z.coerce.number().int('doit être un entier').positive('doit être positif');
+const dateReq = z.coerce.date();
+const optDate = z.union([z.literal(''), z.undefined(), z.coerce.date()]).transform((v) => (v === '' || v === undefined ? undefined : (v as Date)));
+
+// ====================================================================
+// AUTHENTIFICATION
+// ====================================================================
+
+const LoginSchema = z.object({ email: z.string().trim().email('email invalide'), motDePasse: z.string().min(1) });
+
+export async function connexion(formData: FormData): Promise<ActionResult> {
+  try {
+    const { email, motDePasse } = LoginSchema.parse({
+      email: formData.get('email'),
+      motDePasse: formData.get('motDePasse'),
+    });
+    const res = await tenterConnexion(email, motDePasse);
+    if (!res.ok) return { ok: false, error: res.erreur };
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+export async function deconnexion(): Promise<ActionResult> {
+  try {
+    await detruireSessionCourante();
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
 // SaaS LAYER
 // ====================================================================
 
-export async function creerEcoleClient(formData: FormData) {
-  const nom = String(formData.get('nom') ?? '');
-  const slug = String(formData.get('slug') ?? '').toLowerCase().replace(/[^a-z0-9]/g, '-');
-  const planId = String(formData.get('planId') ?? '');
-  const pays = String(formData.get('pays') ?? 'SN');
-  const devise = String(formData.get('devise') ?? 'XOF');
+const EcoleClientSchema = z.object({
+  nom: strReq,
+  slug: strReq,
+  planId: z.string().optional(),
+  pays: str.default('SN'),
+  devise: str.default('XOF'),
+});
 
-  const ecole = await db.ecole.create({ data: { nom, slug, pays, devise, statut: 'essai' } });
-  const plan = await db.planTarifaire.findUnique({ where: { id: planId } });
-  if (plan) {
-    const abonnement = await db.abonnement.create({
-      data: { ecoleId: ecole.id, planId: plan.id, statut: 'essai', modeFacturation: 'mensuel' },
-    });
-    await db.factureSaas.create({
-      data: { ecoleId: ecole.id, abonnementId: abonnement.id, periode: new Date().toISOString().slice(0, 7), montant: 0, devise, statut: 'payee' },
-    });
+export async function creerEcoleClient(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const input = EcoleClientSchema.parse(Object.fromEntries(formData));
+    const r = await creerEcoleClientCore(ctx, input);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  await logAction(null, null, 'ecole.creation', 'ecole', ecole.id, { nom, slug, planId });
-  revalidatePath('/');
-  return { ok: true };
 }
 
-export async function changerStatutEcole(ecoleId: string, statut: string) {
-  await db.ecole.update({ where: { id: ecoleId }, data: { statut } });
-  await logAction(null, null, 'ecole.changement_statut', 'ecole', ecoleId, { statut });
-  revalidatePath('/');
-  return { ok: true };
+const StatutEcoleSchema = z.object({ statut: z.enum(['essai', 'actif', 'suspendu', 'resilie']) });
+
+export async function changerStatutEcole(ecoleId: string, statut: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const { statut: st } = StatutEcoleSchema.parse({ statut });
+    await changerStatutEcoleCore(ctx, ecoleId, st);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function creerPlanTarifaire(formData: FormData) {
-  await db.planTarifaire.create({
-    data: {
-      nom: String(formData.get('nom')),
-      prixMensuel: Number(formData.get('prixMensuel')),
-      prixAnnuel: Number(formData.get('prixAnnuel')),
-      devise: String(formData.get('devise') ?? 'XOF'),
-      dureeEssaiJours: Number(formData.get('dureeEssaiJours') ?? 14),
-      modulesInclus: JSON.stringify(String(formData.get('modules') ?? '').split(',').map(s => s.trim()).filter(Boolean)),
-      actif: true,
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const PlanSchema = z.object({
+  nom: strReq,
+  prixMensuel: z.coerce.number().min(0),
+  prixAnnuel: z.coerce.number().min(0),
+  devise: str.default('XOF'),
+  dureeEssaiJours: z.coerce.number().int().min(0).max(365).default(14),
+  modules: z.string().optional(),
+});
+
+export async function creerPlanTarifaire(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = PlanSchema.parse(Object.fromEntries(formData));
+    const r = await creerPlanTarifaireCore(ctx, {
+      nom: d.nom,
+      prixMensuel: d.prixMensuel,
+      prixAnnuel: d.prixAnnuel,
+      devise: d.devise,
+      dureeEssaiJours: d.dureeEssaiJours,
+      modules: d.modules ? d.modules.split(',').map((s) => s.trim()).filter(Boolean) : [],
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
 // ÉLÈVES
 // ====================================================================
 
-export async function inscrireEleve(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
+const EleveSchema = z.object({
+  nom: strReq,
+  prenom: strReq,
+  dateNaissance: dateReq,
+  lieuNaissance: str.optional(),
+  sexe: z.enum(['M', 'F']),
+  classeId: z.string().optional(),
+});
 
-  const eleve = await db.eleve.create({
-    data: {
-      ecoleId: ecole.id,
-      nom: String(formData.get('nom')),
-      prenom: String(formData.get('prenom')),
-      dateNaissance: new Date(String(formData.get('dateNaissance'))),
-      lieuNaissance: String(formData.get('lieuNaissance') ?? ''),
-      sexe: String(formData.get('sexe') ?? 'M'),
-      classeActuelleId: String(formData.get('classeId')) || undefined,
-      matricule: `EL-${Date.now().toString().slice(-6)}`,
-      statut: 'actif',
-      dateInscription: new Date(),
-    },
-  });
-  const dirId = await getDirectionUserId(ecole.id);
-  await logAction(ecole.id, dirId, 'eleve.inscription', 'eleve', eleve.id, { nom: eleve.nom, prenom: eleve.prenom });
-  revalidatePath('/');
-  return { ok: true };
+export async function inscrireEleve(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = EleveSchema.parse({
+      nom: formData.get('nom'),
+      prenom: formData.get('prenom'),
+      dateNaissance: formData.get('dateNaissance'),
+      lieuNaissance: formData.get('lieuNaissance') ?? '',
+      sexe: formData.get('sexe') ?? 'M',
+      classeId: formData.get('classeId') ?? '',
+    });
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await inscrireEleveCore(ctx, ecoleId, {
+      ...d,
+      classeId: d.classeId || undefined,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function ajouterBesoinSpecifique(formData: FormData) {
-  const eleveId = String(formData.get('eleveId'));
-  const besoin = await db.besoinSpecifique.create({
-    data: {
-      eleveId,
-      type: String(formData.get('type')),
-      description: String(formData.get('description')),
-      dateDiagnostic: formData.get('dateDiagnostic') ? new Date(String(formData.get('dateDiagnostic'))) : null,
-      confidentiel: true,
-    },
-  });
-  const ecole = await getEcoleDemo();
-  const dirId = ecole ? await getDirectionUserId(ecole.id) : null;
-  await logAction(ecole?.id ?? null, dirId, 'eleve.besoin_specifique.ajout', 'eleve', eleveId, { besoinId: besoin.id });
-  revalidatePath('/');
-  return { ok: true };
+const BesoinSchema = z.object({
+  eleveId: idReq,
+  type: strReq,
+  description: strReq,
+  dateDiagnostic: optDate,
+});
+
+export async function ajouterBesoinSpecifique(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = BesoinSchema.parse({
+      eleveId: formData.get('eleveId'),
+      type: formData.get('type'),
+      description: formData.get('description'),
+      dateDiagnostic: formData.get('dateDiagnostic') ?? '',
+    });
+    const r = await ajouterBesoinSpecifiqueCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function ajouterAmenagement(formData: FormData) {
-  const eleveId = String(formData.get('eleveId'));
-  const besoinSpecifiqueId = String(formData.get('besoinSpecifiqueId') || '') || undefined;
-  const typeAmenagement = String(formData.get('typeAmenagement'));
-  const description = String(formData.get('descriptionAmenagement'));
-  const dateDebut = new Date(String(formData.get('dateDebut')));
-  const ecole = await getEcoleDemo();
-  const valideParId = ecole ? await getDirectionUserId(ecole.id) : 'system';
-  await db.amenagement.create({
-    data: { eleveId, besoinSpecifiqueId, typeAmenagement, description, dateDebut, valideParId },
-  });
-  await logAction(ecole?.id ?? null, valideParId, 'eleve.amenagement.ajout', 'eleve', eleveId, { type: typeAmenagement });
-  revalidatePath('/');
-  return { ok: true };
+const AmenagementSchema = z.object({
+  eleveId: idReq,
+  besoinSpecifiqueId: z.string().optional(),
+  typeAmenagement: strReq,
+  description: strReq,
+  dateDebut: dateReq,
+});
+
+export async function ajouterAmenagement(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = AmenagementSchema.parse({
+      eleveId: formData.get('eleveId'),
+      besoinSpecifiqueId: formData.get('besoinSpecifiqueId') ?? '',
+      typeAmenagement: formData.get('typeAmenagement'),
+      description: formData.get('descriptionAmenagement'),
+      dateDebut: formData.get('dateDebut'),
+    });
+    const r = await ajouterAmenagementCore(ctx, { ...d, besoinSpecifiqueId: d.besoinSpecifiqueId || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function activerConsentementPortailEleve(eleveId: string, valideParId: string) {
-  await db.eleve.update({
-    where: { id: eleveId },
-    data: { consentementPortailEleve: true, consentementPortailEleveDate: new Date() },
-  });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, valideParId, 'consentement.portail_eleve_active', 'eleve', eleveId);
-  revalidatePath('/');
-  return { ok: true };
+export async function activerConsentementPortailEleve(eleveId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    await activerConsentementPortailEleveCore(ctx, eleveId);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
 // PÉDAGOGIQUE
 // ====================================================================
 
-export async function creerEvaluation(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.evaluation.create({
-    data: {
-      ecoleId: ecole.id,
-      classeId: String(formData.get('classeId')),
-      matiereId: String(formData.get('matiereId')),
-      enseignantId: String(formData.get('enseignantId')),
-      periodeId: String(formData.get('periodeId')),
-      type: String(formData.get('type') ?? 'devoir'),
-      intitule: String(formData.get('intitule')),
-      date: new Date(String(formData.get('date'))),
-      sur: Number(formData.get('sur') ?? 20),
-      coefficient: Number(formData.get('coefficient') ?? 1),
-      statut: 'planifiee',
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const EvaluationSchema = z.object({
+  classeId: idReq,
+  matiereId: idReq,
+  enseignantId: idReq,
+  periodeId: idReq,
+  type: str.default('devoir'),
+  intitule: strReq,
+  date: dateReq,
+  sur: numPos.default(20),
+  coefficient: numPos.default(1),
+});
+
+export async function creerEvaluation(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = EvaluationSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerEvaluationCore(ctx, ecoleId, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function saisirNotes(formData: FormData) {
-  const evaluationId = String(formData.get('evaluationId'));
-  const saisiParId = String(formData.get('saisiParId'));
-  const entries = Array.from(formData.entries()).filter(([k]) => k.startsWith('note_'));
-  let count = 0;
-  for (const [key, value] of entries) {
-    const eleveId = key.replace('note_', '');
-    const raw = String(value).trim();
-    if (!raw) continue;
-    if (raw.toLowerCase() === 'abs') {
-      await db.note.upsert({
-        where: { eleveId_evaluationId: { eleveId, evaluationId } },
-        create: { eleveId, evaluationId, absent: true, saisiParId },
-        update: { absent: true, valeur: null, saisiParId },
-      });
-    } else {
-      const val = Number(raw);
-      if (Number.isNaN(val)) continue;
-      await db.note.upsert({
-        where: { eleveId_evaluationId: { eleveId, evaluationId } },
-        create: { eleveId, evaluationId, valeur: val, saisiParId },
-        update: { valeur: val, absent: false, saisiParId },
-      });
+export async function saisirNotes(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const evaluationId = idReq.parse(formData.get('evaluationId'));
+    const notes: Array<{ eleveId: string; valeur?: number; absent?: boolean }> = [];
+    for (const [key, value] of Array.from(formData.entries())) {
+      if (!key.startsWith('note_')) continue;
+      const eleveId = key.replace('note_', '');
+      const raw = String(value).trim();
+      if (!raw) continue;
+      if (raw.toLowerCase() === 'abs') {
+        notes.push({ eleveId, absent: true });
+      } else {
+        notes.push({ eleveId, valeur: z.coerce.number().parse(raw) });
+      }
     }
-    count++;
+    const r = await saisirNotesCore(ctx, { evaluationId, notes });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, saisiParId, 'note.saisie', 'evaluation', evaluationId, { count });
-  revalidatePath('/');
-  return { ok: true };
 }
 
-export async function genererBulletin(formData: FormData) {
-  const eleveId = String(formData.get('eleveId'));
-  const periodeId = String(formData.get('periodeId'));
-  const classeId = String(formData.get('classeId'));
-  const creeParId = String(formData.get('creeParId'));
+const BulletinSchema = z.object({ eleveId: idReq, periodeId: idReq, classeId: idReq });
 
-  const notes = await db.note.findMany({
-    where: { eleveId, evaluation: { periodeId, calculeDansMoyenne: true } },
-    include: { evaluation: { include: { matiere: true } } },
-  });
-
-  const parMatiere = new Map<string, { somme: number; coef: number; count: number; matiere: string; coefMatiere: number }>();
-  for (const n of notes) {
-    if (n.absent) continue;
-    const m = n.evaluation.matiere;
-    const key = m.id;
-    const cur = parMatiere.get(key) ?? { somme: 0, coef: 0, count: 0, matiere: m.libelle, coefMatiere: m.coefficient };
-    cur.somme += (n.valeur ?? 0) / n.evaluation.sur * 20 * n.evaluation.coefficient;
-    cur.coef += n.evaluation.coefficient;
-    cur.count++;
-    parMatiere.set(key, cur);
+export async function genererBulletin(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = BulletinSchema.parse({
+      eleveId: formData.get('eleveId'),
+      periodeId: formData.get('periodeId'),
+      classeId: formData.get('classeId'),
+    });
+    const r = await genererBulletinCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-
-  const moyennes: any[] = [];
-  let totalPonderees = 0;
-  let totalCoef = 0;
-  for (const [, m] of parMatiere.entries()) {
-    const moy = m.coef > 0 ? m.somme / m.coef : 0;
-    moyennes.push({ matiere: m.matiere, moyenne: Number(moy.toFixed(2)), coefficient: m.coefMatiere, nbNotes: m.count });
-    totalPonderees += moy * m.coefMatiere;
-    totalCoef += m.coefMatiere;
-  }
-  const moyenneGenerale = totalCoef > 0 ? totalPonderees / totalCoef : null;
-
-  const existing = await db.bulletin.findFirst({
-    where: { eleveId, periodeId },
-    orderBy: { version: 'desc' },
-  });
-  const version = (existing?.version ?? 0) + 1;
-
-  const bulletin = await db.bulletin.create({
-    data: {
-      eleveId, classeId, periodeId, version,
-      statut: 'en_construction',
-      moyennes: JSON.stringify(moyennes),
-      moyenneGenerale: moyenneGenerale ? Number(moyenneGenerale.toFixed(2)) : null,
-      creeParId,
-    },
-  });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, creeParId, 'bulletin.generation', 'bulletin', bulletin.id, { eleveId, periodeId, version, moyenneGenerale });
-  revalidatePath('/');
-  return { ok: true };
 }
 
-export async function changerStatutBulletin(bulletinId: string, statut: string, validateurId: string, role: 'pp' | 'direction') {
-  const data: any = { statut };
-  if (role === 'pp' && statut === 'valide_pp') {
-    data.validePpParId = validateurId;
-    data.dateValidationPp = new Date();
-  } else if (role === 'direction' && statut === 'publie') {
-    data.valideDirectionParId = validateurId;
-    data.dateValidationDirection = new Date();
-    data.datePublication = new Date();
-  } else if (role === 'direction' && statut === 'valide_pp') {
-    data.validePpParId = validateurId;
-    data.dateValidationPp = new Date();
+export async function changerStatutBulletin(bulletinId: string, statut: string, role: 'pp' | 'direction'): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const st = z.string().regex(/^[a-z_]+$/).parse(statut);
+    await changerStatutBulletinCore(ctx, bulletinId, st, role);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
   }
-  await db.bulletin.update({ where: { id: bulletinId }, data });
-  const b = await db.bulletin.findUnique({ where: { id: bulletinId } });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, validateurId, 'bulletin.changement_statut', 'bulletin', bulletinId, { statut, eleveId: b?.eleveId });
-  revalidatePath('/');
-  return { ok: true };
 }
 
 // ====================================================================
 // PRÉSENCES
 // ====================================================================
 
-export async function saisirAppel(formData: FormData) {
-  const seanceId = String(formData.get('seanceId'));
-  const saisiParId = String(formData.get('saisiParId'));
-  const entries = Array.from(formData.entries()).filter(([k]) => k.startsWith('presence_'));
-  let count = 0;
-  for (const [key, value] of entries) {
-    const eleveId = key.replace('presence_', '');
-    const statut = String(value);
-    if (!statut) continue;
-    await db.presence.upsert({
-      where: { eleveId_seanceId: { eleveId, seanceId } },
-      create: { eleveId, seanceId, statut, saisiParId },
-      update: { statut, saisiParId },
-    });
-    count++;
+export async function saisirAppel(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const seanceId = idReq.parse(formData.get('seanceId'));
+    const presences: Array<{ eleveId: string; statut: string; minuteRetard?: number; motif?: string }> = [];
+    for (const [key, value] of Array.from(formData.entries())) {
+      if (!key.startsWith('presence_')) continue;
+      const eleveId = key.replace('presence_', '');
+      const statut = String(value);
+      if (!statut) continue;
+      presences.push({ eleveId, statut, motif: String(formData.get(`motif_${eleveId}`) ?? '') });
+    }
+    const r = await saisirAppelCore(ctx, { seanceId, presences });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, saisiParId, 'presence.saisie', 'seance', seanceId, { count });
-  revalidatePath('/');
-  return { ok: true };
 }
 
 // ====================================================================
 // FINANCES
 // ====================================================================
 
-export async function encaisserPaiement(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  const eleveId = String(formData.get('eleveId'));
-  const montant = Number(formData.get('montant'));
-  const modePaiement = String(formData.get('modePaiement'));
-  const encaisseParId = String(formData.get('encaisseParId'));
-  const reference = `PAY-${Date.now().toString().slice(-8)}`;
+const PaiementSchema = z.object({
+  eleveId: idReq,
+  montant: numPos,
+  modePaiement: z.enum(['espece', 'cheque', 'virement', 'carte', 'mobile_money']),
+  reference: z.string().optional(),
+});
 
-  const paiement = await db.paiement.create({
-    data: { ecoleId: ecole.id, eleveId, montant, devise: ecole.devise, modePaiement, referenceTransaction: reference, encaisseParId },
-  });
-
-  let reste = montant;
-  const echeances = await db.echeanceFrais.findMany({
-    where: { eleveId, statut: { in: ['impayee', 'partiel'] } },
-    orderBy: { dateEcheance: 'asc' },
-  });
-  for (const e of echeances) {
-    if (reste <= 0) break;
-    const restantDu = e.montant - e.montantPaye;
-    const applique = Math.min(reste, restantDu);
-    const nouveauPaye = e.montantPaye + applique;
-    const nouveauStatut = nouveauPaye >= e.montant ? 'payee' : 'partiel';
-    await db.echeanceFrais.update({ where: { id: e.id }, data: { montantPaye: nouveauPaye, statut: nouveauStatut } });
-    await db.paiementEcheance.create({ data: { paiementId: paiement.id, echeanceId: e.id, montantApplique: applique } });
-    reste -= applique;
+export async function encaisserPaiement(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = PaiementSchema.parse(Object.fromEntries(formData));
+    const r = await encaisserPaiementCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  await logAction(ecole.id, encaisseParId, 'paiement.encaissement', 'paiement', paiement.id, { montant, eleveId, modePaiement });
-  revalidatePath('/');
-  return { ok: true };
 }
 
-export async function creerFrais(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  const annee = await db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true } });
-  if (!annee) throw new Error('Aucune année active');
-  await db.frais.create({
-    data: {
-      ecoleId: ecole.id,
-      libelle: String(formData.get('libelle')),
-      type: String(formData.get('type')),
-      montant: Number(formData.get('montant')),
-      devise: ecole.devise,
-      periodicite: String(formData.get('periodicite') ?? 'unique'),
-      niveauId: String(formData.get('niveauId') || '') || undefined,
-      anneeScolaireId: annee.id,
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const FraisSchema = z.object({
+  libelle: strReq,
+  type: strReq,
+  montant: numPos,
+  periodicite: str.default('unique'),
+  niveauId: z.string().optional(),
+});
+
+export async function creerFrais(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = FraisSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerFraisCore(ctx, ecoleId, { ...d, niveauId: d.niveauId || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function genererEcheancesClasse(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  const fraisId = String(formData.get('fraisId'));
-  const classeId = String(formData.get('classeId'));
-  const dateEcheance = new Date(String(formData.get('dateEcheance')));
-  const eleves = await db.eleve.findMany({ where: { classeActuelleId: classeId, statut: 'actif' } });
-  const frais = await db.frais.findUnique({ where: { id: fraisId } });
-  if (!frais) throw new Error('Frais introuvable');
-  for (const e of eleves) {
-    await db.echeanceFrais.create({
-      data: { eleveId: e.id, fraisId, montant: frais.montant, devise: ecole.devise, dateEcheance, statut: 'impayee' },
+const EcheancesSchema = z.object({ fraisId: idReq, classeId: idReq, dateEcheance: dateReq });
+
+export async function genererEcheancesClasse(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = EcheancesSchema.parse(Object.fromEntries(formData));
+    const r = await genererEcheancesClasseCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+export async function validerDepense(depenseId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    await validerDepenseCore(ctx, depenseId);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const DepenseSchema = z.object({
+  categorie: strReq,
+  description: str.default(''),
+  montant: numPos,
+  dateDepense: dateReq,
+  fournisseur: z.string().optional(),
+});
+
+export async function enregistrerDepense(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = DepenseSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await enregistrerDepenseCore(ctx, ecoleId, { ...d, fournisseur: d.fournisseur || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const MouvementStockSchema = z.object({
+  articleId: idReq,
+  type: z.enum(['entree', 'sortie'], { error: 'type doit être entree ou sortie' }),
+  quantite: numPosInt,
+  motif: z.string().optional(),
+});
+
+export async function enregistrerMouvementStock(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = MouvementStockSchema.parse(Object.fromEntries(formData));
+    const r = await enregistrerMouvementStockCore(ctx, { ...d, motif: d.motif || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+// ====================================================================
+// VIE SCOLAIRE & SÉCURITÉ
+// ====================================================================
+
+const IncidentSchema = z.object({
+  eleveId: idReq,
+  dateHeure: dateReq,
+  lieu: z.string().optional(),
+  type: strReq,
+  description: strReq,
+  gravite: z.enum(['leger', 'modere', 'grave', 'tres_grave']),
+});
+
+export async function declarerIncident(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = IncidentSchema.parse(Object.fromEntries(formData));
+    const r = await declarerIncidentCore(ctx, { ...d, lieu: d.lieu || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const SanctionSchema = z.object({ incidentId: idReq, type: strReq, description: str.default('') });
+
+export async function sanctionner(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = SanctionSchema.parse(Object.fromEntries(formData));
+    const r = await sanctionnerCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const SortieSchema = z.object({
+  eleveId: idReq,
+  date: dateReq,
+  heure: z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM'),
+  autorisationId: z.string().optional(),
+  recupereParNom: strReq,
+  validationExceptionnelle: z.boolean().optional(),
+  motifException: z.string().optional(),
+});
+
+export async function sortieEleve(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = SortieSchema.parse({
+      eleveId: formData.get('eleveId'),
+      date: formData.get('date'),
+      heure: formData.get('heure'),
+      autorisationId: formData.get('autorisationId') ?? '',
+      recupereParNom: formData.get('recupereParNom'),
+      validationExceptionnelle: formData.get('validationExceptionnelle') === 'on',
+      motifException: formData.get('motifException') ?? '',
     });
+    const r = await sortieEleveCore(ctx, {
+      ...d,
+      autorisationId: d.autorisationId || undefined,
+      motifException: d.motifException || undefined,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  revalidatePath('/');
-  return { ok: true, count: eleves.length };
 }
 
-export async function validerDepense(depenseId: string, valideeParId: string) {
-  await db.depense.update({ where: { id: depenseId }, data: { validee: true, valideeParId, dateValidation: new Date() } });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, valideeParId, 'depense.validation', 'depense', depenseId);
-  revalidatePath('/');
-  return { ok: true };
-}
+const VisiteurSchema = z.object({ nom: strReq, motif: strReq, pieceVerifiee: z.boolean() });
 
-export async function enregistrerDepense(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.depense.create({
-    data: {
-      ecoleId: ecole.id,
-      categorie: String(formData.get('categorie')),
-      description: String(formData.get('description')),
-      montant: Number(formData.get('montant')),
-      devise: ecole.devise,
-      dateDepense: new Date(String(formData.get('dateDepense'))),
-      fournisseur: String(formData.get('fournisseur') || '') || undefined,
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+export async function enregistrerVisiteur(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = VisiteurSchema.parse({
+      nom: formData.get('nom'),
+      motif: formData.get('motif'),
+      pieceVerifiee: formData.get('pieceVerifiee') === 'on',
+    });
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await enregistrerVisiteurCore(ctx, ecoleId, { nom: d.nom, motifVisite: d.motif, pieceVerifiee: d.pieceVerifiee });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
-// VIE SCOLAIRE
+// SALLES / CALENDRIER / RDV
 // ====================================================================
 
-export async function declarerIncident(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.incident.create({
-    data: {
-      eleveId: String(formData.get('eleveId')),
-      dateHeure: new Date(String(formData.get('dateHeure'))),
-      lieu: String(formData.get('lieu') || '') || undefined,
-      type: String(formData.get('type')),
-      description: String(formData.get('description')),
-      gravite: String(formData.get('gravite')),
-      declareParId: String(formData.get('declareParId')),
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const SalleSchema = z.object({
+  nom: strReq,
+  type: strReq,
+  capacite: numPosInt,
+  equipements: z.string().optional(),
+});
+
+export async function creerSalle(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = SalleSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerSalleCore(ctx, ecoleId, {
+      nom: d.nom,
+      type: d.type,
+      capacite: d.capacite,
+      equipements: d.equipements ? d.equipements.split(',').map((s) => s.trim()).filter(Boolean) : [],
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function sanctionner(formData: FormData) {
-  const incidentId = String(formData.get('incidentId'));
-  const decideParId = String(formData.get('decideParId'));
-  await db.sanction.create({
-    data: {
-      incidentId,
-      type: String(formData.get('type')),
-      description: String(formData.get('description')),
-      statut: 'decidee',
-      decideParId,
-      notifieParents: true,
-      dateNotification: new Date(),
-    },
-  });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, decideParId, 'sanction.notifier_parents', 'incident', incidentId);
-  revalidatePath('/');
-  return { ok: true };
+const CalendrierSchema = z.object({
+  type: strReq,
+  libelle: strReq,
+  dateDebut: dateReq,
+  dateFin: dateReq,
+});
+
+export async function ajouterCalendrier(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = CalendrierSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await ajouterCalendrierCore(ctx, ecoleId, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-// ====================================================================
-// SALLES & CALENDRIER
-// ====================================================================
+const CreneauRdvSchema = z.object({
+  personnelId: idReq,
+  date: dateReq,
+  heureDebut: z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM'),
+  heureFin: z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM'),
+  lieu: str.default('presentiel'),
+});
 
-export async function creerSalle(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.salle.create({
-    data: {
-      ecoleId: ecole.id,
-      nom: String(formData.get('nom')),
-      type: String(formData.get('type')),
-      capacite: Number(formData.get('capacite')),
-      equipements: JSON.stringify(String(formData.get('equipements') ?? '').split(',').map(s => s.trim()).filter(Boolean)),
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
-}
-
-export async function ajouterCalendrier(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  const annee = await db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true } });
-  if (!annee) throw new Error('Aucune année active');
-  await db.calendrierScolaire.create({
-    data: {
-      ecoleId: ecole.id,
-      anneeScolaireId: annee.id,
-      type: String(formData.get('type')),
-      libelle: String(formData.get('libelle')),
-      dateDebut: new Date(String(formData.get('dateDebut'))),
-      dateFin: new Date(String(formData.get('dateFin'))),
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+export async function ouvrirCreneauRdv(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = CreneauRdvSchema.parse(Object.fromEntries(formData));
+    const r = await ouvrirCreneauRdvCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
 // EXAMENS OFFICIELS
 // ====================================================================
 
-export async function inscrireElevesExamen(formData: FormData) {
-  const examenId = String(formData.get('examenId'));
-  const examen = await db.examenOfficiel.findUnique({ where: { id: examenId } });
-  if (!examen) throw new Error('Examen introuvable');
-  const eleves = await db.eleve.findMany({
-    where: { ecoleId: examen.ecoleId, classeActuelle: { niveauId: examen.niveauId }, statut: 'actif' },
-  });
-  let count = 0;
-  for (const e of eleves) {
-    await db.inscriptionExamenOfficiel.upsert({
-      where: { examenOfficielId_eleveId: { examenOfficielId: examenId, eleveId: e.id } },
-      create: { examenOfficielId: examenId, eleveId: e.id, statut: 'inscrit' },
-      update: {},
-    });
-    count++;
+export async function inscrireElevesExamen(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const examenId = idReq.parse(formData.get('examenId'));
+    const r = await inscrireElevesExamenCore(ctx, examenId);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
   }
-  revalidatePath('/');
-  return { ok: true, count };
 }
 
-export async function saisirResultatExamen(inscriptionId: string, resultat: string, saisiPar: string) {
-  await db.inscriptionExamenOfficiel.update({ where: { id: inscriptionId }, data: { resultat, statut: 'presente' } });
-  const ecole = await getEcoleDemo();
-  await logAction(ecole?.id ?? null, saisiPar, 'examen.resultat_saisi', 'inscription', inscriptionId, { resultat });
-  revalidatePath('/');
-  return { ok: true };
+export async function envoyerConvocationsExamen(examenId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await envoyerConvocationsExamenCore(ctx, examenId);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-// ====================================================================
-// RDV PARENTS-PROFS
-// ====================================================================
-
-export async function ouvrirCreneauRdv(formData: FormData) {
-  await db.creneauRdv.create({
-    data: {
-      personnelId: String(formData.get('personnelId')),
-      date: new Date(String(formData.get('date'))),
-      heureDebut: String(formData.get('heureDebut')),
-      heureFin: String(formData.get('heureFin')),
-      statut: 'disponible',
-      lieu: String(formData.get('lieu') ?? 'presentiel'),
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
-}
-
-// ====================================================================
-// SÉCURITÉ PHYSIQUE
-// ====================================================================
-
-export async function enregistrerVisiteur(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.visiteur.create({
-    data: {
-      ecoleId: ecole.id,
-      nom: String(formData.get('nom')),
-      motifVisite: String(formData.get('motif')),
-      pieceIdentiteVerifiee: formData.get('pieceVerifiee') === 'on',
-      badgeNumero: `V-${Math.floor(Math.random() * 9999).toString().padStart(4, '0')}`,
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
-}
-
-export async function sortieEleve(formData: FormData) {
-  const eleveId = String(formData.get('eleveId'));
-  const autorisationId = String(formData.get('autorisationId') || '') || undefined;
-  const validationExceptionnelle = !autorisationId;
-  const ecole = await getEcoleDemo();
-  const valideParId = ecole ? await getDirectionUserId(ecole.id) : 'system';
-  await db.sortieAnticipee.create({
-    data: {
-      eleveId,
-      date: new Date(String(formData.get('date'))),
-      heure: String(formData.get('heure')),
-      autorisationSortieId: autorisationId,
-      recupereParNom: String(formData.get('recupereParNom')),
-      validationExceptionnelle,
-      valideParId,
-      parentsNotifies: true,
-    },
-  });
-  await logAction(ecole?.id ?? null, valideParId, 'sortie_anticipee.enregistree', 'eleve', eleveId, { validationExceptionnelle });
-  revalidatePath('/');
-  return { ok: true };
+export async function saisirResultatExamen(inscriptionId: string, resultat: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    await saisirResultatExamenCore(ctx, inscriptionId, resultat);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
 // COMMUNICATION
 // ====================================================================
 
-export async function envoyerNotification(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.notification.create({
-    data: {
-      ecoleId: ecole.id,
-      destinataireId: String(formData.get('destinataireId') || '') || null,
-      destinataireType: String(formData.get('destinataireType') ?? 'personnel'),
-      sujet: String(formData.get('sujet')),
-      corps: String(formData.get('corps')),
-      canal: String(formData.get('canal') ?? 'in_app'),
-      statut: 'envoye',
-      dateEnvoi: new Date(),
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const NotificationSchema = z.object({
+  destinataireId: z.string().optional(),
+  destinataireType: str.default('personnel'),
+  sujet: strReq,
+  corps: strReq,
+  canal: str.default('in_app'),
+});
+
+export async function envoyerNotification(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = NotificationSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await envoyerNotificationCore(ctx, ecoleId, { ...d, destinataireId: d.destinataireId || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
-export async function creerModeleMessage(formData: FormData) {
-  const ecole = await getEcoleDemo();
-  if (!ecole) throw new Error('École démo introuvable');
-  await db.modeleMessage.create({
-    data: {
-      ecoleId: ecole.id,
-      code: String(formData.get('code')),
-      sujet: String(formData.get('sujet')),
-      corps: String(formData.get('corps')),
-      canaux: JSON.stringify(String(formData.get('canaux') ?? 'in_app').split(',').map(s => s.trim())),
-      langue: 'fr',
-    },
-  });
-  revalidatePath('/');
-  return { ok: true };
+const ModeleSchema = z.object({
+  code: strReq,
+  sujet: strReq,
+  corps: strReq,
+  canaux: str.default('in_app'),
+});
+
+export async function creerModeleMessage(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = ModeleSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerModeleMessageCore(ctx, ecoleId, {
+      code: d.code,
+      sujet: d.sujet,
+      corps: d.corps,
+      canaux: d.canaux.split(',').map((s) => s.trim()).filter(Boolean),
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
 
 // ====================================================================
-// STOCK
+// RH (P2)
 // ====================================================================
 
-export async function enregistrerMouvementStock(formData: FormData) {
-  const articleId = String(formData.get('articleId'));
-  const type = String(formData.get('type'));
-  const quantite = Number(formData.get('quantite'));
-  const ecole = await getEcoleDemo();
-  const effectueParId = ecole ? await getDirectionUserId(ecole.id) : 'system';
-  await db.mouvementStock.create({
-    data: {
-      articleId, type, quantite,
-      motif: String(formData.get('motif') || '') || undefined,
-      effectueParId,
-    },
-  });
-  const delta = type === 'entree' ? quantite : -quantite;
-  await db.stockArticle.update({ where: { id: articleId }, data: { quantite: { increment: delta } } });
-  revalidatePath('/');
-  return { ok: true };
+const DemandeCongeSchema = z.object({
+  personnelId: idReq,
+  type: z.enum(['annuel', 'maladie', 'maternite', 'exceptionnel']),
+  dateDebut: dateReq,
+  dateFin: dateReq,
+  motif: z.string().optional(),
+});
+
+export async function demanderConge(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = DemandeCongeSchema.parse(Object.fromEntries(formData));
+    const r = await demanderCongeCore(ctx, { ...d, motif: d.motif || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
 }
+
+export async function traiterConge(congeId: string, decision: 'valide' | 'refuse'): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const dec = z.enum(['valide', 'refuse']).parse(decision);
+    await traiterCongeCore(ctx, congeId, dec);
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const RemplacementSchema = z.object({
+  congeId: idReq,
+  personnelRemplacantId: idReq,
+  dateDebut: dateReq,
+  dateFin: dateReq,
+});
+
+export async function assignerRemplacement(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = RemplacementSchema.parse(Object.fromEntries(formData));
+    const r = await assignerRemplacementCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+// ====================================================================
+// SERVICES (P2)
+// ====================================================================
+
+const CantineSchema = z.object({
+  eleveId: idReq,
+  jours: strReq,
+  tarifJournalier: numPos,
+});
+
+export async function inscrireCantine(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = CantineSchema.parse(Object.fromEntries(formData));
+    const jours = d.jours.split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
+    const r = await inscrireCantineCore(ctx, { eleveId: d.eleveId, joursSemaine: jours, tarifJournalier: d.tarifJournalier });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const PretSchema = z.object({ livreId: idReq, eleveId: idReq, dureeJours: numPosInt.default(14) });
+
+export async function preterLivre(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = PretSchema.parse(Object.fromEntries(formData));
+    const r = await preterLivreCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+export async function retournerLivre(pretId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await retournerLivreCore(ctx, pretId);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const AttributionManuelSchema = z.object({ manuelScolaireId: idReq, eleveId: idReq, etatRemise: z.enum(['bon', 'usage', 'endommage']).default('bon') });
+
+export async function attribuerManuel(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = AttributionManuelSchema.parse(Object.fromEntries(formData));
+    const r = await attribuerManuelCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+// ====================================================================
+// EMPLOI DU TEMPS & ANNÉE SCOLAIRE (P2)
+// ====================================================================
+
+const CreneauEdtSchema = z.object({
+  classeId: z.string().optional(),
+  matiereId: z.string().optional(),
+  enseignantId: z.string().optional(),
+  salleId: z.string().optional(),
+  jour: z.enum(['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']),
+  heureDebut: z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM'),
+  heureFin: z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM'),
+  recurrenceRule: z.string().optional(),
+  dateDebut: dateReq,
+});
+
+export async function creerCreneauEdt(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = CreneauEdtSchema.parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerCreneauEdtCore(ctx, ecoleId, {
+      ...d,
+      classeId: d.classeId || undefined,
+      matiereId: d.matiereId || undefined,
+      enseignantId: d.enseignantId || undefined,
+      salleId: d.salleId || undefined,
+      recurrenceRule: d.recurrenceRule || undefined,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+export async function cloturerAnneeScolaire(anneeId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await cloturerAnneeScolaireCore(ctx, anneeId);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+// ====================================================================
+// SANTÉ & INFIRMERIE (P2)
+// ====================================================================
+
+const PassageInfirmerieSchema = z.object({
+  eleveId: idReq,
+  motif: strReq,
+  symptomes: z.string().optional(),
+  soinsAdministres: z.string().optional(),
+  temperature: z.coerce.number().optional(),
+  issue: z.enum(['retour_classe', 'parents_contactes', 'depart_hopital', 'retour_domicile']).default('retour_classe'),
+  notifierParents: z.boolean().optional(),
+});
+
+export async function enregistrerPassageInfirmerie(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = PassageInfirmerieSchema.parse({
+      eleveId: formData.get('eleveId'),
+      motif: formData.get('motif'),
+      symptomes: formData.get('symptomes') ?? '',
+      soinsAdministres: formData.get('soinsAdministres') ?? '',
+      temperature: formData.get('temperature') || undefined,
+      issue: formData.get('issue') ?? 'retour_classe',
+      notifierParents: formData.get('notifierParents') === 'on',
+    });
+    const r = await enregistrerPassageInfirmerieCore(ctx, {
+      ...d,
+      symptomes: d.symptomes || undefined,
+      soinsAdministres: d.soinsAdministres || undefined,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const FicheSanteSchema = z.object({
+  eleveId: idReq,
+  groupeSanguin: z.enum(['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional(),
+  allergies: z.string().optional(),
+  traitementsEnCours: z.string().optional(),
+  antecedents: z.string().optional(),
+  medecinTraitant: z.string().optional(),
+  telephoneUrgence: z.string().optional(),
+  contactUrgenceNom: z.string().optional(),
+  autorisationTraitement: z.boolean().optional(),
+});
+
+export async function enregistrerFicheSante(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = FicheSanteSchema.parse(Object.fromEntries(formData));
+    const r = await enregistrerFicheSanteCore(ctx, {
+      ...d,
+      groupeSanguin: d.groupeSanguin || undefined,
+      allergies: d.allergies || undefined,
+      traitementsEnCours: d.traitementsEnCours || undefined,
+      antecedents: d.antecedents || undefined,
+      medecinTraitant: d.medecinTraitant || undefined,
+      telephoneUrgence: d.telephoneUrgence || undefined,
+      contactUrgenceNom: d.contactUrgenceNom || undefined,
+      autorisationTraitement: formData.get('autorisationTraitement') === 'on',
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+const VaccinationSchema = z.object({
+  eleveId: idReq,
+  vaccin: strReq,
+  dateVaccination: optDate,
+  dateRappel: optDate,
+});
+
+export async function enregistrerVaccination(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = VaccinationSchema.parse({
+      eleveId: formData.get('eleveId'),
+      vaccin: formData.get('vaccin'),
+      dateVaccination: formData.get('dateVaccination') ?? '',
+      dateRappel: formData.get('dateRappel') ?? '',
+    });
+    const r = await enregistrerVaccinationCore(ctx, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+// Compatibilité : la direction reste ciblable par les modules UI.
+export { getDirectionUserId };
+
+// Le paramètre dirUserId historique est remplacé par la session : les
+// actions ci-dessus l'ignorent volontairement (source = requireSession).

@@ -252,3 +252,28 @@ Stage Summary:
 - Plan de remédiation P0/P1/P2/P3 chiffré ; les tests T1-T8 = suite de non-régression pour valider les correctifs
 - Livrable : download/rapport-analyse-approfondie-scolagestion-v4.pdf (13 pages)
 - Scripts persistés : scripts/test-failles-logique.ts, scripts/rapport-audit/ (chart, content_fr, build_body, cover.html, merge)
+
+---
+Task ID: REMEDIATION-TOTALE
+Agent: Super Z (main)
+Task: « Exécuter absolument toutes les corrections » — remédiation complète P0/P1/P2/P3 du rapport d'audit AUDIT-LOGIQUE-V3
+
+Work Log:
+- P0 AUTHENTIFICATION RÉELLE : src/lib/auth.ts (scrypt node:crypto, sessions SessionUtilisateur en base, cookie HttpOnly 8 h, verrouillage 5 échecs/15 min, TentativeConnexion journalisées) + page /login avec comptes démo (mot de passe commun Demo1234!) + deconnexion
+- P0 RBAC : chaque action vérifie session + permission (assertPermission) + appartenance tenant (assertTenant) ; portail dérivé du compte (portailDuCompte), sélecteur de portail de démo SUPPRIMÉ
+- P0 TRANSACTIONS + VALIDATION : réécriture totale de actions/index.ts (zod sur TOUS les FormData, try/catch systématique, résultat {ok/error}) ; couche métier pure testable src/lib/business/* (11 fichiers, 45 fonctions métier)
+- P0 PURGE SECRETS : utilisateurs/sessions/2FA/jetons/apiTokens chargés avec select sans motDePasseHash/tokenHash/secret ; 35 datasets invisibles purgés de page.tsx (analyse scripts/check-datasets-usage-v3.cjs)
+- P1 T1→T8 CORRIGÉS : @@unique(eleveId, fraisId, dateEcheance) + génération idempotente ; encaissement $transaction + refus montant > restant dû ; stock enum strict + garde-fou quantité ; notes bornées 0..barème (rejet tout-ou-rien) ; bulletins transactionnels + retry P2002/P2034 + rang/mention/appréciation + machine à états stricte ; matricule séquentiel EL-#### atomique ; sorties mineurs : autorisation vérifiée OU validation exceptionnelle motivée + notifications réelles
+- P1 DIVERS : motif d'appel persisté (motifAbsence), sanctions → vraies notifications parents+direction, notifications = destinataire session (plus direction figée)
+- P2 COMPLÉTUDE : modèles FicheSante/PassageInfirmerie/Vaccination (trou santé réel du schéma 162 modèles) + module sante.tsx complet ; flux RH congés (demande/validation/refus/remplacement avec contrôles de chevauchement) dans personnel.tsx ; cantine/biblio/manuels opérationnels dans services.tsx ; éditeur EDT avec détection de conflits salle/enseignant/classe + transition d'année scolaire (clôture, historisation, montée de niveau) dans salles.tsx ; convocations d'examens réelles + saisie résultats dans examens.tsx ; reçus de paiement imprimables dans finances.tsx ; portails parent/élève basés sur l'identité de session
+- P3 HYGIÈNE : 29 composants UI morts supprimés ; next-auth (dépendance fantôme) retiré ; API /api réel (health-check base+comptages) ; db.ts logs requêtes désactivés par défaut (PRISMA_LOG_QUERY=1 pour les activer) ; getDirectionUserId déterministe ; ModalForm affiche les refus métier (alerte rouge, formulaire conservé)
+- BUG CRITIQUE découvert et corrigé en cours de route : logAction/notifier utilisaient le client db GLOBAL à l'intérieur des $transaction → blocage SQLite (1 connexion) → refonte tx-aware (DbClient, avecRetryConflit pour P2034/database is locked)
+- Seed : hachages scrypt réels (fin des bcrypt factices), compte élève (eleve.diop@vinci.sn), 8 permissions nouvelles (vie_scolaire/securite/examens/services/edt/sante/salles.gerer) mappées aux rôles, données santé, tentatives de connexion d'exemple
+- VALIDATIONS : tsc 0 erreur ; prisma validate OK ; db push OK (165 modèles) ; re-seed OK ; intégrité 165 tables remplies, 0 violation FK ; SUITE DE NON-RÉGRESSION T1-T8 : **8/8 PASS** (scripts/test-regression-t1-t8.ts) ; build prod OK ; 3 serveurs 200/307 ; navigation 16 modules × 0 erreur ; connexions testées direction + élève + parent (portails réels) ; refus métier prouvé en UI (visiteur sans pièce vérifiée) ; écriture prouvée (visiteur créé V-3253 puis purgé)
+
+Stage Summary:
+- TOUTES les corrections du plan de remédiation P0/P1/P2/P3 exécutées : sécurité (auth+RBAC+tenant), intégrité (8/8), complétude (santé, RH, services, EDT, convocations, reçus, transition année, portails réels), hygiène (code mort, API, logs)
+- Architecture : actions = adaptateur HTTP fin ; logique métier pure dans src/lib/business (testable hors Next) ; auth dans src/lib/auth
+- Comptes de démo (mot de passe Demo1234!) : editeur@platforme.com, direction@vinci.sn, mamadou.fall@vinci.sn, parent.pape@gmail.com, eleve.diop@vinci.sn
+- Captures : scripts/screen-final-remediation-dashboard.png, screen-sante-module.png, screen-login-page.png
+- Résiduels mineurs (non bloquants, documentés) : pagination serveur non implémentée (datasets chargés en bloc mais purgés des invisibles) ; 2FA seedé mais non interactif en UI ; transition d'année simplifiée (première classe du niveau suivant)

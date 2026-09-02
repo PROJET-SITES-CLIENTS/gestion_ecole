@@ -5,7 +5,9 @@
 // paiements, RDV, notifications.
 // ====================================================================
 
+import { useState } from 'react';
 import { Users, Wallet, BookOpen, Bell, CalendarDays, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, EmptyState, ModalForm, CreateButton } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
 import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
@@ -17,12 +19,18 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
   const paiements = initialData.paiements ?? [];
   const creneaux = initialData.creneauxRdv ?? [];
   const rdvs = initialData.rdvs ?? [];
-  const notifications = initialData.notifications ?? [];
+  const notifications = (initialData.notifications ?? []).filter((n: any) => n.destinataireId === initialData.session?.utilisateur?.id);
   const classes = initialData.classes ?? [];
   const personnels = initialData.personnels ?? [];
 
-  // Vue parent : on prend le 1er élève comme "enfant"
-  const enfant = eleves[0] ?? null;
+  // Enfants RÉELS du parent connecté (session) — fin du choix arbitraire.
+  const session = initialData.session ?? {};
+  const [enfantActifId, setEnfantActifId] = useState<string | null>(null);
+  const mesEnfants = (session.enfantsIds ?? []).length > 0
+    ? eleves.filter((e: any) => session.enfantsIds.includes(e.id))
+    : eleves.slice(0, 1); // repli pour compatibilité
+  const enfant = mesEnfants.find((e: any) => e.id === enfantActifId) ?? mesEnfants[0] ?? null;
+  const enfantsListe = mesEnfants;
   const enfantClasse = enfant ? classes.find((c: any) => c.id === enfant.classeActuelleId) : null;
   const enfantBulletins = enfant ? bulletins.filter((b: any) => b.eleveId === enfant.id && b.statut === 'publie') : [];
   const enfantEcheances = enfant ? echeances.filter((e: any) => e.eleveId === enfant.id) : [];
@@ -37,6 +45,16 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
         title="Portail Parent"
         subtitle={enfant ? `Vous suivez ${enfant.prenom} ${enfant.nom} · ${enfantClasse?.libelle ?? '—'}` : 'Aucun enfant associé'}
       />
+
+      {enfantsListe.length > 1 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {enfantsListe.map((e: any) => (
+            <Button key={e.id} variant="outline" size="sm" className={enfant?.id === e.id ? 'border-emerald-400 bg-emerald-50' : ''} onClick={() => setEnfantActifId(e.id)}>
+              {e.prenom} {e.nom}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {enfant && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">

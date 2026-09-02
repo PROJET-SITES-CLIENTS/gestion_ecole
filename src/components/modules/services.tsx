@@ -7,6 +7,7 @@
 import { useTransition } from 'react';
 import { Bus, BookMarked, Utensils, Package, Users, ClipboardList } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock } from '@/components/shared-ui';
+import { Button } from '@/components/ui/button';
 import * as actions from '@/app/actions';
 import { formatDate, formatMontant } from '@/lib/format';
 
@@ -36,7 +37,22 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
         <StatCard title="Manuels attribués" value={attributionsManuel.length} sub={`${manuels.length} titres`} icon={Package} color="amber" />
       </div>
 
-      <SectionBlock title="Cantine — inscriptions" description="Repas par élève et jours de la semaine">
+      <SectionBlock
+        title="Cantine — inscriptions"
+        description="Repas par élève et jours de la semaine"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Inscrire à la cantine" />}
+            title="Inscription cantine"
+            fields={[
+              { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
+              { name: 'jours', label: 'Jours (1=lun … 6=sam, séparés par virgules)', placeholder: '1,3,5', required: true },
+              { name: 'tarifJournalier', label: 'Tarif journalier (XOF)', type: 'number', required: true },
+            ]}
+            action={actions.inscrireCantine}
+          />
+        }
+      >
         <DataTable
           columns={[
             { key: 'eleve', label: 'Élève', render: (c) => { const e = eleves.find((x: any) => x.id === c.eleveId); return e ? `${e.prenom} ${e.nom}` : '—'; } },
@@ -79,7 +95,22 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
         </div>
       </SectionBlock>
 
-      <SectionBlock title="Bibliothèque" description="Catalogue de livres et prêts en cours">
+      <SectionBlock
+        title="Bibliothèque"
+        description="Catalogue de livres et prêts en cours"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Prêter un livre" />}
+            title="Prêt de livre"
+            fields={[
+              { name: 'livreId', label: 'Livre', type: 'select', options: biblioLivres.map((l: any) => ({ value: l.id, label: `${l.titre} (${l.exemplairesDisponibles} dispo)` })), required: true },
+              { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
+              { name: 'dureeJours', label: 'Durée (jours)', type: 'number', defaultValue: '14' },
+            ]}
+            action={actions.preterLivre}
+          />
+        }
+      >
         <DataTable
           columns={[
             { key: 'titre', label: 'Titre' },
@@ -100,6 +131,9 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
               { key: 'datePret', label: 'Prêté le', render: (p) => formatDate(p.datePret) },
               { key: 'dateRetourPrevue', label: 'À rendre le', render: (p) => formatDate(p.dateRetourPrevue) },
               { key: 'statut', label: 'Statut', render: (p) => <StatusBadge statut={p.statut} /> },
+              { key: 'retour', label: 'Retour', render: (p) => p.statut === 'en_cours' ? (
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => startTransition(async () => { await actions.retournerLivre(p.id); })}>Rendre</Button>
+              ) : null },
             ]}
             rows={biblioPrets}
             emptyLabel="Aucun prêt en cours"
@@ -107,7 +141,26 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
         </div>
       </SectionBlock>
 
-      <SectionBlock title="Manuels scolaires" description="Stock, attributions et retours">
+      <SectionBlock
+        title="Manuels scolaires"
+        description="Stock, attributions et retours"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Attribuer un manuel" />}
+            title="Attribution de manuel"
+            fields={[
+              { name: 'manuelScolaireId', label: 'Manuel', type: 'select', options: manuels.map((m: any) => ({ value: m.id, label: `${m.titre} (${m.quantiteStock} en stock)` })), required: true },
+              { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
+              { name: 'etatRemise', label: 'État du manuel remis', type: 'select', options: [
+                { value: 'bon', label: 'Bon état' },
+                { value: 'usage', label: 'Usagé' },
+                { value: 'endommage', label: 'Endommagé' },
+              ], required: true },
+            ]}
+            action={actions.attribuerManuel}
+          />
+        }
+      >
         <DataTable
           columns={[
             { key: 'titre', label: 'Titre' },

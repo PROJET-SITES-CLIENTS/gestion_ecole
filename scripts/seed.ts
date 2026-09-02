@@ -4,6 +4,16 @@
 
 import { db } from "../src/lib/db";
 import { Prisma } from "@prisma/client";
+import { randomBytes, scryptSync } from "crypto";
+
+// Mot de passe de démonstration unique — haché en scrypt (P0 auth réelle)
+const MOT_DE_PASSE_DEMO = "Demo1234!";
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const N = 16384, r = 8, p = 1;
+  const hash = scryptSync(password, salt, 64, { N, r, p }).toString("hex");
+  return `scrypt$${N}$${r}$${p}$${salt}$${hash}`;
+}
 
 // Nettoyage idempotent : supprime toutes les lignes de toutes les tables,
 // dans l'ordre topologique (tables porteuses de FK supprimées en premier),
@@ -152,7 +162,7 @@ async function main() {
   await db.utilisateur.create({
     data: {
       email: "editeur@platforme.com",
-      motDePasseHash: "$2a$10$dummyhashforeditor12345678901234567890",
+      motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
       nom: "Éditeur",
       prenom: "Super-Admin",
       type: "super_admin",
@@ -181,7 +191,7 @@ async function main() {
     data: {
       ecoleId: ecole.id,
       email: "direction@vinci.sn",
-      motDePasseHash: "$2a$10$dummyhashfordirection12345678901234",
+      motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
       nom: "Diop",
       prenom: "Awa",
       type: "personnel",
@@ -291,7 +301,7 @@ async function main() {
       data: {
         ecoleId: ecole.id,
         email: `${e.prenom.toLowerCase()}.${e.nom.toLowerCase()}@vinci.sn`,
-        motDePasseHash: "$2a$10$dummyhashforenseignant12345678901234",
+        motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
         nom: e.nom,
         prenom: e.prenom,
         type: "personnel",
@@ -362,7 +372,7 @@ async function main() {
       data: {
         ecoleId: ecole.id,
         email: parentEmail,
-        motDePasseHash: "$2a$10$dummyhashforparent1234567890123456789",
+        motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
         nom: e.eleve.nom,
         prenom: i % 2 === 0 ? "Papa" : "Maman",
         type: "parent",
@@ -386,6 +396,22 @@ async function main() {
       data: { eleveId: e.eleve.id, parentId: parent.id, autoriteParentale: true },
     });
   }
+
+
+  // 15bis) Compte élève (portail élève réel — P2)
+  const eleveCompte = await db.utilisateur.create({
+    data: {
+      ecoleId: ecole.id,
+      email: "eleve.diop@vinci.sn",
+      motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
+      nom: eleves[5].eleve.nom,
+      prenom: eleves[5].eleve.prenom,
+      type: "eleve",
+      consentementPortail: true,
+      consentementDate: new Date(),
+    },
+  });
+  await db.eleve.update({ where: { id: eleves[5].eleve.id }, data: { utilisateurId: eleveCompte.id } });
 
   // 16) Évaluations + notes pour 6A
   const eval1 = await db.evaluation.create({
@@ -1292,6 +1318,13 @@ async function main() {
     { code: "rh.gerer", libelle: "Gérer le personnel", module: "rh" },
     { code: "communication.envoyer", libelle: "Envoyer des communications", module: "communication" },
     { code: "admin.saas", libelle: "Administration SaaS", module: "saas" },
+    { code: "vie_scolaire.gerer", libelle: "Gérer incidents et sanctions", module: "vie_scolaire" },
+    { code: "securite.gerer", libelle: "Gérer la sécurité du site (visiteurs, sorties)", module: "securite" },
+    { code: "examens.gerer", libelle: "Gérer les examens officiels", module: "examens" },
+    { code: "services.gerer", libelle: "Gérer cantine, bibliothèque, manuels", module: "services" },
+    { code: "edt.gerer", libelle: "Gérer les emplois du temps", module: "edt" },
+    { code: "sante.gerer", libelle: "Gérer la santé et l'infirmerie", module: "sante" },
+    { code: "salles.gerer", libelle: "Gérer salles et calendrier", module: "salles" },
   ];
   const perms = [] as any[];
   for (const p of permsData) {
@@ -1307,13 +1340,23 @@ async function main() {
     { roleId: roleDirection.id, permissionId: byCode("rh.gerer") },
     { roleId: roleDirection.id, permissionId: byCode("communication.envoyer") },
     { roleId: roleDirection.id, permissionId: byCode("admin.saas") },
+    { roleId: roleDirection.id, permissionId: byCode("vie_scolaire.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("securite.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("examens.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("services.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("edt.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("sante.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("salles.gerer") },
     { roleId: roleEnseignant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleEnseignant.id, permissionId: byCode("notes.saisir") },
     { roleId: roleEnseignant.id, permissionId: byCode("presences.saisir") },
+    { roleId: roleEnseignant.id, permissionId: byCode("vie_scolaire.gerer") },
+    { roleId: roleEnseignant.id, permissionId: byCode("edt.gerer") },
     { roleId: roleComptable.id, permissionId: byCode("finances.voir") },
     { roleId: roleComptable.id, permissionId: byCode("finances.valider") },
     { roleId: roleSurveillant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSurveillant.id, permissionId: byCode("presences.saisir") },
+    { roleId: roleSurveillant.id, permissionId: byCode("securite.gerer") },
   ] });
   await db.utilisateurRole.createMany({ data: [
     { utilisateurId: dirUtilisateur.id, roleId: roleDirection.id },
@@ -1512,7 +1555,65 @@ async function main() {
     joursSemaine: JSON.stringify([1, 2, 3, 4, 5]), tarifJournalier: 1200, actif: true,
   } });
 
-  console.log("✅ Seed terminé (avec 37 failles corrigées) !");
+  
+  // SANTE — Fiches santé, passages infirmerie, vaccinations (P2)
+  const ficheS1 = await db.ficheSante.create({ data: {
+    ecoleId: ecole.id, eleveId: eleves[0].eleve.id,
+    groupeSanguin: "O+",
+    allergies: "Arachides (réaction cutanée)",
+    traitementsEnCours: "Aucun",
+    medecinTraitant: "Dr. Ndiaye — Cabinet Horizon",
+    telephoneUrgence: "+221 77 123 45 67",
+    contactUrgenceNom: "Parent Adepo",
+    autorisationTraitement: true,
+    dateMiseAJour: new Date("2026-09-10"),
+    misAJourParId: dirUtilisateur.id,
+  } });
+  const ficheS2 = await db.ficheSante.create({ data: {
+    ecoleId: ecole.id, eleveId: eleves[5].eleve.id,
+    groupeSanguin: "A+",
+    allergies: "Pénicilline",
+    traitementsEnCours: "Ventoline ( inhalateur conservé à l'infirmerie )",
+    antecedents: "Asthme léger depuis 2022",
+    medecinTraitant: "Dr. Sow — Clinique Baobab",
+    telephoneUrgence: "+221 76 555 12 34",
+    contactUrgenceNom: "Parent Diop",
+    autorisationTraitement: true,
+    dateMiseAJour: new Date("2026-09-12"),
+    misAJourParId: dirUtilisateur.id,
+  } });
+  await db.ficheSante.create({ data: {
+    ecoleId: ecole.id, eleveId: eleves[7].eleve.id,
+    groupeSanguin: "B+",
+    allergies: "Aucune connue",
+    medecinTraitant: "Dr. Ndiaye — Cabinet Horizon",
+    telephoneUrgence: "+221 78 900 11 22",
+    contactUrgenceNom: "Parent Gueye",
+    autorisationTraitement: false,
+    dateMiseAJour: new Date("2026-09-15"),
+    misAJourParId: dirUtilisateur.id,
+  } });
+
+  await db.passageInfirmerie.createMany({ data: [
+    { ecoleId: ecole.id, eleveId: eleves[0].eleve.id, ficheSanteId: ficheS1.id, datePassage: new Date("2026-09-18T10:15:00"), motif: "Céphalées persistantes", symptomes: "Fatigue, sensibilité à la lumière", soinsAdministres: "Repos 20 min, hydratation", temperature: 37.2, issue: "retour_classe", personnelId: dirUtilisateur.id },
+    { ecoleId: ecole.id, eleveId: eleves[5].eleve.id, ficheSanteId: ficheS2.id, datePassage: new Date("2026-09-20T14:40:00"), motif: "Crise d'asthme légère après EPS", symptomes: "Respiration sifflante", soinsAdministres: "Administration ventoline (autorisation parentale enregistrée), repos 30 min", temperature: 36.9, issue: "parents_contactes", parentsNotifies: true, personnelId: dirUtilisateur.id },
+    { ecoleId: ecole.id, eleveId: eleves[7].eleve.id, datePassage: new Date("2026-09-25T09:05:00"), motif: "Chute dans la cour", symptomes: "Entorse cheville droite suspectée", soinsAdministres: "Immobilisation, glace", temperature: 36.8, issue: "depart_hopital", parentsNotifies: true, personnelId: dirUtilisateur.id },
+  ] });
+
+  await db.vaccination.createMany({ data: [
+    { ecoleId: ecole.id, eleveId: eleves[0].eleve.id, vaccin: "DTaP", dateVaccination: new Date("2024-03-10"), statut: "a_jour" },
+    { ecoleId: ecole.id, eleveId: eleves[5].eleve.id, vaccin: "BCG", dateVaccination: new Date("2023-11-02"), statut: "a_jour" },
+    { ecoleId: ecole.id, eleveId: eleves[7].eleve.id, vaccin: "ROR", dateVaccination: new Date("2024-06-15"), dateRappel: new Date("2027-06-15"), statut: "rappel_prevu" },
+  ] });
+
+  // Tentatives de connexion d'exemple (panneau sécurité)
+  await db.tentativeConnexion.createMany({ data: [
+    { email: "direction@vinci.sn", succes: true, date: new Date("2026-09-28T07:55:00") },
+    { email: "inconnu@exemple.com", succes: false, motifEchec: "Identifiants incorrects", date: new Date("2026-09-28T09:12:00") },
+    { email: "mamadou.fall@vinci.sn", succes: true, date: new Date("2026-09-28T10:30:00") },
+  ] });
+
+console.log("✅ Seed terminé (avec 37 failles corrigées) !");
 }
 
 main().catch((e) => {

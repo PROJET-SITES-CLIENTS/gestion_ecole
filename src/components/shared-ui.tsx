@@ -56,8 +56,8 @@ export function StatCard({ title, value, sub, icon: Icon, color = 'emerald' }: {
   );
 }
 
-export function StatusBadge({ statut }: { statut: string }) {
-  return <Badge variant="outline" className={`text-xs ${statutColor(statut)}`}>{statutLabel(statut)}</Badge>;
+export function StatusBadge({ statut, label }: { statut: string; label?: string }) {
+  return <Badge variant="outline" className={`text-xs ${statutColor(statut)}`}>{label ?? statutLabel(statut)}</Badge>;
 }
 
 export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée' }: {
@@ -95,7 +95,10 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée' }: {
   );
 }
 
-export function FormField({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
+export function FormField({ label, children, required, hidden }: { label: string; children: ReactNode; required?: boolean; hidden?: boolean }) {
+  if (hidden) {
+    return <>{children}</>;
+  }
   return (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium text-gray-700">{label} {required && <span className="text-rose-500">*</span>}</Label>
@@ -107,7 +110,7 @@ export function FormField({ label, children, required }: { label: string; childr
 type FieldDef = {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox';
+  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox' | 'hidden';
   options?: { value: string; label: string }[];
   required?: boolean;
   placeholder?: string;
@@ -126,13 +129,21 @@ export function ModalForm({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [erreur, setErreur] = useState<string | null>(null);
   const valueOf = (f: FieldDef) => defaultValues?.[f.name] ?? f.defaultValue;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    setErreur(null);
     startTransition(async () => {
-      await action(formData);
+      const resultat = await action(formData);
+      if (resultat && resultat.ok === false) {
+        // L'opération a été REFUSÉE (validation/règle métier) : on affiche
+        // l'erreur et on garde le formulaire ouvert pour correction.
+        setErreur(resultat.error ?? 'Opération refusée.');
+        return;
+      }
       setOpen(false);
     });
   }
@@ -144,9 +155,14 @@ export function ModalForm({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
+        {erreur && (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+            {erreur}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-3">
           {fields.map(f => (
-            <FormField key={f.name} label={f.label} required={f.required}>
+            <FormField key={f.name} label={f.label} required={f.required} hidden={f.type === 'hidden'}>
               {f.type === 'textarea' ? (
                 <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} />
               ) : f.type === 'select' ? (

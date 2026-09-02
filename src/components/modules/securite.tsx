@@ -21,6 +21,8 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
   const rolePermissions = initialData.rolePermissions ?? [];
   const utilisateurRoles = initialData.utilisateurRoles ?? [];
   const utilisateurs = initialData.utilisateurs ?? [];
+  const sessions = initialData.sessionsUtilisateur ?? [];
+  const tentativesConnexion = initialData.tentativesConnexion ?? [];
   const [pending, startTransition] = useTransition();
 
   const visiteursPresents = visiteurs.filter((v: any) => !v.dateHeureSortie).length;
@@ -94,6 +96,8 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
               { name: 'recupereParNom', label: 'Récupéré par (nom)', required: true },
               { name: 'date', label: 'Date', type: 'date', required: true },
               { name: 'heure', label: 'Heure', required: true, placeholder: '15:30' },
+              { name: 'validationExceptionnelle', label: 'Validation exceptionnelle direction (sans autorisation parentale)', type: 'checkbox' },
+              { name: 'motifException', label: 'Motif de la validation exceptionnelle', type: 'textarea', placeholder: 'Obligatoire si validation exceptionnelle' },
             ]}
             action={actions.sortieEleve}
           />
@@ -111,6 +115,42 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
           rows={sorties}
           emptyLabel="Aucune sortie anticipée enregistrée"
         />
+      </SectionBlock>
+
+
+      <SectionBlock
+        title="Sessions & journal des connexions"
+        description="Sessions actives (8 h max, cookie HttpOnly) et tentatives de connexion (succès et échecs)"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h4 className="text-sm font-medium mb-2">Sessions actives</h4>
+            <DataTable
+              columns={[
+                { key: 'utilisateur', label: 'Utilisateur', render: (s) => { const u = utilisateurs.find((x: any) => x.id === s.utilisateurId); return u ? `${u.prenom} ${u.nom}` : s.utilisateurId.slice(0, 8) + '…'; } },
+                { key: 'dateCreation', label: 'Ouverte', render: (s) => formatDateTime(s.dateCreation) },
+                { key: 'dateDerniereActivite', label: 'Dernière activité', render: (s) => s.dateDerniereActivite ? formatDateTime(s.dateDerniereActivite) : '—' },
+                { key: 'dateExpiration', label: 'Expire', render: (s) => formatDateTime(s.dateExpiration) },
+                { key: 'active', label: 'État', render: (s) => s.active && new Date(s.dateExpiration) > new Date() ? <StatusBadge statut="actif" /> : <StatusBadge statut="expire" /> },
+              ]}
+              rows={sessions.filter((s: any) => s.active)}
+              emptyLabel="Aucune session active"
+            />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium mb-2">Dernières tentatives de connexion</h4>
+            <DataTable
+              columns={[
+                { key: 'email', label: 'Email' },
+                { key: 'succes', label: 'Résultat', render: (t) => t.succes ? <StatusBadge statut="payee" label="Succès" /> : <StatusBadge statut="impayee" label="Échec" /> },
+                { key: 'motifEchec', label: 'Motif', render: (t) => t.motifEchec ?? '—' },
+                { key: 'date', label: 'Quand', render: (t) => formatDateTime(t.date) },
+              ]}
+              rows={tentativesConnexion.slice(0, 15)}
+              emptyLabel="Aucune tentative enregistrée"
+            />
+          </div>
+        </div>
       </SectionBlock>
 
       <SectionBlock
