@@ -231,3 +231,24 @@ Stage Summary:
 - État final : 3 serveurs HTTP 200, tsc 0 erreur, build OK, 163/163 tables remplies, 0 violation FK, 15 modules × 5 portails navigués sans erreur, 2 flux CRUD validés avec persistance disque, mobile OK, VLM OK
 - Scripts réutilisables : check-db-full.ts, fk-detail.ts, test-modules.sh
 - Captures : final-dashboard.png, final-eleves.png, final-v4-modules.png, final-finances.png, final-mobile-iphone14.png
+
+---
+Task ID: AUDIT-LOGIQUE-V3
+Agent: Super Z (main)
+Task: « Analyse encore plus approfondie : tout est-il complet côté logique, tous les éléments de gestion scolaire sont-ils complets, reste-t-il des failles non résolues »
+
+Work Log:
+- 3 explorations parallèles (agents) : croisement 162 modèles Prisma ↔ code ; audit logique des 29 actions + page.tsx + app-shell ; audit fonctionnel des 18 modules UI
+- Vérifications personnelles ciblées : lecture intégrale actions/index.ts (646 l.), grep auth/sécurité (1 seul hit = texte descriptif), contraintes EcheanceFrais (0 @@unique), code mort pedagogique.tsx:37, motif_ presences.tsx:115 jeté, 0 onDelete dans le schéma
+- Tests dynamiques en base (scripts/test-failles-logique.ts, réplication exacte du code des actions, nettoyage complet + revalidation intégrité) : 8/8 ÉCHEC
+  T1 échéances dupliquées (2x) · T2 paiements concurrents : 60000 encaissés, échéance soldée à 30000 (30000 XOF perdus) · T3 stock 250 → -100 → -150 (« entrée » accentuée décrémente) · T4 note 25/20 acceptée · T5 course bulletin → P2002 brut (crash non géré) · T6 paiement -50000 persisté · T7 matricules identiques constatés (EL-163563 ×2) · T8 sortie mineur sans autorisation auto-validée, 0 notification créée
+- Constats structurels : 29 modèles en écriture (17,9 %), 119 lecture seule, 14 morts, 2 write-only (Abonnement, PaiementEcheance) ; ~34 datasets chargés jamais affichés ; 7/18 modules vitrine ; 0 auth, 0 zod, 0 try/catch, 0 $transaction, 0 delete ; secrets (tokenHash, 2FA, motDePasseHash) dans le payload client (page.tsx l.369-370) ; next-auth + zod installés jamais importés
+- Rapport PDF complet généré via skill pdf (route Report) : Template 01 HUD, palette cascade seed 42, TOC cliquable (TocDocTemplate + multiBuild), 6 tableaux, 1 graphique matplotlib, 10 chapitres — QA pdf_qa 11/11 (1 warning design), cover_validate PASS, font.check 0 issue, VLM 4 pages OK
+- Infra : rebuild production (standalone avait disparu), 3 serveurs HTTP 200 (3000/3100/81)
+
+Stage Summary:
+- VERDICT : plateforme de démonstration riche (schéma 162 modèles remarquable, base intègre 163/163, 0 erreur technique) mais NON opérationnelle : sécurité inexistante, intégrité non garantie (8/8), 73,5 % du schéma en lecture seule
+- 3 failles majeures documentées (sécurité / intégrité / couverture) + 5 familles secondaires, toutes localisées fichier:ligne
+- Plan de remédiation P0/P1/P2/P3 chiffré ; les tests T1-T8 = suite de non-régression pour valider les correctifs
+- Livrable : download/rapport-analyse-approfondie-scolagestion-v4.pdf (13 pages)
+- Scripts persistés : scripts/test-failles-logique.ts, scripts/rapport-audit/ (chart, content_fr, build_body, cover.html, merge)

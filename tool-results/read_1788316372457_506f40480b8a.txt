@@ -1,0 +1,444 @@
+     1→'use client';
+     2→
+     3→// ====================================================================
+     4→// Module Élèves — fiche élève + besoins spécifiques + aménagements +
+     5→// consentements mineurs (Partie C.2 + C.8 du cahier des charges)
+     6→// ====================================================================
+     7→
+     8→import { useState, useTransition } from 'react';
+     9→import { Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText } from 'lucide-react';
+    10→import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, InfoRow, EmptyState } from '@/components/shared-ui';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    13→import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+    14→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    15→import { Badge } from '@/components/ui/badge';
+    16→import * as actions from '@/app/actions';
+    17→import { formatDate, formatDateTime, initiales } from '@/lib/format';
+    18→
+    19→export default function ElevesModule({ initialData }: { initialData: any }) {
+    20→  const eleves = initialData.eleves ?? [];
+    21→  const classes = initialData.classes ?? [];
+    22→  const besoinsSpecifiques = initialData.besoinsSpecifiques ?? [];
+    23→  const amenagements = initialData.amenagements ?? [];
+    24→  const documents = initialData.documents ?? [];
+    25→  const historiquesClasse = initialData.historiquesClasse ?? [];
+    26→  const attributionsManuel = initialData.attributionsManuel ?? [];
+    27→  const manuels = initialData.manuels ?? [];
+    28→  const autorisationsSortie = initialData.autorisationsSortie ?? [];
+    29→  const sortiesAnticipees = initialData.sortiesAnticipees ?? [];
+    30→  const incidentsEleve = initialData.incidents ?? [];
+    31→  const dirUserId = initialData.dirUserId ?? 'system';
+    32→  const [selectedEleveId, setSelectedEleveId] = useState<string | null>(eleves[0]?.id ?? null);
+    33→  const [sheetOpen, setSheetOpen] = useState(false);
+    34→  const [pending, startTransition] = useTransition();
+    35→
+    36→  const eleve = eleves.find((e: any) => e.id === selectedEleveId);
+    37→  const classeEleve = classes.find((c: any) => c.id === eleve?.classeActuelleId);
+    38→  const eleveBesoinSpec = besoinsSpecifiques.filter((b: any) => b.eleveId === selectedEleveId);
+    39→  const eleveAmenagements = amenagements.filter((a: any) => a.eleveId === selectedEleveId);
+    40→  const eleveManuels = attributionsManuel.filter((a: any) => a.eleveId === selectedEleveId);
+    41→  const eleveAutorisations = autorisationsSortie.filter((a: any) => a.eleveId === selectedEleveId);
+    42→  const eleveDocuments = documents.filter((d: any) => d.eleveId === selectedEleveId);
+    43→  const eleveHistorique = historiquesClasse.filter((h: any) => h.eleveId === selectedEleveId);
+    44→  const eleveIncidents = incidentsEleve.filter((i: any) => i.eleveId === selectedEleveId);
+    45→
+    46→  const consentementsEnAttente = eleves.filter((e: any) => !e.consentementPortailEleve).length;
+    47→  const elevesAvecBesoin = eleves.filter((e: any) => besoinsSpecifiques.some((b: any) => b.eleveId === e.id)).length;
+    48→
+    49→  return (
+    50→    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    51→      <PageHeader
+    52→        title="Élèves"
+    53→        subtitle={`${eleves.length} élèves · ${classes.length} classes`}
+    54→        actions={
+    55→          <ModalForm
+    56→            trigger={<CreateButton label="Inscrire un élève" />}
+    57→            title="Inscrire un nouvel élève"
+    58→            fields={[
+    59→              { name: 'nom', label: 'Nom', required: true },
+    60→              { name: 'prenom', label: 'Prénom', required: true },
+    61→              { name: 'dateNaissance', label: 'Date de naissance', type: 'date', required: true },
+    62→              { name: 'lieuNaissance', label: 'Lieu de naissance', defaultValue: 'Dakar' },
+    63→              { name: 'sexe', label: 'Sexe', type: 'select', options: [{ value: 'M', label: 'M' }, { value: 'F', label: 'F' }] },
+    64→              { name: 'classeId', label: 'Classe', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
+    65→            ]}
+    66→            action={actions.inscrireEleve}
+    67→          />
+    68→        }
+    69→      />
+    70→
+    71→      {/* KPIs */}
+    72→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+    73→        <StatCard title="Élèves actifs" value={eleves.length} icon={Users} color="emerald" />
+    74→        <StatCard title="Besoins spécifiques" value={elevesAvecBesoin} sub="élèves concernés" icon={Accessibility} color="amber" />
+    75→        <StatCard title="Consentements en attente" value={consentementsEnAttente} sub="portail élève mineur" icon={FileCheck} color="rose" />
+    76→        <StatCard title="Dernière inscription" value={eleves.length ? formatDate(eleves[eleves.length - 1].dateInscription) : '—'} icon={Users} color="blue" />
+    77→      </div>
+    78→
+    79→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    80→        {/* Liste des élèves */}
+    81→        <div className="lg:col-span-1">
+    82→          <SectionBlock title="Liste des élèves" description={`${eleves.length} au total`}>
+    83→            <div className="max-h-[60vh] overflow-y-auto -mx-2">
+    84→              {eleves.map((e: any) => (
+    85→                <button
+    86→                  key={e.id}
+    87→                  onClick={() => setSelectedEleveId(e.id)}
+    88→                  className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm hover:bg-gray-50 ${selectedEleveId === e.id ? 'bg-emerald-50 border border-emerald-200' : ''}`}
+    89→                >
+    90→                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 ${e.sexe === 'F' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+    91→                    {initiales(e.nom, e.prenom)}
+    92→                  </div>
+    93→                  <div className="flex-1 min-w-0">
+    94→                    <div className="font-medium truncate">{e.prenom} {e.nom}</div>
+    95→                    <div className="text-xs text-gray-500">{e.matricule} · {classes.find((c: any) => c.id === e.classeActuelleId)?.libelle ?? '—'}</div>
+    96→                  </div>
+    97→                  {besoinsSpecifiques.some((b: any) => b.eleveId === e.id) && (
+    98→                    <Accessibility className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+    99→                  )}
+   100→                </button>
+   101→              ))}
+   102→            </div>
+   103→          </SectionBlock>
+   104→        </div>
+   105→
+   106→        {/* Fiche élève */}
+   107→        <div className="lg:col-span-2">
+   108→          {eleve ? (
+   109→            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+   110→              <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+   111→                <SheetHeader>
+   112→                  <SheetTitle className="flex items-center gap-3">
+   113→                    <div className={`h-10 w-10 rounded-full flex items-center justify-center font-medium ${eleve.sexe === 'F' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+   114→                      {initiales(eleve.nom, eleve.prenom)}
+   115→                    </div>
+   116→                    <div>
+   117→                      <div className="text-lg">{eleve.prenom} {eleve.nom}</div>
+   118→                      <div className="text-xs font-normal text-gray-500">{eleve.matricule} · {classeEleve?.libelle}</div>
+   119→                    </div>
+   120→                  </SheetTitle>
+   121→                </SheetHeader>
+   122→                <Tabs defaultValue="identite" className="mt-4">
+   123→                  <TabsList className="grid grid-cols-2 md:grid-cols-4 mb-2 h-auto">
+   124→                    <TabsTrigger value="identite" className="text-xs">Identité</TabsTrigger>
+   125→                    <TabsTrigger value="besoins" className="text-xs">Besoins</TabsTrigger>
+   126→                    <TabsTrigger value="manuels" className="text-xs">Manuels</TabsTrigger>
+   127→                    <TabsTrigger value="securite" className="text-xs">Sécurité</TabsTrigger>
+   128→                  </TabsList>
+   129→
+   130→                  <TabsContent value="identite" className="space-y-4">
+   131→                    <Card>
+   132→                      <CardContent className="p-4">
+   133→                        <dl className="space-y-1">
+   134→                          <InfoRow label="Nom complet" value={`${eleve.prenom} ${eleve.nom}`} />
+   135→                          <InfoRow label="Matricule" value={eleve.matricule} />
+   136→                          <InfoRow label="Date de naissance" value={formatDate(eleve.dateNaissance)} />
+   137→                          <InfoRow label="Lieu de naissance" value={eleve.lieuNaissance} />
+   138→                          <InfoRow label="Sexe" value={eleve.sexe} />
+   139→                          <InfoRow label="Statut" value={<StatusBadge statut={eleve.statut} />} />
+   140→                          <InfoRow label="Date d'inscription" value={formatDate(eleve.dateInscription)} />
+   141→                          <InfoRow label="Classe actuelle" value={classeEleve?.libelle} />
+   142→                        </dl>
+   143→                      </CardContent>
+   144→                    </Card>
+   145→
+   146→                    <Card>
+   147→                      <CardHeader className="pb-2"><CardTitle className="text-sm">Historique des classes</CardTitle></CardHeader>
+   148→                      <CardContent>
+   149→                        {eleveHistorique.length === 0 ? (
+   150→                          <p className="text-sm text-gray-500">Aucun historique enregistré — première année dans l'établissement.</p>
+   151→                        ) : (
+   152→                          <div className="space-y-2">
+   153→                            {eleveHistorique.map((h: any) => (
+   154→                              <div key={h.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+   155→                                <div>
+   156→                                  <div className="text-sm font-medium">{classes.find((c: any) => c.id === h.classeId)?.libelle ?? h.classeId}</div>
+   157→                                  <div className="text-xs text-gray-500">{formatDate(h.dateEntree)} → {h.dateSortie ? formatDate(h.dateSortie) : 'en cours'}</div>
+   158→                                </div>
+   159→                                {h.motif && <Badge variant="outline" className="text-xs">{h.motif}</Badge>}
+   160→                              </div>
+   161→                            ))}
+   162→                          </div>
+   163→                        )}
+   164→                      </CardContent>
+   165→                    </Card>
+   166→
+   167→                    <Card>
+   168→                      <CardHeader className="pb-2"><CardTitle className="text-sm">Dossier documentaire</CardTitle></CardHeader>
+   169→                      <CardContent>
+   170→                        {eleveDocuments.length === 0 ? (
+   171→                          <p className="text-sm text-gray-500">Aucun document associé à cet élève.</p>
+   172→                        ) : (
+   173→                          <div className="space-y-2">
+   174→                            {eleveDocuments.map((d: any) => (
+   175→                              <div key={d.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+   176→                                <div className="flex items-center gap-2">
+   177→                                  <FileText className="h-4 w-4 text-gray-400" />
+   178→                                  <div>
+   179→                                    <div className="text-sm font-medium">
+   180→                                      {d.type === 'acte_naissance' ? 'Acte de naissance' : d.type === 'certificat_medical' ? 'Certificat médical' : d.type === 'diplome' ? 'Diplôme' : d.type === 'cv' ? 'CV' : d.type}
+   181→                                    </div>
+   182→                                    <div className="text-xs text-gray-500">Ajouté le {formatDate(d.dateAjout)}</div>
+   183→                                  </div>
+   184→                                </div>
+   185→                                {d.confidentiel && <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-xs">Confidentiel</Badge>}
+   186→                              </div>
+   187→                            ))}
+   188→                          </div>
+   189→                        )}
+   190→                      </CardContent>
+   191→                    </Card>
+   192→
+   193→                    <Card>
+   194→                      <CardHeader className="pb-2"><CardTitle className="text-sm">Consentements mineurs (Partie C.8)</CardTitle></CardHeader>
+   195→                      <CardContent className="space-y-2">
+   196→                        <ConsentementRow label="Portail élève activé" checked={eleve.consentementPortailEleve} date={eleve.consentementPortailEleveDate}
+   197→                          onActivate={() => startTransition(() => { void actions.activerConsentementPortailEleve(eleve.id, dirUserId); })} />
+   198→                        <ConsentementRow label="Photo interne autorisée" checked={eleve.consentementPhotoInterne} />
+   199→                        <ConsentementRow label="Photo externe autorisée" checked={eleve.consentementPhotoExterne} />
+   200→                      </CardContent>
+   201→                    </Card>
+   202→
+   203→                    {eleveIncidents.length > 0 && (
+   204→                      <Card>
+   205→                        <CardHeader className="pb-2"><CardTitle className="text-sm">Incidents disciplinaires</CardTitle></CardHeader>
+   206→                        <CardContent>
+   207→                          {eleveIncidents.map((i: any) => (
+   208→                            <div key={i.id} className="text-sm py-2 border-b border-gray-100 last:border-0">
+   209→                              <div className="flex items-center justify-between">
+   210→                                <span className="font-medium">{i.type}</span>
+   211→                                <StatusBadge statut={i.gravite} />
+   212→                              </div>
+   213→                              <p className="text-xs text-gray-500 mt-1">{i.description}</p>
+   214→                              <p className="text-[10px] text-gray-400 mt-1">{formatDateTime(i.dateHeure)} — {i.lieu}</p>
+   215→                            </div>
+   216→                          ))}
+   217→                        </CardContent>
+   218→                      </Card>
+   219→                    )}
+   220→                  </TabsContent>
+   221→
+   222→                  <TabsContent value="besoins" className="space-y-4">
+   223→                    <div className="flex justify-end">
+   224→                      <ModalForm
+   225→                        trigger={<CreateButton label="Déclarer un besoin" />}
+   226→                        title="Déclarer un besoin spécifique"
+   227→                        fields={[
+   228→                          { name: 'eleveId', type: 'text', label: 'ID élève', defaultValue: eleve.id },
+   229→                          { name: 'type', label: 'Type', type: 'select', options: [
+   230→                            { value: 'trouble_apprentissage', label: 'Trouble d\'apprentissage' },
+   231→                            { value: 'handicap_moteur', label: 'Handicap moteur' },
+   232→                            { value: 'deficit_visuel', label: 'Déficience visuelle' },
+   233→                            { value: 'auditif', label: 'Déficience auditive' },
+   234→                            { value: 'autre', label: 'Autre' },
+   235→                          ], required: true },
+   236→                          { name: 'description', label: 'Description', type: 'textarea', required: true },
+   237→                          { name: 'dateDiagnostic', label: 'Date diagnostic', type: 'date' },
+   238→                        ]}
+   239→                        action={actions.ajouterBesoinSpecifique}
+   240→                      />
+   241→                    </div>
+   242→
+   243→                    {eleveBesoinSpec.length === 0 ? (
+   244→                      <EmptyState title="Aucun besoin spécifique déclaré" description="L'élève ne présente pas de besoin particulier déclaré." />
+   245→                    ) : (
+   246→                      eleveBesoinSpec.map((b: any) => (
+   247→                        <Card key={b.id}>
+   248→                          <CardContent className="p-4">
+   249→                            <div className="flex items-start justify-between">
+   250→                              <div>
+   251→                                <div className="text-sm font-medium">{b.type}</div>
+   252→                                <p className="text-xs text-gray-600 mt-1">{b.description}</p>
+   253→                                {b.dateDiagnostic && <p className="text-[10px] text-gray-400 mt-1">Diagnosé le {formatDate(b.dateDiagnostic)}</p>}
+   254→                              </div>
+   255→                              <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-xs">Confidentiel</Badge>
+   256→                            </div>
+   257→                          </CardContent>
+   258→                        </Card>
+   259→                      ))
+   260→                    )}
+   261→
+   262→                    <div className="border-t border-gray-200 pt-4">
+   263→                      <h4 className="text-sm font-medium mb-2">Aménagements actifs</h4>
+   264→                      <div className="flex justify-end">
+   265→                        <ModalForm
+   266→                          trigger={<CreateButton label="Ajouter aménagement" />}
+   267→                          title="Ajouter un aménagement"
+   268→                          fields={[
+   269→                            { name: 'eleveId', type: 'text', label: 'ID élève', defaultValue: eleve.id },
+   270→                            ...(eleveBesoinSpec.length > 0 ? [{
+   271→                              name: 'besoinSpecifiqueId',
+   272→                              label: 'Besoin spécifique',
+   273→                              type: 'select' as const,
+   274→                              options: eleveBesoinSpec.map((b: any) => ({ value: b.id, label: b.type })),
+   275→                            }] : []),
+   276→                            { name: 'typeAmenagement', label: 'Type', type: 'select', options: [
+   277→                              { value: 'tiers_temps', label: 'Tiers-temps examen' },
+   278→                              { value: 'AVS', label: 'Accompagnant (AVS)' },
+   279→                              { value: 'materiel_adapte', label: 'Matériel adapté' },
+   280→                              { value: 'amenagement_pedagogique', label: 'Aménagement pédagogique' },
+   281→                            ], required: true },
+   282→                            { name: 'descriptionAmenagement', label: 'Description', type: 'textarea', required: true },
+   283→                            { name: 'dateDebut', label: 'Date de début', type: 'date', required: true },
+   284→                          ]}
+   285→                          action={actions.ajouterAmenagement}
+   286→                        />
+   287→                      </div>
+   288→                      {eleveAmenagements.length === 0 ? (
+   289→                        <p className="text-sm text-gray-500">Aucun aménagement en cours.</p>
+   290→                      ) : (
+   291→                        <div className="space-y-2">
+   292→                          {eleveAmenagements.map((a: any) => (
+   293→                            <div key={a.id} className="flex items-center justify-between p-2 bg-emerald-50 rounded border border-emerald-200">
+   294→                              <div>
+   295→                                <div className="text-sm font-medium">{a.typeAmenagement}</div>
+   296→                                <p className="text-xs text-gray-600">{a.description}</p>
+   297→                                <p className="text-[10px] text-gray-400 mt-1">Depuis le {formatDate(a.dateDebut)}</p>
+   298→                              </div>
+   299→                              <StatusBadge statut="actif" />
+   300→                            </div>
+   301→                          ))}
+   302→                        </div>
+   303→                      )}
+   304→                    </div>
+   305→                  </TabsContent>
+   306→
+   307→                  <TabsContent value="manuels" className="space-y-4">
+   308→                    {eleveManuels.length === 0 ? (
+   309→                      <EmptyState title="Aucun manuel attribué" />
+   310→                    ) : (
+   311→                      <DataTable
+   312→                        columns={[
+   313→                          { key: 'manuel', label: 'Manuel', render: (a) => manuels.find((m: any) => m.id === a.manuelScolaireId)?.titre ?? '—' },
+   314→                          { key: 'etatRemise', label: 'Remis en' },
+   315→                          { key: 'statut', label: 'Statut', render: (a) => <StatusBadge statut={a.statut} /> },
+   316→                          { key: 'dateAttribution', label: 'Attribué le', render: (a) => formatDate(a.dateAttribution) },
+   317→                        ]}
+   318→                        rows={eleveManuels}
+   319→                      />
+   320→                    )}
+   321→                  </TabsContent>
+   322→
+   323→                  <TabsContent value="securite" className="space-y-4">
+   324→                    <Card>
+   325→                      <CardHeader className="pb-2"><CardTitle className="text-sm">Personnes autorisées à récupérer l'élève</CardTitle></CardHeader>
+   326→                      <CardContent>
+   327→                        {eleveAutorisations.length === 0 ? (
+   328→                          <p className="text-sm text-gray-500">Aucune autorisation enregistrée.</p>
+   329→                        ) : (
+   330→                          <div className="space-y-2">
+   331→                            {eleveAutorisations.map((a: any) => (
+   332→                              <div key={a.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+   333→                                <div>
+   334→                                  <div className="text-sm font-medium">{a.nomPersonneAutorisee}</div>
+   335→                                  <div className="text-xs text-gray-500">{a.lienAvecEleve} · {a.telephone}</div>
+   336→                                </div>
+   337→                                <StatusBadge statut={a.active ? 'actif' : 'resilie'} />
+   338→                              </div>
+   339→                            ))}
+   340→                          </div>
+   341→                        )}
+   342→                      </CardContent>
+   343→                    </Card>
+   344→
+   345→                    {eleveIncidents.length > 0 && (
+   346→                      <Card>
+   347→                        <CardHeader className="pb-2"><CardTitle className="text-sm">Sorties anticipées enregistrées</CardTitle></CardHeader>
+   348→                        <CardContent className="text-sm text-gray-500">
+   349→                          {sortiesAnticipees.filter((s: any) => s.eleveId === eleve.id).length === 0
+   350→                            ? "Aucune sortie anticipée pour cet élève."
+   351→                            : `${sortiesAnticipees.filter((s: any) => s.eleveId === eleve.id).length} sortie(s) enregistrée(s).`}
+   352→                        </CardContent>
+   353→                      </Card>
+   354→                    )}
+   355→                  </TabsContent>
+   356→                </Tabs>
+   357→              </SheetContent>
+   358→            </Sheet>
+   359→          ) : null}
+   360→
+   361→          <SectionBlock
+   362→            title={eleve ? `Fiche élève — ${eleve.prenom} ${eleve.nom}` : 'Sélectionnez un élève'}
+   363→            description={eleve ? `${eleve.matricule} · ${classeEleve?.libelle}` : 'Cliquez sur un élève dans la liste pour afficher sa fiche complète.'}
+   364→          >
+   365→            {eleve ? (
+   366→              <div className="space-y-3">
+   367→                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+   368→                  <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Naissance</div><div className="text-sm font-medium">{formatDate(eleve.dateNaissance)}</div></CardContent></Card>
+   369→                  <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Statut</div><div><StatusBadge statut={eleve.statut} /></div></CardContent></Card>
+   370→                  <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Portail élève</div><div>{eleve.consentementPortailEleve ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700">Activé</Badge> : <Badge variant="outline" className="bg-amber-50 text-amber-700">En attente</Badge>}</div></CardContent></Card>
+   371→                  <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Besoins</div><div className="text-sm font-medium">{eleveBesoinSpec.length > 0 ? `${eleveBesoinSpec.length} déclaré(s)` : 'Aucun'}</div></CardContent></Card>
+   372→                </div>
+   373→
+   374→                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+   375→                  <Card>
+   376→                    <CardContent className="p-3">
+   377→                      <div className="text-xs text-gray-500 mb-1">Aménagements actifs</div>
+   378→                      {eleveAmenagements.length === 0 ? <div className="text-sm text-gray-400">Aucun</div> : (
+   379→                        <div className="space-y-1">{eleveAmenagements.map((a: any) => <div key={a.id} className="text-sm">{a.typeAmenagement}</div>)}</div>
+   380→                      )}
+   381→                    </CardContent>
+   382→                  </Card>
+   383→                  <Card>
+   384→                    <CardContent className="p-3">
+   385→                      <div className="text-xs text-gray-500 mb-1">Manuels en prêt</div>
+   386→                      <div className="text-sm font-medium">{eleveManuels.length} manuel(s)</div>
+   387→                    </CardContent>
+   388→                  </Card>
+   389→                </div>
+   390→
+   391→                <div className="flex flex-wrap gap-2">
+   392→                  <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}><Eye className="h-4 w-4 mr-1" /> Voir la fiche complète</Button>
+   393→                  <ModalForm
+   394→                    trigger={<Button variant="outline" size="sm"><Accessibility className="h-4 w-4 mr-1" /> Déclarer un besoin</Button>}
+   395→                    title={`Déclarer un besoin spécifique — ${eleve.prenom} ${eleve.nom}`}
+   396→                    fields={[
+   397→                      { name: 'eleveId', type: 'text', label: 'ID élève', defaultValue: eleve.id },
+   398→                      { name: 'type', label: 'Type', type: 'select', options: [
+   399→                        { value: 'trouble_apprentissage', label: 'Trouble d\'apprentissage' },
+   400→                        { value: 'handicap_moteur', label: 'Handicap moteur' },
+   401→                        { value: 'deficit_visuel', label: 'Déficience visuelle' },
+   402→                        { value: 'auditif', label: 'Déficience auditive' },
+   403→                        { value: 'autre', label: 'Autre' },
+   404→                      ], required: true },
+   405→                      { name: 'description', label: 'Description', type: 'textarea', required: true },
+   406→                      { name: 'dateDiagnostic', label: 'Date diagnostic', type: 'date' },
+   407→                    ]}
+   408→                    action={actions.ajouterBesoinSpecifique}
+   409→                  />
+   410→                  {!eleve.consentementPortailEleve && (
+   411→                    <Button variant="outline" size="sm" onClick={() => startTransition(() => { void actions.activerConsentementPortailEleve(eleve.id, dirUserId); })}>
+   412→                      <Shield className="h-4 w-4 mr-1" /> Activer consentement portail élève
+   413→                    </Button>
+   414→                  )}
+   415→                </div>
+   416→              </div>
+   417→            ) : (
+   418→              <EmptyState title="Aucun élève sélectionné" description="Sélectionnez un élève dans la liste à gauche." />
+   419→            )}
+   420→          </SectionBlock>
+   421→        </div>
+   422→      </div>
+   423→    </div>
+   424→  );
+   425→}
+   426→
+   427→function ConsentementRow({ label, checked, date, onActivate }: { label: string; checked: boolean; date?: any; onActivate?: () => void }) {
+   428→  return (
+   429→    <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+   430→      <div>
+   431→        <div className="text-sm font-medium text-gray-700">{label}</div>
+   432→        {date && <div className="text-[10px] text-gray-400">Activé le {formatDate(date)}</div>}
+   433→      </div>
+   434→      {checked ? (
+   435→        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">✓ Activé</Badge>
+   436→      ) : onActivate ? (
+   437→        <Button size="sm" variant="outline" onClick={onActivate}>Activer</Button>
+   438→      ) : (
+   439→        <Badge variant="outline" className="bg-gray-100 text-gray-700">Non activé</Badge>
+   440→      )}
+   441→    </div>
+   442→  );
+   443→}
+   444→

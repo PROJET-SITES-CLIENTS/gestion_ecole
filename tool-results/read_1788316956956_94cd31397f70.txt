@@ -1,0 +1,902 @@
+    40→   739→  // en_construction / en_attente_validation_pp / valide_pp / en_attente_direction / publie / rectifie
+    41→   740→  moyennes                String? // JSON
+    42→   741→  moyenneGenerale         Float?
+    43→   742→  rang                    Int?
+    44→   743→  appreciationGenerale    String?
+    45→   744→  decisionConseil         String?
+    46→   745→  pdfUrl                  String?
+    47→   746→  creeParId               String
+    48→   747→  dateCreation            DateTime  @default(now())
+    49→   748→  dateValidationPp        DateTime?
+    50→   749→  validePpParId           String?
+    51→   750→  dateValidationDirection DateTime?
+    52→   751→  valideDirectionParId    String?
+    53→   752→  datePublication         DateTime?
+    54→   753→
+    55→   754→  @@unique([eleveId, periodeId, version])
+    56→   755→}
+    57→   756→
+    58→   757→// Évaluation par compétences (maternelle / cycles non chiffrés)
+    59→   758→model Competence {
+    60→   759→  id        String   @id @default(cuid())
+    61→   760→  ecoleId   String
+    62→   761→  cycleId   String
+    63→   762→  cycle     Cycle    @relation(fields: [cycleId], references: [id])
+    64→   763→  matiereId String?
+    65→   764→  matiere   Matiere? @relation(fields: [matiereId], references: [id])
+    66→   765→  libelle   String
+    67→   766→  ordre     Int
+    68→   767→
+    69→   768→  evaluations EvaluationCompetence[]
+    70→   769→}
+    71→   770→
+    72→   771→model EvaluationCompetence {
+    73→   772→  id                String     @id @default(cuid())
+    74→   773→  eleveId           String
+    75→   774→  eleve             Eleve      @relation(fields: [eleveId], references: [id])
+    76→   775→  competenceId      String
+    77→   776→  competence        Competence @relation(fields: [competenceId], references: [id])
+    78→   777→  periodeId         String
+    79→   778→  periode           Periode    @relation(fields: [periodeId], references: [id])
+    80→   779→  niveauAcquisition String // non_acquis/en_cours/acquis/maitrise
+    81→   780→  commentaire       String?
+    82→   781→  evalueParId       String
+    83→   782→  date              DateTime   @default(now())
+    84→   783→
+    85→   784→  @@unique([eleveId, competenceId, periodeId])
+    86→   785→}
+    87→   786→
+    88→   787→// ====================================================================
+    89→   788→// PARTIE B — PRÉSENCES (déjà couvert par Presence + Seance)
+    90→   789→// ====================================================================
+    91→   790→// (Le model Presence est déclaré dans la section Pédagogique car attaché à une Seance.)
+    92→   791→
+    93→   792→model Presence {
+    94→   793→  id                         String   @id @default(cuid())
+    95→   794→  eleveId                    String
+    96→   795→  eleve                      Eleve    @relation(fields: [eleveId], references: [id])
+    97→   796→  seanceId                   String
+    98→   797→  seance                     Seance   @relation(fields: [seanceId], references: [id])
+    99→   798→  statut                     String // present/absent/retard/excuse
+   100→   799→  minuteRetard               Int?
+   101→   800→  motifAbsence               String?
+   102→   801→  justificatifUrl            String?
+   103→   802→  saisiParId                 String
+   104→   803→  dateSaisie                 DateTime @default(now())
+   105→   804→  synchroniseDepuisHorsLigne Boolean  @default(false)
+   106→   805→
+   107→   806→  @@unique([eleveId, seanceId])
+   108→   807→}
+   109→   808→
+   110→   809→// ====================================================================
+   111→   810→// PARTIE B — VIE SCOLAIRE / DISCIPLINE
+   112→   811→// ====================================================================
+   113→   812→
+   114→   813→model Incident {
+   115→   814→  id           String   @id @default(cuid())
+   116→   815→  eleveId      String
+   117→   816→  eleve        Eleve    @relation(fields: [eleveId], references: [id])
+   118→   817→  dateHeure    DateTime
+   119→   818→  lieu         String?
+   120→   819→  type         String // comportement/violence/fraude/autre
+   121→   820→  description  String
+   122→   821→  gravite      String // leger/modere/grave
+   123→   822→  declareParId String
+   124→   823→  temoins      String? // JSON
+   125→   824→
+   126→   825→  sanctions Sanction[]
+   127→   826→}
+   128→   827→
+   129→   828→model Sanction {
+   130→   829→  id               String    @id @default(cuid())
+   131→   830→  incidentId       String
+   132→   831→  incident         Incident  @relation(fields: [incidentId], references: [id])
+   133→   832→  type             String // avertissement/retenue/exclusion/convocation
+   134→   833→  description      String
+   135→   834→  dateDebut        DateTime?
+   136→   835→  dateFin          DateTime?
+   137→   836→  dureeHeures      Int?
+   138→   837→  statut           String    @default("decidee")
+   139→   838→  decideParId      String
+   140→   839→  notifieParents   Boolean   @default(false)
+   141→   840→  dateNotification DateTime?
+   142→   841→}
+   143→   842→
+   144→   843→// ====================================================================
+   145→   844→// PARTIE B — FINANCES / COMPTABILITÉ
+   146→   845→// ====================================================================
+   147→   846→
+   148→   847→model Frais {
+   149→   848→  id              String  @id @default(cuid())
+   150→   849→  ecoleId         String
+   151→   850→  ecole           Ecole   @relation(fields: [ecoleId], references: [id])
+   152→   851→  libelle         String
+   153→   852→  type            String // scolarite/inscription/cantine/transport/activite
+   154→   853→  montant         Float
+   155→   854→  devise          String
+   156→   855→  periodicite     String? // unique/mensuel/trimestriel/annuel
+   157→   856→  niveauId        String?
+   158→   857→  niveau          Niveau? @relation(fields: [niveauId], references: [id])
+   159→   858→  anneeScolaireId String
+   160→   859→
+   161→   860→  echeances EcheanceFrais[]
+   162→   861→}
+   163→   862→
+   164→   863→model EcheanceFrais {
+   165→   864→  id           String   @id @default(cuid())
+   166→   865→  eleveId      String
+   167→   866→  eleve        Eleve    @relation(fields: [eleveId], references: [id])
+   168→   867→  fraisId      String
+   169→   868→  frais        Frais    @relation(fields: [fraisId], references: [id])
+   170→   869→  montant      Float
+   171→   870→  devise       String
+   172→   871→  dateEcheance DateTime
+   173→   872→  montantPaye  Float    @default(0)
+   174→   873→  statut       String   @default("impayee")
+   175→   874→  source       String?
+   176→   875→  dateCreation DateTime @default(now())
+   177→   876→
+   178→   877→  paiements PaiementEcheance[]
+   179→   878→}
+   180→   879→
+   181→   880→model Paiement {
+   182→   881→  id                   String        @id @default(cuid())
+   183→   882→  ecoleId              String
+   184→   883→  ecole                Ecole         @relation(fields: [ecoleId], references: [id])
+   185→   884→  eleveId              String?
+   186→   885→  eleve                Eleve?        @relation(fields: [eleveId], references: [id])
+   187→   886→  parentId             String?
+   188→   887→  parent               ParentTuteur? @relation(fields: [parentId], references: [id])
+   189→   888→  montant              Float
+   190→   889→  devise               String
+   191→   890→  modePaiement         String // espece/cheque/virement/carte/mobile_money
+   192→   891→  referenceTransaction String?
+   193→   892→  datePaiement         DateTime      @default(now())
+   194→   893→  encaisseParId        String
+   195→   894→  recuUrl              String?
+   196→   895→
+   197→   896→  echeances PaiementEcheance[]
+   198→   897→}
+   199→   898→
+   200→   899→model PaiementEcheance {
+   201→   900→  paiementId      String
+   202→   901→  paiement        Paiement      @relation(fields: [paiementId], references: [id])
+   203→   902→  echeanceId      String
+   204→   903→  echeance        EcheanceFrais @relation(fields: [echeanceId], references: [id])
+   205→   904→  montantApplique Float
+   206→   905→
+   207→   906→  @@id([paiementId, echeanceId])
+   208→   907→}
+   209→   908→
+   210→   909→model Depense {
+   211→   910→  id              String    @id @default(cuid())
+   212→   911→  ecoleId         String
+   213→   912→  ecole           Ecole     @relation(fields: [ecoleId], references: [id])
+   214→   913→  categorie       String
+   215→   914→  description     String
+   216→   915→  montant         Float
+   217→   916→  devise          String
+   218→   917→  dateDepense     DateTime
+   219→   918→  fournisseur     String?
+   220→   919→  justificatifUrl String?
+   221→   920→  validee         Boolean   @default(false)
+   222→   921→  valideeParId    String?
+   223→   922→  dateValidation  DateTime?
+   224→   923→}
+   225→   924→
+   226→   925→model StockArticle {
+   227→   926→  id           String  @id @default(cuid())
+   228→   927→  ecoleId      String
+   229→   928→  ecole        Ecole   @relation(fields: [ecoleId], references: [id])
+   230→   929→  nom          String
+   231→   930→  categorie    String?
+   232→   931→  quantite     Int     @default(0)
+   233→   932→  seuilAlerte  Int?
+   234→   933→  unite        String?
+   235→   934→  prixUnitaire Float?
+   236→   935→
+   237→   936→  mouvements MouvementStock[]
+   238→   937→}
+   239→   938→
+   240→   939→model MouvementStock {
+   241→   940→  id            String       @id @default(cuid())
+   242→   941→  articleId     String
+   243→   942→  article       StockArticle @relation(fields: [articleId], references: [id])
+   244→   943→  type          String // entree/sortie
+   245→   944→  quantite      Int
+   246→   945→  motif         String?
+   247→   946→  dateMouvement DateTime     @default(now())
+   248→   947→  effectueParId String
+   249→   948→}
+   250→   949→
+   251→   950→// ====================================================================
+   252→   951→// PARTIE C.1 — SALLES, RÉSERVATIONS, CALENDRIER SCOLAIRE
+   253→   952→// ====================================================================
+   254→   953→
+   255→   954→model Salle {
+   256→   955→  id          String @id @default(cuid())
+   257→   956→  ecoleId     String
+   258→   957→  ecole       Ecole  @relation(fields: [ecoleId], references: [id])
+   259→   958→  nom         String
+   260→   959→  type        String // classe/labo/informatique/sport/polyvalente
+   261→   960→  capacite    Int
+   262→   961→  equipements String @default("[]") // JSON list
+   263→   962→
+   264→   963→  reservations     ReservationSalle[]
+   265→   964→  batiment         Batiment?          @relation(fields: [batimentId], references: [id])
+   266→   965→  batimentId       String?
+   267→   966→  etage            Etage?             @relation(fields: [etageId], references: [id])
+   268→   967→  etageId          String?
+   269→   968→  salleEquipements SalleEquipement[]
+   270→   969→
+   271→   970→  @@unique([ecoleId, nom])
+   272→   971→}
+   273→   972→
+   274→   973→model ReservationSalle {
+   275→   974→  id           String   @id @default(cuid())
+   276→   975→  salleId      String
+   277→   976→  salle        Salle    @relation(fields: [salleId], references: [id])
+   278→   977→  seanceId     String?  @unique
+   279→   978→  seance       Seance?  @relation(fields: [seanceId], references: [id])
+   280→   979→  date         DateTime
+   281→   980→  heureDebut   String
+   282→   981→  heureFin     String
+   283→   982→  reserveParId String
+   284→   983→  motif        String?
+   285→   984→  createdAt    DateTime @default(now())
+   286→   985→}
+   287→   986→
+   288→   987→model CalendrierScolaire {
+   289→   988→  id              String        @id @default(cuid())
+   290→   989→  ecoleId         String
+   291→   990→  ecole           Ecole         @relation(fields: [ecoleId], references: [id])
+   292→   991→  anneeScolaireId String
+   293→   992→  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+   294→   993→  type            String // jour_ferie/vacances/journee_pedagogique/evenement
+   295→   994→  libelle         String
+   296→   995→  dateDebut       DateTime
+   297→   996→  dateFin         DateTime
+   298→   997→}
+   299→   998→
+   300→   999→// ====================================================================
+   301→  1000→// PARTIE C.4 — EXAMENS OFFICIELS
+   302→  1001→// ====================================================================
+   303→  1002→
+   304→  1003→model ExamenOfficiel {
+   305→  1004→  id              String   @id @default(cuid())
+   306→  1005→  ecoleId         String
+   307→  1006→  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+   308→  1007→  nom             String // CEPE/BEPC/BAC
+   309→  1008→  anneeScolaireId String
+   310→  1009→  niveauId        String
+   311→  1010→  niveau          Niveau   @relation(fields: [niveauId], references: [id])
+   312→  1011→  dateDebut       DateTime
+   313→  1012→  dateFin         DateTime
+   314→  1013→
+   315→  1014→  inscriptions InscriptionExamenOfficiel[]
+   316→  1015→}
+   317→  1016→
+   318→  1017→model InscriptionExamenOfficiel {
+   319→  1018→  id                    String         @id @default(cuid())
+   320→  1019→  examenOfficielId      String
+   321→  1020→  examenOfficiel        ExamenOfficiel @relation(fields: [examenOfficielId], references: [id])
+   322→  1021→  eleveId               String
+   323→  1022→  eleve                 Eleve          @relation(fields: [eleveId], references: [id])
+   324→  1023→  numeroTable           String?
+   325→  1024→  centreExamen          String?
+   326→  1025→  statut                String         @default("inscrit") // inscrit/convoque/presente/absent
+   327→  1026→  resultat              String? // admis/ajourne/mention
+   328→  1027→  amenagementAppliqueId String?
+   329→  1028→  certificatUrl         String?
+   330→  1029→
+   331→  1030→  @@unique([examenOfficielId, eleveId])
+   332→  1031→}
+   333→  1032→
+   334→  1033→// ====================================================================
+   335→  1034→// PARTIE C.5 — RDV PARENTS-PROFS
+   336→  1035→// ====================================================================
+   337→  1036→
+   338→  1037→model CreneauRdv {
+   339→  1038→  id          String    @id @default(cuid())
+   340→  1039→  personnelId String
+   341→  1040→  personnel   Personnel @relation(fields: [personnelId], references: [id])
+   342→  1041→  date        DateTime
+   343→  1042→  heureDebut  String
+   344→  1043→  heureFin    String
+   345→  1044→  statut      String    @default("disponible") // disponible/reserve/annule
+   346→  1045→  lieu        String // presentiel/visio
+   347→  1046→  lienVisio   String?
+   348→  1047→
+   349→  1048→  rdvs Rdv[]
+   350→  1049→}
+   351→  1050→
+   352→  1051→model Rdv {
+   353→  1052→  id           String       @id @default(cuid())
+   354→  1053→  creneauRdvId String
+   355→  1054→  creneauRdv   CreneauRdv   @relation(fields: [creneauRdvId], references: [id])
+   356→  1055→  parentId     String
+   357→  1056→  parent       ParentTuteur @relation(fields: [parentId], references: [id])
+   358→  1057→  eleveId      String?
+   359→  1058→  eleve        Eleve?       @relation(fields: [eleveId], references: [id])
+   360→  1059→  motif        String?
+   361→  1060→  statut       String       @default("confirme") // confirme/annule/honore/absence
+   362→  1061→  createdAt    DateTime     @default(now())
+   363→  1062→}
+   364→  1063→
+   365→  1064→model ReunionCollective {
+   366→  1065→  id          String   @id @default(cuid())
+   367→  1066→  classeId    String
+   368→  1067→  classe      Classe   @relation(fields: [classeId], references: [id])
+   369→  1068→  date        DateTime
+   370→  1069→  heure       String
+   371→  1070→  lieu        String
+   372→  1071→  description String?
+   373→  1072→}
+   374→  1073→
+   375→  1074→// ====================================================================
+   376→  1075→// PARTIE C.6 — MANUELS & FOURNITURES
+   377→  1076→// ====================================================================
+   378→  1077→
+   379→  1078→model ManuelScolaire {
+   380→  1079→  id            String   @id @default(cuid())
+   381→  1080→  ecoleId       String
+   382→  1081→  ecole         Ecole    @relation(fields: [ecoleId], references: [id])
+   383→  1082→  titre         String
+   384→  1083→  matiereId     String?
+   385→  1084→  matiere       Matiere? @relation(fields: [matiereId], references: [id])
+   386→  1085→  niveauId      String?
+   387→  1086→  niveau        Niveau?  @relation(fields: [niveauId], references: [id])
+   388→  1087→  editeur       String?
+   389→  1088→  anneeEdition  Int?
+   390→  1089→  quantiteStock Int      @default(0)
+   391→  1090→
+   392→  1091→  attributions AttributionManuel[]
+   393→  1092→}
+   394→  1093→
+   395→  1094→model AttributionManuel {
+   396→  1095→  id                     String         @id @default(cuid())
+   397→  1096→  manuelScolaireId       String
+   398→  1097→  manuelScolaire         ManuelScolaire @relation(fields: [manuelScolaireId], references: [id])
+   399→  1098→  eleveId                String
+   400→  1099→  eleve                  Eleve          @relation(fields: [eleveId], references: [id])
+   401→  1100→  dateAttribution        DateTime
+   402→  1101→  dateRestitutionPrevue  DateTime?
+   403→  1102→  etatRemise             String // bon usage endommage
+   404→  1103→  etatRetour             String?
+   405→  1104→  statut                 String         @default("en_cours") // en_cours/rendu/perdu/facture
+   406→  1105→  echeanceFraisGenereeId String?
+   407→  1106→}
+   408→  1107→
+   409→  1108→model ListeFourniture {
+   410→  1109→  id              String        @id @default(cuid())
+   411→  1110→  niveauId        String
+   412→  1111→  niveau          Niveau        @relation(fields: [niveauId], references: [id])
+   413→  1112→  anneeScolaireId String
+   414→  1113→  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+   415→  1114→  contenu         String // JSON
+   416→  1115→  publiee         Boolean       @default(false)
+   417→  1116→  datePublication DateTime?
+   418→  1117→}
+   419→  1118→
+   420→  1119→// ====================================================================
+   421→  1120→// PARTIE C.7 — SÉCURITÉ PHYSIQUE
+   422→  1121→// ====================================================================
+   423→  1122→
+   424→  1123→model Visiteur {
+   425→  1124→  id                    String    @id @default(cuid())
+   426→  1125→  ecoleId               String
+   427→  1126→  ecole                 Ecole     @relation(fields: [ecoleId], references: [id])
+   428→  1127→  nom                   String
+   429→  1128→  motifVisite           String
+   430→  1129→  personneVisiteeId     String?
+   431→  1130→  dateHeureEntree       DateTime  @default(now())
+   432→  1131→  dateHeureSortie       DateTime?
+   433→  1132→  pieceIdentiteVerifiee Boolean   @default(false)
+   434→  1133→  badgeNumero           String?
+   435→  1134→}
+   436→  1135→
+   437→  1136→model AutorisationSortie {
+   438→  1137→  id                   String  @id @default(cuid())
+   439→  1138→  eleveId              String
+   440→  1139→  eleve                Eleve   @relation(fields: [eleveId], references: [id])
+   441→  1140→  nomPersonneAutorisee String
+   442→  1141→  lienAvecEleve        String?
+   443→  1142→  telephone            String?
+   444→  1143→  photoUrl             String?
+   445→  1144→  active               Boolean @default(true)
+   446→  1145→  valideeParId         String
+   447→  1146→}
+   448→  1147→
+   449→  1148→model SortieAnticipee {
+   450→  1149→  id                       String   @id @default(cuid())
+   451→  1150→  eleveId                  String
+   452→  1151→  eleve                    Eleve    @relation(fields: [eleveId], references: [id])
+   453→  1152→  date                     DateTime
+   454→  1153→  heure                    String
+   455→  1154→  autorisationSortieId     String?
+   456→  1155→  recupereParNom           String
+   457→  1156→  validationExceptionnelle Boolean  @default(false)
+   458→  1157→  valideParId              String
+   459→  1158→  parentsNotifies          Boolean  @default(false)
+   460→  1159→  dateSortie               DateTime @default(now())
+   461→  1160→}
+   462→  1161→
+   463→  1162→// ====================================================================
+   464→  1163→// PARTIE B.9 — SERVICES COMPLÉMENTAIRES (cantine, transport, biblio)
+   465→  1164→// ====================================================================
+   466→  1165→
+   467→  1166→model CantineInscription {
+   468→  1167→  id              String  @id @default(cuid())
+   469→  1168→  ecoleId         String
+   470→  1169→  ecole           Ecole   @relation(fields: [ecoleId], references: [id])
+   471→  1170→  eleveId         String
+   472→  1171→  eleve           Eleve   @relation(fields: [eleveId], references: [id])
+   473→  1172→  classeId        String
+   474→  1173→  classe          Classe  @relation(fields: [classeId], references: [id])
+   475→  1174→  anneeScolaireId String
+   476→  1175→  joursSemaine    String // JSON array [1,3,5]
+   477→  1176→  tarifJournalier Float
+   478→  1177→  actif           Boolean @default(true)
+   479→  1178→}
+   480→  1179→
+   481→  1180→model TransportLigne {
+   482→  1181→  id          String  @id @default(cuid())
+   483→  1182→  ecoleId     String
+   484→  1183→  ecole       Ecole   @relation(fields: [ecoleId], references: [id])
+   485→  1184→  nom         String
+   486→  1185→  vehicule    String?
+   487→  1186→  chauffeurId String?
+   488→  1187→
+   489→  1188→  arrets       TransportArret[]
+   490→  1189→  inscriptions TransportInscription[]
+   491→  1190→}
+   492→  1191→
+   493→  1192→model TransportArret {
+   494→  1193→  id      String         @id @default(cuid())
+   495→  1194→  ligneId String
+   496→  1195→  ligne   TransportLigne @relation(fields: [ligneId], references: [id])
+   497→  1196→  nom     String
+   498→  1197→  ordre   Int
+   499→  1198→  heure   String
+   500→  1199→}
+   501→  1200→
+   502→  1201→model TransportInscription {
+   503→  1202→  id              String         @id @default(cuid())
+   504→  1203→  ecoleId         String
+   505→  1204→  ecole           Ecole          @relation(fields: [ecoleId], references: [id])
+   506→  1205→  eleveId         String
+   507→  1206→  eleve           Eleve          @relation(fields: [eleveId], references: [id])
+   508→  1207→  classeId        String
+   509→  1208→  classe          Classe         @relation(fields: [classeId], references: [id])
+   510→  1209→  ligneId         String
+   511→  1210→  ligne           TransportLigne @relation(fields: [ligneId], references: [id])
+   512→  1211→  arretMonteeId   String?
+   513→  1212→  arretDescenteId String?
+   514→  1213→  tarif           Float
+   515→  1214→  actif           Boolean        @default(true)
+   516→  1215→}
+   517→  1216→
+   518→  1217→model BiblioLivre {
+   519→  1218→  id                     String  @id @default(cuid())
+   520→  1219→  ecoleId                String
+   521→  1220→  ecole                  Ecole   @relation(fields: [ecoleId], references: [id])
+   522→  1221→  isbn                   String?
+   523→  1222→  titre                  String
+   524→  1223→  auteur                 String?
+   525→  1224→  editeur                String?
+   526→  1225→  anneePublication       Int?
+   527→  1226→  exemplairesTotal       Int
+   528→  1227→  exemplairesDisponibles Int
+   529→  1228→  categorie              String?
+   530→  1229→  cote                   String?
+   531→  1230→
+   532→  1231→  prets BiblioPret[]
+   533→  1232→}
+   534→  1233→
+   535→  1234→model BiblioPret {
+   536→  1235→  id                  String      @id @default(cuid())
+   537→  1236→  livreId             String
+   538→  1237→  livre               BiblioLivre @relation(fields: [livreId], references: [id])
+   539→  1238→  eleveId             String
+   540→  1239→  eleve               Eleve       @relation(fields: [eleveId], references: [id])
+   541→  1240→  datePret            DateTime
+   542→  1241→  dateRetourPrevue    DateTime
+   543→  1242→  dateRetourEffective DateTime?
+   544→  1243→  statut              String      @default("en_cours")
+   545→  1244→  penaliteGeneree     Float       @default(0)
+   546→  1245→}
+   547→  1246→
+   548→  1247→// ====================================================================
+   549→  1248→// PARTIE B.11 — COMMUNICATION / NOTIFICATIONS
+   550→  1249→// ====================================================================
+   551→  1250→
+   552→  1251→model ModeleMessage {
+   553→  1252→  id      String  @id @default(cuid())
+   554→  1253→  ecoleId String
+   555→  1254→  ecole   Ecole   @relation(fields: [ecoleId], references: [id])
+   556→  1255→  code    String // rappel_echeance/bulletin_publie/absence_signalee
+   557→  1256→  sujet   String
+   558→  1257→  corps   String
+   559→  1258→  canaux  String  @default("[\"in_app\"]") // JSON
+   560→  1259→  langue  String  @default("fr")
+   561→  1260→  actif   Boolean @default(true)
+   562→  1261→
+   563→  1262→  notifications Notification[]
+   564→  1263→
+   565→  1264→  @@unique([ecoleId, code, langue])
+   566→  1265→}
+   567→  1266→
+   568→  1267→model Notification {
+   569→  1268→  id               String         @id @default(cuid())
+   570→  1269→  ecoleId          String
+   571→  1270→  ecole            Ecole          @relation(fields: [ecoleId], references: [id])
+   572→  1271→  destinataireType String
+   573→  1272→  destinataireId   String?
+   574→  1273→  destinataire     Utilisateur?   @relation(fields: [destinataireId], references: [id])
+   575→  1274→  modeleMessageId  String?
+   576→  1275→  modeleMessage    ModeleMessage? @relation(fields: [modeleMessageId], references: [id])
+   577→  1276→  sujet            String?
+   578→  1277→  corps            String
+   579→  1278→  canal            String // sms/email/push/in_app
+   580→  1279→  statut           String         @default("en_attente")
+   581→  1280→  contexte         String? // JSON
+   582→  1281→  dateCreation     DateTime       @default(now())
+   583→  1282→  dateEnvoi        DateTime?
+   584→  1283→  dateLecture      DateTime?
+   585→  1284→}
+   586→  1285→
+   587→  1286→// ====================================================================
+   588→  1287→// PARTIE C.8 + B — JOURNAL D'AUDIT IMMUABLE
+   589→  1288→// ====================================================================
+   590→  1289→
+   591→  1290→model AuditLog {
+   592→  1291→  id            Int          @id @default(autoincrement())
+   593→  1292→  ecoleId       String?
+   594→  1293→  utilisateurId String?
+   595→  1294→  utilisateur   Utilisateur? @relation(fields: [utilisateurId], references: [id])
+   596→  1295→  action        String
+   597→  1296→  cibleType     String?
+   598→  1297→  cibleId       String?
+   599→  1298→  details       String? // JSON
+   600→  1299→  adresseIp     String?
+   601→  1300→  userAgent     String?
+   602→  1301→  dateAction    DateTime     @default(now())
+   603→  1302→}
+   604→  1303→
+   605→  1304→// ====================================================================
+   606→  1305→// EXTENSION V4 — 37 FAILLES CORRIGÉES
+   607→  1306→// Ajouts aux 71 modèles existants pour couverture complète du cahier V4
+   608→  1307→// ====================================================================
+   609→  1308→
+   610→  1309→// --------------------------------------------------------------------
+   611→  1310→// POINT 1 — TICKETS SUPPORT SAAS (Partie A)
+   612→  1311→// --------------------------------------------------------------------
+   613→  1312→
+   614→  1313→model Ticket {
+   615→  1314→  id                     String    @id @default(cuid())
+   616→  1315→  ecoleId                String?
+   617→  1316→  ecole                  Ecole?    @relation(fields: [ecoleId], references: [id])
+   618→  1317→  sujet                  String
+   619→  1318→  description            String
+   620→  1319→  categorie              String    @default("fonctionnel") // fonctionnel/technique/facturation/demande
+   621→  1320→  priorite               String    @default("normale") // basse/normale/haute/critique
+   622→  1321→  statut                 String    @default("ouvert") // ouvert/en_cours/en_attente_client/resolu/ferme
+   623→  1322→  slaContractuelHeures   Int?
+   624→  1323→  slaEcheance            DateTime?
+   625→  1324→  creeParId              String?
+   626→  1325→  assigneAId             String?
+   627→  1326→  dateCreation           DateTime  @default(now())
+   628→  1327→  dateCloture            DateTime?
+   629→  1328→  delaiResolutionMinutes Int?
+   630→  1329→
+   631→  1330→  messages   TicketMessage[]
+   632→  1331→  historique TicketStatutHistorique[]
+   633→  1332→}
+   634→  1333→
+   635→  1334→model TicketMessage {
+   636→  1335→  id             String   @id @default(cuid())
+   637→  1336→  ticketId       String
+   638→  1337→  ticket         Ticket   @relation(fields: [ticketId], references: [id])
+   639→  1338→  auteurId       String?
+   640→  1339→  auteurRole     String // support_editeur/direction_ecole/enseignant/parent
+   641→  1340→  message        String
+   642→  1341→  pieceJointeUrl String?
+   643→  1342→  interne        Boolean  @default(false) // note interne équipe éditeur
+   644→  1343→  dateEnvoi      DateTime @default(now())
+   645→  1344→}
+   646→  1345→
+   647→  1346→model TicketStatutHistorique {
+   648→  1347→  id             Int      @id @default(autoincrement())
+   649→  1348→  ticketId       String
+   650→  1349→  ticket         Ticket   @relation(fields: [ticketId], references: [id])
+   651→  1350→  ancienStatut   String?
+   652→  1351→  nouveauStatut  String
+   653→  1352→  modifieParId   String?
+   654→  1353→  dateChangement DateTime @default(now())
+   655→  1354→}
+   656→  1355→
+   657→  1356→// --------------------------------------------------------------------
+   658→  1357→// POINT 2 — SIGNALEMENTS PROTECTION MINEURS (Partie C.8)
+   659→  1358→// --------------------------------------------------------------------
+   660→  1359→
+   661→  1360→model SignalementMineur {
+   662→  1361→  id                     String    @id @default(cuid())
+   663→  1362→  ecoleId                String
+   664→  1363→  ecole                  Ecole     @relation(fields: [ecoleId], references: [id])
+   665→  1364→  eleveId                String?
+   666→  1365→  eleve                  Eleve?    @relation(fields: [eleveId], references: [id])
+   667→  1366→  type                   String // harcelement/maltraitance/fgm/radicalisation/abus/lautre
+   668→  1367→  description            String
+   669→  1368→  gravite                String // information/preoccupant/grave/urgent
+   670→  1369→  source                 String // enseignant/parent/eleve/tiers/anonyme
+   671→  1370→  dateSignalement        DateTime  @default(now())
+   672→  1371→  dateFaits              DateTime?
+   673→  1372→  lieuFaits              String?
+   674→  1373→  declareParId           String?
+   675→  1374→  signalantAnonyme       Boolean   @default(false)
+   676→  1375→  statut                 String    @default("recu") // recu/en_cours/transmis_externe/traite/classe_sans_suite
+   677→  1376→  confidentialiteNiveau  String    @default("restreint") // public/equipe_dir/restreint/confidentiel
+   678→  1377→  partenairesExternesIds String? // JSON array
+   679→  1378→  transfertCrip          Boolean   @default(false)
+   680→  1379→  dateTransfertCrip      DateTime?
+   681→  1380→  mesuresProvisoires     String?
+   682→  1381→
+   683→  1382→  mesures MesureProtection[]
+   684→  1383→  suivis  SuiviSignalement[]
+   685→  1384→}
+   686→  1385→
+   687→  1386→model PartenaireExterne {
+   688→  1387→  id      String  @id @default(cuid())
+   689→  1388→  type    String // crip/assistant_social/police/justice/association
+   690→  1389→  nom     String
+   691→  1390→  contact String
+   692→  1391→  email   String?
+   693→  1392→  adresse String?
+   694→  1393→  actif   Boolean @default(true)
+   695→  1394→}
+   696→  1395→
+   697→  1396→model MesureProtection {
+   698→  1397→  id            String            @id @default(cuid())
+   699→  1398→  signalementId String
+   700→  1399→  signalement   SignalementMineur @relation(fields: [signalementId], references: [id])
+   701→  1400→  type          String // signalement_au_parquet/accompagnement_psychologique/mesure_de_securite/reorientation/saisine_ase
+   702→  1401→  description   String
+   703→  1402→  decideePar    String
+   704→  1403→  dateDecision  DateTime          @default(now())
+   705→  1404→  dateFin       DateTime?
+   706→  1405→  statut        String            @default("planifiee") // planifiee/en_cours/realisee/annulee
+   707→  1406→}
+   708→  1407→
+   709→  1408→model SuiviSignalement {
+   710→  1409→  id            String            @id @default(cuid())
+   711→  1410→  signalementId String
+   712→  1411→  signalement   SignalementMineur @relation(fields: [signalementId], references: [id])
+   713→  1412→  note          String
+   714→  1413→  auteurId      String?
+   715→  1414→  date          DateTime          @default(now())
+   716→  1415→}
+   717→  1416→
+   718→  1417→// --------------------------------------------------------------------
+   719→  1418→// POINT 3 — HABILITATION PÉNALE / VÉRIFICATION ANTÉCÉDENTS (Partie C.8)
+   720→  1419→// --------------------------------------------------------------------
+   721→  1420→
+   722→  1421→model VerificationAntecedents {
+   723→  1422→  id               String    @id @default(cuid())
+   724→  1423→  ecoleId          String
+   725→  1424→  ecole            Ecole     @relation(fields: [ecoleId], references: [id])
+   726→  1425→  personnelId      String
+   727→  1426→  personnel        Personnel @relation(fields: [personnelId], references: [id])
+   728→  1427→  type             String // casier_judiciaire/extrait_casier/declaration_honneur/attestation_aptitude
+   729→  1428→  referenceDossier String?
+   730→  1429→  statut           String    @default("demandee") // demandee/en_cours/obtenue/refusee
+   731→  1430→  dateDemande      DateTime  @default(now())
+   732→  1431→  dateObtention    DateTime?
+   733→  1432→  dateExpiration   DateTime?
+   734→  1433→  fichierUrl       String?
+   735→  1434→  valideParId      String?
+   736→  1435→}
+   737→  1436→
+   738→  1437→model HabilitationPenale {
+   739→  1438→  id                 String    @id @default(cuid())
+   740→  1439→  ecoleId            String
+   741→  1440→  ecole              Ecole     @relation(fields: [ecoleId], references: [id])
+   742→  1441→  personnelId        String
+   743→  1442→  personnel          Personnel @relation(fields: [personnelId], references: [id])
+   744→  1443→  numeroHabilitation String?
+   745→  1444→  dateDelivrance     DateTime?
+   746→  1445→  dateExpiration     DateTime?
+   747→  1446→  autoriteEmettrice  String?
+   748→  1447→  statut             String    @default("non_verifiee") // non_verifiee/validee/expiree/a_renouveler
+   749→  1448→}
+   750→  1449→
+   751→  1450→// --------------------------------------------------------------------
+   752→  1451→// POINT 4 — BULLETINS DE PAIE (Partie B RH)
+   753→  1452→// --------------------------------------------------------------------
+   754→  1453→
+   755→  1454→model BulletinPaie {
+   756→  1455→  id                 String    @id @default(cuid())
+   757→  1456→  ecoleId            String
+   758→  1457→  ecole              Ecole     @relation(fields: [ecoleId], references: [id])
+   759→  1458→  personnelId        String
+   760→  1459→  personnel          Personnel @relation(fields: [personnelId], references: [id])
+   761→  1460→  periode            String // "2026-08"
+   762→  1461→  salaireBrut        Float
+   763→  1462→  salaireNet         Float
+   764→  1463→  cotisationsTotales Float
+   765→  1464→  retenuesTotales    Float
+   766→  1465→  primesTotales      Float
+   767→  1466→  netAPayer          Float
+   768→  1467→  devise             String
+   769→  1468→  statut             String    @default("brouillon") // brouillon/valide/paye
+   770→  1469→  dateEdition        DateTime  @default(now())
+   771→  1470→  dateValidation     DateTime?
+   772→  1471→  datePaiement       DateTime?
+   773→  1472→  valideParId        String?
+   774→  1473→  pdfUrl             String?
+   775→  1474→
+   776→  1475→  lignes      LigneBulletinPaie[]
+   777→  1476→  cotisations CotisationSociale[]
+   778→  1477→  variables   VariablePaie[]
+   779→  1478→
+   780→  1479→  @@unique([personnelId, periode])
+   781→  1480→}
+   782→  1481→
+   783→  1482→model LigneBulletinPaie {
+   784→  1483→  id         String       @id @default(cuid())
+   785→  1484→  bulletinId String
+   786→  1485→  bulletin   BulletinPaie @relation(fields: [bulletinId], references: [id])
+   787→  1486→  type       String // salaire_base/prime/indemnite/retenue/heures_sup/avantage_nature
+   788→  1487→  libelle    String
+   789→  1488→  montant    Float
+   790→  1489→  sens       String // plus/moins
+   791→  1490→  quantite   Float?
+   792→  1491→  taux       Float?
+   793→  1492→}
+   794→  1493→
+   795→  1494→model CotisationSociale {
+   796→  1495→  id            String       @id @default(cuid())
+   797→  1496→  bulletinId    String
+   798→  1497→  bulletin      BulletinPaie @relation(fields: [bulletinId], references: [id])
+   799→  1498→  libelle       String // IPM/RC/PCF/Assurance_maladie
+   800→  1499→  assiette      Float
+   801→  1500→  tauxEmployeur Float
+   802→  1501→  tauxSalarie   Float
+   803→  1502→  partEmployeur Float
+   804→  1503→  partSalarie   Float
+   805→  1504→}
+   806→  1505→
+   807→  1506→model VariablePaie {
+   808→  1507→  id              String        @id @default(cuid())
+   809→  1508→  ecoleId         String
+   810→  1509→  ecole           Ecole         @relation(fields: [ecoleId], references: [id])
+   811→  1510→  personnelId     String
+   812→  1511→  personnel       Personnel     @relation(fields: [personnelId], references: [id])
+   813→  1512→  periode         String
+   814→  1513→  type            String // prime/indemnite/avantage/heure_sup
+   815→  1514→  libelle         String
+   816→  1515→  montant         Float
+   817→  1516→  dateAttribution DateTime      @default(now())
+   818→  1517→  attribueParId   String?
+   819→  1518→  bulletinPaie    BulletinPaie? @relation(fields: [bulletinPaieId], references: [id])
+   820→  1519→  bulletinPaieId  String?
+   821→  1520→}
+   822→  1521→
+   823→  1522→// --------------------------------------------------------------------
+   824→  1523→// POINT 5 — RECRUTEMENT (Partie B RH)
+   825→  1524→// --------------------------------------------------------------------
+   826→  1525→
+   827→  1526→model OffreEmploi {
+   828→  1527→  id              String    @id @default(cuid())
+   829→  1528→  ecoleId         String
+   830→  1529→  ecole           Ecole     @relation(fields: [ecoleId], references: [id])
+   831→  1530→  poste           String
+   832→  1531→  description     String
+   833→  1532→  profilRecherche String
+   834→  1533→  typeContrat     String // CDI/CDD/Stage/Vacataire
+   835→  1534→  dateOuverture   DateTime  @default(now())
+   836→  1535→  dateCloture     DateTime?
+   837→  1536→  statut          String    @default("ouverte") // ouverte/fermee/pourvue
+   838→  1537→  lieu            String?
+   839→  1538→
+   840→  1539→  candidatures Candidature[]
+   841→  1540→}
+   842→  1541→
+   843→  1542→model Candidature {
+   844→  1543→  id               String      @id @default(cuid())
+   845→  1544→  offreId          String
+   846→  1545→  offre            OffreEmploi @relation(fields: [offreId], references: [id])
+   847→  1546→  nom              String
+   848→  1547→  prenom           String
+   849→  1548→  email            String
+   850→  1549→  telephone        String?
+   851→  1550→  cvUrl            String?
+   852→  1551→  lettreMotivation String?
+   853→  1552→  source           String // spontanee/offre/interne/recommandation
+   854→  1553→  dateReception    DateTime    @default(now())
+   855→  1554→  statut           String      @default("recue") // recue/presel/entretien/retenu/refuse
+   856→  1555→  etapeActuelle    String?
+   857→  1556→
+   858→  1557→  etapes     EtapeRecrutement[]
+   859→  1558→  entretiens EntretienRecrutement[]
+   860→  1559→}
+   861→  1560→
+   862→  1561→model EtapeRecrutement {
+   863→  1562→  id            String      @id @default(cuid())
+   864→  1563→  candidatureId String
+   865→  1564→  candidature   Candidature @relation(fields: [candidatureId], references: [id])
+   866→  1565→  etape         String // tri_cv/entretien_rh/entretien_direction/essai/decision
+   867→  1566→  statut        String // en_cours/valide/refuse
+   868→  1567→  date          DateTime    @default(now())
+   869→  1568→  note          String?
+   870→  1569→  decideurId    String?
+   871→  1570→}
+   872→  1571→
+   873→  1572→model EntretienRecrutement {
+   874→  1573→  id            String      @id @default(cuid())
+   875→  1574→  candidatureId String
+   876→  1575→  candidature   Candidature @relation(fields: [candidatureId], references: [id])
+   877→  1576→  date          DateTime
+   878→  1577→  lieu          String
+   879→  1578→  type          String // physique/video/telephone
+   880→  1579→  intervieweurs String? // JSON
+   881→  1580→  compteRendu   String?
+   882→  1581→  note          Int?
+   883→  1582→  statut        String      @default("planifie") // planifie/realise/annule
+   884→  1583→}
+   885→  1584→
+   886→  1585→// --------------------------------------------------------------------
+   887→  1586→// POINT 6 — STAGES & CONVENTIONS (Partie B RH/Pédagogique)
+   888→  1587→// --------------------------------------------------------------------
+   889→  1588→
+   890→  1589→model Stage {
+   891→  1590→  id               String            @id @default(cuid())
+   892→  1591→  ecoleId          String
+   893→  1592→  ecole            Ecole             @relation(fields: [ecoleId], references: [id])
+   894→  1593→  eleveId          String
+   895→  1594→  eleve            Eleve             @relation(fields: [eleveId], references: [id])
+   896→  1595→  entreprise       String
+   897→  1596→  poste            String
+   898→  1597→  dateDebut        DateTime
+   899→  1598→  dateFin          DateTime
+   900→  1599→  tuteurEntreprise String?
+   901→  1600→  encadrantEcoleId String?
+   902→  1601→  objectifs        String?
+   903→  1602→  evaluation       String?
+   904→  1603→  statut           String            @default("planifie") // planifie/en_cours/termine/annule
+   905→  1604→  conventionUrl    String?
+   906→  1605→  conventionStages ConventionStage[]
+   907→  1606→}
+   908→  1607→
+   909→  1608→model ConventionStage {
+   910→  1609→  id                 String    @id @default(cuid())
+   911→  1610→  stageId            String
+   912→  1611→  stage              Stage     @relation(fields: [stageId], references: [id])
+   913→  1612→  numeroConvention   String?
+   914→  1613→  dateSignature      DateTime?
+   915→  1614→  signeParEleve      Boolean   @default(false)
+   916→  1615→  signeParEcole      Boolean   @default(false)
+   917→  1616→  signeParEntreprise Boolean   @default(false)
+   918→  1617→  fichierUrl         String?
+   919→  1618→  statut             String    @default("brouillon") // brouillon/valide/signe
+   920→  1619→}
+   921→  1620→
+   922→  1621→// --------------------------------------------------------------------
+   923→  1622→// POINT 7 — SOLDES DE CONGÉS PAYÉS (Partie B RH)
+   924→  1623→// --------------------------------------------------------------------
+   925→  1624→
+   926→  1625→model SoldeConge {
+   927→  1626→  id                String    @id @default(cuid())
+   928→  1627→  ecoleId           String
+   929→  1628→  ecole             Ecole     @relation(fields: [ecoleId], references: [id])
+   930→  1629→  personnelId       String
+   931→  1630→  personnel         Personnel @relation(fields: [personnelId], references: [id])
+   932→  1631→  annee             String
+   933→  1632→  droitsAcquis      Float     @default(0)
+   934→  1633→  joursPris         Float     @default(0)
+   935→  1634→  joursRestants     Float     @default(0)
+   936→  1635→  reliquatAnterieur Float     @default(0)
+   937→  1636→  derniereMaj       DateTime  @default(now())
+   938→  1637→
+   939→  1638→  @@unique([personnelId, annee])
+
+[showing lines 40-939 of 1102; use offset=940 with limit to continue reading]
