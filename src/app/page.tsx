@@ -83,7 +83,7 @@ export default async function Home() {
     biblioLivres, biblioPrets,
     manuels, attributionsManuel,
     besoinsSpecifiques, amenagements,
-    conges, remplacements, evaluationsRh, roles,
+    conges, remplacements, evaluationsRh, roles, personnelRoles,
     // === EXTENSION V4 — datasets réellement affichés ===
     tickets, signalementsMineurs,
     verificationsAntecedents,
@@ -117,7 +117,7 @@ export default async function Home() {
     fichesSante, passagesInfirmerie, vaccinations,
   ] = await Promise.all([
     db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true }, orderBy: { dateDebut: 'desc' } }),
-    db.niveau.findMany(),
+    db.niveau.findMany({ include: { section: { include: { cycle: true } } } }),
     db.classe.findMany({ where: { ecoleId: ecole.id } }),
     db.eleve.findMany({ where: { ecoleId: ecole.id }, orderBy: { nom: 'asc' } }),
     db.personnel.findMany({ where: { ecoleId: ecole.id }, orderBy: { nom: 'asc' } }),
@@ -125,8 +125,8 @@ export default async function Home() {
     db.periode.findMany({ where: { ecoleId: ecole.id } }),
     db.matiere.findMany({ where: { ecoleId: ecole.id } }),
     db.programme.findMany({ where: { ecoleId: ecole.id } }),
-    db.avancementProgramme.findMany(),
-    db.seance.findMany(),
+    db.avancementProgramme.findMany({ include: { chapitre: { include: { programme: { include: { matiere: true } } } } } }),
+    db.seance.findMany({ include: { matiere: true, classe: true, enseignant: true } }),
     db.presence.findMany(),
     db.evaluation.findMany({ where: { ecoleId: ecole.id }, orderBy: { date: 'desc' } }),
     db.note.findMany(),
@@ -173,6 +173,12 @@ export default async function Home() {
     db.remplacement.findMany(),
     db.evaluationPersonnel.findMany(),
     db.role.findMany({ where: { ecoleId: ecole.id } }),
+    // Affectations formelles "qui enseigne quelle matière / quelle classe" (vue 360° direction)
+    db.personnelRole.findMany({
+      where: { personnel: { ecoleId: ecole.id } },
+      include: { personnel: true, role: true },
+      orderBy: { dateDebut: 'asc' },
+    }),
     // === EXTENSION V4 ===
     db.ticket.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateCreation: 'desc' }, include: { messages: true } }),
     db.signalementMineur.findMany({ where: { ecoleId: ecole.id }, orderBy: { dateSignalement: 'desc' } }),
@@ -289,7 +295,7 @@ export default async function Home() {
     historiquesClasse,
 
     // Personnel & RH
-    personnels, conges, remplacements, evaluationsRh,
+    personnels, conges, remplacements, evaluationsRh, personnelRoles,
 
     // Pédagogique
     matieres, programmes, avancements, seances, periodes,
