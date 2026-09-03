@@ -23,18 +23,18 @@ import { useRouter } from 'next/navigation';
 import {
   Users, GraduationCap, Wallet, ClipboardList, BookOpen, Bell, AlertCircle,
   TrendingUp, TrendingDown, CalendarClock, PiggyBank, FileCheck, UserCheck,
-  Activity, AlertTriangle, School, Clock, Award, Stethoscope,
+  Activity, AlertTriangle, School, Clock, Award, Stethoscope, Download, Settings2,
 } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock } from '@/components/shared-ui';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
+import { toJour, toMois, joursEntre, nomComplet, etatAppels, serieMensuelle, telechargerCsv } from '@/lib/cockpit';
 
-const SEUIL_AVANCEMENT_RETARD = 50; // % en dessous duquel un avancement est signalé
-
-const nomComplet = (p: any) => (p ? `${p.prenom ?? ''} ${p.nom ?? ''}`.trim() : '—');
-const toJour = (d: any) => new Date(d).toISOString().slice(0, 10);
-const toMois = (d: any) => new Date(d).toISOString().slice(0, 7);
-const joursEntre = (a: Date, b: Date) => Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+// Seuils d'alerte paramétrables (persistés en localStorage du poste)
+const SEUILS_DEFAUT = { retardJours: 15, avancement: 50, budget: 90, absence: 8 };
+const CLE_SEUILS = 'cockpit-seuils';
 
 function MiniBar({ pct, seuil }: { pct: number; seuil?: number }) {
   const color = seuil != null && pct < seuil ? 'bg-rose-500' : pct >= 90 ? 'bg-emerald-500' : 'bg-amber-400';
@@ -55,9 +55,77 @@ function TagVert({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200">{children}</span>;
 }
 
+// Courbe de tendance SVG native — recettes vs dépenses sur 6 mois.
+// Aucune dépendance externe, rendu identique serveur/client (valeurs pures).
+function CourbeTendances({ recettes, depenses, devise }: { recettes: { label: string; total: number }[]; depenses: { label: string; total: number }[]; devise: string }) {
+  const L = 560, H = 160, PAD = 34;
+  const max = Math.max(1, ...recettes.map((r) => r.total), ...depenses.map((d) => d.total));
+  const n = recettes.length || 1;
+  const x = (i: number) => PAD + (i * (L - 2 * PAD)) / (n - 1);
+  const y = (v: number) => H - PAD - (v / max) * (H - 2 * PAD);
+  const chemin = (serie: { total: number }[]) => serie.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(p.total)}`).join(' ');
+  const fmt = (v: number) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`);
+
+  if (recettes.every((r) => r.total === 0) && depenses.every((d) => d.total === 0)) return null;
+
+  return (
+    <div className="mb-4 p-3 border border-gray-200 rounded-lg bg-white">
+      <div className="flex items-center justify-between mb-1">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Tendances — recettes vs dépenses (6 mois)</h4>
+        <div className="flex items-center gap-3 text-[11px] text-gray-600">
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-emerald-500" /> Recettes</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-amber-500" /> Dépenses</span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${L} ${H}`} className="w-full h-auto" role="img" aria-label="Tendances recettes et dépenses">
+        {/* grille horizontale */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+          const gy = H - PAD - t * (H - 2 * PAD);
+          return (
+            <g key={t}>
+              <line x1={PAD} x2={L - PAD} y1={gy} y2={gy} stroke="#f3f4f6" strokeWidth={1} />
+              <text x={6} y={gy + 3} fontSize={9} fill="#9ca3af">{fmt(max * t)}</text>
+            </g>
+          );
+        })}
+        {/* axes */}
+        <line x1={PAD} x2={L - PAD} y1={H - PAD} y2={H - PAD} stroke="#e5e7eb" strokeWidth={1} />
+        {/* courbes */}
+        <path d={chemin(depenses)} fill="none" stroke="#f59e0b" strokeWidth={2.5} strokeLinejoin="round" />
+        <path d={chemin(recettes)} fill="none" stroke="#10b981" strokeWidth={2.5} strokeLinejoin="round" />
+        {/* points + étiquettes de mois */}
+        {recettes.map((r, i) => (
+          <g key={r.label}>
+            <circle cx={x(i)} cy={y(r.total)} r={3.5} fill="#10b981" />
+            <circle cx={x(i)} cy={y(depenses[i]?.total ?? 0)} r={3.5} fill="#f59e0b" />
+            <text x={x(i)} y={H - PAD + 14} fontSize={9} fill="#6b7280" textAnchor="middle">{r.label.slice(2)}</text>
+          </g>
+        ))}
+      </svg>
+      <p className="text-[11px] text-gray-500">Montants en {devise} · encaissements de scolarité vs dépenses enregistrées · {recettes.at(-1)?.label} : +{formatMontant(recettes.at(-1)?.total ?? 0, devise)} / −{formatMontant(depenses.at(-1)?.total ?? 0, devise)}</p>
+    </div>
+  );
+}
+
 export default function DirectionModule({ initialData, mode = 'dashboard', portalLabel = 'Direction' }: { initialData: any; mode?: 'dashboard' | 'full'; portalLabel?: string }) {
   const router = useRouter();
   const [now, setNow] = useState<Date | null>(null);
+  // Seuils d'alerte — chargés au montage (hydratation-safe)
+  const [seuils, setSeuils] = useState({ ...SEUILS_DEFAUT });
+  const [panneauSeuils, setPanneauSeuils] = useState(false);
+
+  useEffect(() => {
+    try {
+      const brut = localStorage.getItem(CLE_SEUILS);
+      if (brut) setSeuils({ ...SEUILS_DEFAUT, ...JSON.parse(brut) });
+    } catch { /* valeur corrompue : défauts conservés */ }
+  }, []);
+
+  const majSeuil = (cle: keyof typeof SEUILS_DEFAUT, valeur: number) => {
+    const prochains = { ...seuils, [cle]: valeur };
+    setSeuils(prochains);
+    try { localStorage.setItem(CLE_SEUILS, JSON.stringify(prochains)); } catch { /* stockage indisponible */ }
+  };
 
   // ---- Temps réel : date client au montage + rafraîchissement auto 60 s ----
   useEffect(() => {
@@ -200,7 +268,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const avancementMoyen = avancementsDetail.length
     ? Math.round(avancementsDetail.reduce((s: number, a: any) => s + a.pourcentage, 0) / avancementsDetail.length)
     : null;
-  const avancementsEnRetard = avancementsDetail.filter((a: any) => a.pourcentage < SEUIL_AVANCEMENT_RETARD);
+  const avancementsEnRetard = avancementsDetail.filter((a: any) => a.pourcentage < seuils.avancement);
 
   // ============ 5. PRÉSENCES DU JOUR — « tous les élèves sont-ils présents ? » ============
   const dernierReleve = seances.length
@@ -218,6 +286,14 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const retardsJour = presencesDuJour.filter((p: any) => p.statut === 'retard');
   const excusesJour = presencesDuJour.filter((p: any) => p.statut === 'excuse');
   const tauxJour = presencesDuJour.length ? Math.round(presentsJour / presencesDuJour.length * 100) : null;
+
+  // ---- Anti-oubli d'appel : classe avec séances mais AUCUN pointage ----
+  const appels = jourActif ? etatAppels(classes, seances, presences, jourActif) : null;
+  const appelsManquants = appels?.manquants ?? [];
+
+  // ---- Tendances : recettes vs dépenses (6 derniers mois) ----
+  const serieRecettes = serieMensuelle(paiements, 'datePaiement', 'montant', 6, refDate);
+  const serieDepenses = serieMensuelle(depenses, 'dateDepense', 'montant', 6, refDate);
 
   // ============ 6. TOP ÉLÈVES — « meilleures notes » ============
   const topEleves = bulletins
@@ -278,7 +354,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
   // ============ 9. RH 360° ============
   const congesEnCours = refDate
-    ? conges.filter((c: any) => c.statut === 'approuve' && new Date(c.dateDebut) <= refDate && refDate <= new Date(c.dateFin))
+    ? conges.filter((c: any) => c.statut === 'valide' && new Date(c.dateDebut) <= refDate && refDate <= new Date(c.dateFin))
     : [];
   const congesAValider = conges.filter((c: any) => c.statut === 'demande');
   const derniersPaies = [...bulletinsPaie]
@@ -318,16 +394,24 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
   // ============ 11. ALERTES CONSOLIDÉES ============
   const alertes: { label: string; detail: string; severite: 'rouge' | 'ambre' }[] = [];
-  if (retardataires.length > 0 && vueComplete)
-    alertes.push({ label: `${retardataires.length} échéance(s) de scolarité en retard`, detail: `Restant dû cumulé : ${formatMontant(restantDu, devise)} — ${new Set(retardataires.map((r: any) => r.eleve)).size} élève(s) concerné(s)`, severite: 'rouge' });
+  if (appelsManquants.length > 0)
+    alertes.push({ label: `Appel non fait — ${appelsManquants.length} classe(s)`, detail: `${appelsManquants.map((m: any) => m.code).join(', ')} : séances planifiées sans aucun pointage. Relancez le titulaire.`, severite: 'rouge' });
+  if (tauxJour != null && 100 - tauxJour > seuils.absence && presencesDuJour.length > 0)
+    alertes.push({ label: `Absentéisme élevé : ${100 - tauxJour}%`, detail: `Au-delà du seuil de ${seuils.absence}% paramétré (${absentsJour.length + retardsJour.length} absences/retards sur ${presencesDuJour.length} pointages)`, severite: 'rouge' });
+  if (retardataires.length > 0 && vueComplete) {
+    const critiques = retardataires.filter((r: any) => r.jours > seuils.retardJours);
+    alertes.push({ label: `${retardataires.length} échéance(s) de scolarité en retard`, detail: `Restant dû cumulé : ${formatMontant(restantDu, devise)} — ${new Set(retardataires.map((r: any) => r.eleve)).size} élève(s) concerné(s)${critiques.length ? `, dont ${critiques.length} au-delà de ${seuils.retardJours} j` : ''}`, severite: critiques.length ? 'rouge' : 'ambre' });
+  }
   if (avancementsEnRetard.length > 0)
-    alertes.push({ label: `${avancementsEnRetard.length} programme(s) en retard`, detail: `Avancement < ${SEUIL_AVANCEMENT_RETARD}% — voir « Suivi du programme »`, severite: 'ambre' });
+    alertes.push({ label: `${avancementsEnRetard.length} programme(s) en retard`, detail: `Avancement < ${seuils.avancement}% — voir « Suivi du programme »`, severite: 'ambre' });
   if (titulariatManquant > 0)
     alertes.push({ label: `${titulariatManquant} classe(s) sans titulaire`, detail: 'Aucun enseignant principal affecté — voir « Titulariat »', severite: 'ambre' });
   if (congesAValider.length > 0 && vueComplete)
     alertes.push({ label: `${congesAValider.length} demande(s) de congé à valider`, detail: 'Module Personnel → congés', severite: 'ambre' });
   if (depensesNonValidees.length > 0 && vueComplete)
     alertes.push({ label: `${depensesNonValidees.length} dépense(s) à valider`, detail: `Montant en attente : ${formatMontant(depensesNonValidees.reduce((s: number, d: any) => s + d.montant, 0), devise)}`, severite: 'ambre' });
+  if (budgetPct != null && budgetPct > seuils.budget && vueComplete)
+    alertes.push({ label: `Budget consommé à ${budgetPct}%`, detail: `Au-delà du seuil de ${seuils.budget}% paramétré — ${formatMontant(budgetRealise, devise)} réalisés sur ${formatMontant(budgetPrevu, devise)} prévus`, severite: 'rouge' });
   if (nonAffectes > 0)
     alertes.push({ label: `${nonAffectes} élève(s) actif(s) sans classe`, detail: 'Aucune classe actuelle renseignée', severite: 'rouge' });
 
@@ -340,14 +424,53 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         actions={
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-emerald-700 font-medium">
-              <Activity className="h-3 w-3" /> Temps réel · 60 s
+              <Activity className="h-3 w-3" /> En direct
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => setPanneauSeuils(!panneauSeuils)}
+              title="Paramétrer les seuils d'alerte"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Seuils
+            </Button>
             <span className="tabular-nums">
               {now ? `Actualisé à ${now.toLocaleTimeString('fr-FR')}` : 'Actualisation…'}
             </span>
           </div>
         }
       />
+
+      {/* ---------- Panneau des seuils paramétrables ---------- */}
+      {panneauSeuils && (
+        <Card className="mb-6 border-emerald-200 bg-emerald-50/40">
+          <CardContent className="p-4">
+            <h3 className="text-sm font-semibold text-emerald-900 mb-1">Seuils d&apos;alerte du cockpit</h3>
+            <p className="text-xs text-gray-600 mb-3">Personnalisez les déclencheurs — enregistrés sur ce poste (localStorage).</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {([
+                ['retardJours', 'Retard de paiement (jours)', 1, 120],
+                ['avancement', 'Avancement programme (%)', 0, 100],
+                ['budget', 'Consommation budget (%)', 50, 100],
+                ['absence', 'Absentéisme (%)', 0, 50],
+              ] as const).map(([cle, libelle, min, max]) => (
+                <div key={cle}>
+                  <label className="text-[11px] font-medium text-gray-700 block mb-1">{libelle}</label>
+                  <Input
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={seuils[cle]}
+                    onChange={(e) => majSeuil(cle, Number(e.target.value))}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ---------- KPIs principaux ---------- */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -363,7 +486,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         <StatCard
           title="Avancement programmes"
           value={avancementMoyen != null ? `${avancementMoyen}%` : '—'}
-          sub={avancementsEnRetard.length > 0 ? `${avancementsEnRetard.length} en retard (< ${SEUIL_AVANCEMENT_RETARD}%)` : `${avancementsDetail.length} suivis · tous à l'heure`}
+          sub={avancementsEnRetard.length > 0 ? `${avancementsEnRetard.length} en retard (< ${seuils.avancement}%)` : `${avancementsDetail.length} suivis · tous à l'heure`}
           icon={BookOpen}
           color={avancementsEnRetard.length > 0 ? 'rose' : 'purple'}
         />
@@ -446,6 +569,14 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
       <SectionBlock
         title="Titulariat — quel enseignant garde quelle classe"
         description={`${classes.length} classes · ${titulariatManquant > 0 ? `${titulariatManquant} sans titulaire` : 'toutes couvertes'}`}
+        action={
+          <Button
+            variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+            onClick={() => telechargerCsv('titulariat', ['Classe', 'Niveau', 'Cycle', 'Titulaire', 'Effectif'], lignesTitulariat.map((l: any) => [l.code, l.niveau, l.cycle, l.titulaire ?? 'NON ATTRIBUÉ', l.effectif]))}
+          >
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        }
       >
         <DataTable
           columns={[
@@ -483,7 +614,15 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
       {/* ---------- 4. Suivi du programme ---------- */}
       <SectionBlock
         title="Suivi du programme — avancement par classe et matière"
-        description={`Avancement moyen : ${avancementMoyen != null ? `${avancementMoyen}%` : '—'} · ${avancementsEnRetard.length} sous le seuil de ${SEUIL_AVANCEMENT_RETARD}% · trié du plus en retard au plus avancé`}
+        description={`Avancement moyen : ${avancementMoyen != null ? `${avancementMoyen}%` : '—'} · ${avancementsEnRetard.length} sous le seuil de ${seuils.avancement}% · trié du plus en retard au plus avancé`}
+        action={
+          <Button
+            variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+            onClick={() => telechargerCsv('avancement-programmes', ['Classe', 'Matière', 'Chapitre', 'Enseignant', 'Avancement %', 'Mis à jour'], avancementsDetail.map((a: any) => [a.classe, a.matiere, a.chapitre, a.enseignant, a.pourcentage, a.dateMaj ? formatDate(a.dateMaj) : '—']))}
+          >
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        }
       >
         <DataTable
           columns={[
@@ -491,7 +630,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             { key: 'matiere', label: 'Matière' },
             { key: 'chapitre', label: 'Chapitre en cours' },
             { key: 'enseignant', label: 'Enseignant' },
-            { key: 'pourcentage', label: 'Avancement', render: (r) => <MiniBar pct={r.pourcentage} seuil={SEUIL_AVANCEMENT_RETARD} /> },
+            { key: 'pourcentage', label: 'Avancement', render: (r) => <MiniBar pct={r.pourcentage} seuil={seuils.avancement} /> },
             { key: 'dateMaj', label: 'Mise à jour', render: (r) => formatDate(r.dateMaj) },
             { key: 'commentaire', label: 'Commentaire', render: (r) => r.commentaire ?? '—' },
           ]}
@@ -535,10 +674,37 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             Tous les élèves pointés sont présents — aucune absence ni retard à signaler.
           </p>
         )}
+        {/* Anti-oubli d'appel : séances planifiées mais aucun pointage */}
+        {appelsManquants.length > 0 && (
+          <div className="mt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-600 mb-2">Appel non fait — classes à relancer</h4>
+            <DataTable
+              columns={[
+                { key: 'code', label: 'Classe' },
+                { key: 'libelle', label: 'Libellé' },
+                { key: 'nbSeances', label: 'Séances planifiées' },
+                { key: 'action', label: 'À faire', render: (r) => <TagRouge>Relancer le titulaire — aucun pointage</TagRouge> },
+              ]}
+              rows={appelsManquants}
+              emptyLabel=""
+            />
+          </div>
+        )}
       </SectionBlock>
 
       {/* ---------- 6. Top élèves ---------- */}
-      <SectionBlock title="Meilleures notes — podium des élèves" description="Classement des bulletins par moyenne générale (toutes périodes confondues)">
+      <SectionBlock
+        title="Meilleures notes — podium des élèves"
+        description="Classement des bulletins par moyenne générale (toutes périodes confondues)"
+        action={
+          <Button
+            variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+            onClick={() => telechargerCsv('top-eleves', ['Rang', 'Élève', 'Classe', 'Moyenne', 'Statut bulletin'], topEleves.map((r: any) => [r.rang, r.eleve, r.classe, r.moyenne, r.statut]))}
+          >
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        }
+      >
         <DataTable
           columns={[
             { key: 'rang', label: 'Rang', render: (r) => <span className="font-bold text-gray-900">#{r.rang}</span> },
@@ -558,6 +724,14 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           <SectionBlock
             title="Scolarité — qui a payé, qui n'a pas payé, qui est en retard"
             description={`Restant dû global : ${formatMontant(restantDu, devise)} · taux de recouvrement : ${tauxRecouvrement}% · ${retardataires.length} échéance(s) en retard (trié par ancienneté)`}
+            action={
+              <Button
+                variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+                onClick={() => telechargerCsv('retards-scolarite', ['Élève', 'Classe', 'Frais', 'Restant dû', 'Retard (j)', 'Statut'], retardataires.map((r: any) => [r.eleve, r.classe, r.frais, r.restant, r.jours, r.statut]))}
+              >
+                <Download className="h-3.5 w-3.5" /> CSV
+              </Button>
+            }
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard title="Élèves à jour" value={Math.max(0, elevesAJour)} sub={`sur ${elevesActifs.length} actifs`} icon={UserCheck} color="emerald" />
@@ -593,6 +767,8 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
               <StatCard title="Solde du mois" value={formatMontant(soldeMois, devise)} sub={`cumul saison : ${formatMontant(encaisseCumule - depensesCumulees, devise)}`} icon={Wallet} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
               <StatCard title="Masse salariale" value={formatMontant(masseSalarialeMois, devise)} sub={moisActif ?? '—'} icon={GraduationCap} color="purple" />
             </div>
+            {/* Tendances recettes vs dépenses — 6 derniers mois (SVG natif) */}
+            <CourbeTendances recettes={serieRecettes} depenses={serieDepenses} devise={devise} />
             <DataTable
               columns={[
                 { key: 'budget', label: 'Budget' },

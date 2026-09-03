@@ -21,7 +21,7 @@ export default async function Home() {
   const session = await getSessionCourante();
   if (!session) redirect('/login');
 
-  const portal = portailDuCompte(session.utilisateur.type, session.permissions);
+  const portal = portailDuCompte(session.utilisateur.type, session.permissions, session.roles);
 
   // ---- École de travail : celle de l'utilisateur, sinon école démo
   // (super-admin éditeur = vue cross-tenant) ----
@@ -279,6 +279,7 @@ export default async function Home() {
       utilisateur: session.utilisateur,
       portal,
       permissions: [...session.permissions],
+      roles: session.roles,
       parentId,
       eleveId: eleveIdSession,
       enfantsIds,

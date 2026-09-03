@@ -90,6 +90,7 @@ export type SessionInfo = {
     type: string; // super_admin/personnel/parent/eleve
   };
   permissions: Set<string>;
+  roles: string[]; // codes des rôles actifs (direction, comptabilite, rh…)
   sessionId: string;
 };
 
@@ -116,12 +117,14 @@ export async function getSessionCourante(): Promise<SessionInfo | null> {
   if (!utilisateur) return null;
 
   const permissions = new Set<string>();
+  const roles: string[] = [];
   if (utilisateur.type === 'super_admin') {
     // Le super-admin éditeur possède toutes les permissions de la plateforme.
     const toutes = await db.permission.findMany({ select: { code: true } });
     for (const p of toutes) permissions.add(p.code);
   }
   for (const ur of utilisateur.roles) {
+    roles.push(ur.role.code);
     for (const rp of ur.role.permissions) permissions.add(rp.permission.code);
   }
 
@@ -140,6 +143,7 @@ export async function getSessionCourante(): Promise<SessionInfo | null> {
       type: utilisateur.type,
     },
     permissions,
+    roles,
     sessionId: session.id,
   };
 }
@@ -214,14 +218,36 @@ export async function tenterConnexion(email: string, motDePasse: string, userAge
   return { ok: true };
 }
 
-/** Portail dérivé du compte (remplace le sélecteur de démo). */
-export function portailDuCompte(type: string, permissions: Set<string>): 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve' {
+/** Portails disponibles (un par métier de l'école). */
+export type PortailUtilisateur =
+  | 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve'
+  | 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant';
+
+/** Rôle formel (Role.code) → portail dédié. Priorité décroissante. */
+const PORTAIL_PAR_ROLE: [string, PortailUtilisateur][] = [
+  ['direction', 'direction'],
+  ['assistant_direction', 'assistant'],
+  ['comptabilite', 'comptabilite'],
+  ['rh', 'rh'],
+  ['censeur', 'vie_scolaire'],
+  ['surveillant', 'vie_scolaire'],
+  ['secretariat', 'secretariat'],
+  ['infirmier', 'sante'],
+  ['enseignant', 'enseignant'],
+];
+
+/** Portail dérivé du compte : le RÔLE formel d'abord, repli sur les permissions. */
+export function portailDuCompte(type: string, permissions: Set<string>, roles: string[] = []): PortailUtilisateur {
   switch (type) {
     case 'super_admin': return 'super_admin';
     case 'parent': return 'parent';
     case 'eleve': return 'eleve';
     default: {
-      // personnel : direction si permissions de gestion, sinon enseignant
+      // 1) Le rôle formellement attribué détermine le portail métier.
+      for (const [code, portail] of PORTAIL_PAR_ROLE) {
+        if (roles.includes(code)) return portail;
+      }
+      // 2) Repli heuristique pour les comptes sans rôle (compatibilité).
       if (permissions.has('rh.gerer') || permissions.has('finances.voir') || permissions.has('admin.saas')) return 'direction';
       return 'enseignant';
     }

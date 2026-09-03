@@ -185,6 +185,21 @@ async function main() {
   const roleSurveillant = await db.role.create({
     data: { ecoleId: ecole.id, code: "surveillant", libelle: "Surveillant" },
   });
+  const roleRh = await db.role.create({
+    data: { ecoleId: ecole.id, code: "rh", libelle: "Ressources Humaines" },
+  });
+  const roleCenseur = await db.role.create({
+    data: { ecoleId: ecole.id, code: "censeur", libelle: "Censeur" },
+  });
+  const roleSecretariat = await db.role.create({
+    data: { ecoleId: ecole.id, code: "secretariat", libelle: "Secrétariat" },
+  });
+  const roleAssistant = await db.role.create({
+    data: { ecoleId: ecole.id, code: "assistant_direction", libelle: "Assistant de Direction" },
+  });
+  const roleInfirmier = await db.role.create({
+    data: { ecoleId: ecole.id, code: "infirmier", libelle: "Infirmier(ère)" },
+  });
 
   // 7) Utilisateur directeur
   const dirUtilisateur = await db.utilisateur.create({
@@ -325,13 +340,77 @@ async function main() {
         diplomePrincipal: "Master Enseignement",
       },
     });
-    await db.personnelRole.create({
-      data: { personnelId: p.id, roleId: roleEnseignant.id, dateDebut: new Date() },
-    });
     const m = await db.matiere.create({
       data: { ecoleId: ecole.id, code: e.matiere, libelle: e.libelleMatiere, coefficient: 1.0, couleur: "#10b981" },
     });
+    await db.personnelRole.create({
+      data: {
+        personnelId: p.id,
+        roleId: roleEnseignant.id,
+        matiereId: m.id,
+        // Affectation formelle : chaque enseignant couvre sa matière sur
+        // une classe — « qui enseigne quoi, où » visible au cockpit.
+        classeId: [classe6A, classe5B, classeCM2A, classe6A, classe5B, classeCM2A][i].id,
+        dateDebut: new Date("2026-09-01"),
+      },
+    });
     enseignants.push({ personnel: p, utilisateur: u, matiere: m });
+  }
+
+  // 13-bis) TITULARIAT — « quel prof garde quelle classe »
+  await db.classe.update({ where: { id: classe6A.id }, data: { enseignantPrincipalId: enseignants[0].personnel.id } });
+  await db.classe.update({ where: { id: classe5B.id }, data: { enseignantPrincipalId: enseignants[1].personnel.id } });
+  await db.classe.update({ where: { id: classeCM2A.id }, data: { enseignantPrincipalId: enseignants[2].personnel.id } });
+
+  // 13-ter) PERSONNEL MÉTIERS — comptable, RH, censeur, surveillant,
+  // secrétaire, assistant de direction, infirmière : chacun son accès
+  // dédié (portail métier propre, permissions ciblées).
+  const metiers = [
+    { role: roleComptable, nom: "Sarr", prenom: "Bineta", email: "comptable@vinci.sn", matricule: "CPT-01", fonction: "Comptable", contrat: "CDD", salaire: 280000 },
+    { role: roleRh, nom: "Ndiaye", prenom: "Sophie", email: "rh@vinci.sn", matricule: "RH-01", fonction: "Responsable RH", contrat: "CDI", salaire: 320000 },
+    { role: roleCenseur, nom: "Diagne", prenom: "Ibrahima", email: "censeur@vinci.sn", matricule: "CEN-01", fonction: "Censeur", contrat: "CDI", salaire: 340000 },
+    { role: roleSurveillant, nom: "Kane", prenom: "Modou", email: "surveillant@vinci.sn", matricule: "SUR-01", fonction: "Surveillant général", contrat: "CDD", salaire: 220000 },
+    { role: roleSecretariat, nom: "Fall", prenom: "Coumba", email: "secretariat@vinci.sn", matricule: "SEC-01", fonction: "Secrétaire", contrat: "CDI", salaire: 240000 },
+    { role: roleAssistant, nom: "Mbaye", prenom: "Khadija", email: "assistant@vinci.sn", matricule: "AD-01", fonction: "Assistante de direction", contrat: "CDI", salaire: 300000 },
+    { role: roleInfirmier, nom: "Sow", prenom: "Aminata", email: "infirmiere@vinci.sn", matricule: "INF-01", fonction: "Infirmière", contrat: "CDD", salaire: 230000 },
+  ];
+  const comptesMetiers = [] as any[];
+  for (const met of metiers) {
+    const u = await db.utilisateur.create({
+      data: {
+        ecoleId: ecole.id,
+        email: met.email,
+        motDePasseHash: hashPassword(MOT_DE_PASSE_DEMO),
+        nom: met.nom,
+        prenom: met.prenom,
+        type: "personnel",
+        consentementPortail: true,
+        consentementDate: new Date(),
+      },
+    });
+    const p = await db.personnel.create({
+      data: {
+        ecoleId: ecole.id,
+        utilisateurId: u.id,
+        matricule: met.matricule,
+        nom: met.nom,
+        prenom: met.prenom,
+        dateEmbauche: new Date("2022-01-10"),
+        statut: "actif",
+        typeContrat: met.contrat,
+        salaireBrut: met.salaire,
+        email: met.email,
+        telephone: "+221 76 000 00 00",
+        diplomePrincipal: met.fonction,
+      },
+    });
+    await db.personnelRole.create({
+      data: { personnelId: p.id, roleId: met.role.id, dateDebut: new Date("2026-09-01") },
+    });
+    await db.utilisateurRole.create({
+      data: { utilisateurId: u.id, roleId: met.role.id },
+    });
+    comptesMetiers.push({ utilisateur: u, personnel: p, role: met.role });
   }
 
   // 14) Élèves
@@ -497,7 +576,9 @@ async function main() {
         fraisId: fraisScolarite.id,
         montant: 75000,
         devise: "XOF",
-        dateEcheance: new Date("2026-09-15"),
+        // Élève 4 : échéance ÉCHUE (retard réel ~19 j au 03/09) ;
+        // autres : à venir le 15/09.
+        dateEcheance: i === 4 ? new Date(Date.now() - 19 * 86400000) : new Date("2026-09-15"),
         montantPaye: i < 3 ? 75000 : i === 3 ? 40000 : 0,
         statut: i < 3 ? "payee" : i === 3 ? "partiel" : "impayee",
       },
@@ -515,18 +596,51 @@ async function main() {
     });
   }
 
-  // 18) Paiements
-  for (let i = 0; i < 3; i++) {
-    const e = eleves[i];
+  // 17-bis) ÉCHÉANCES ÉTENDUES (élèves 5→8) : retards variés pour le
+  // cockpit — 8 j, 26 j, à venir, payée.
+  const extensions = [
+    { idx: 5, joursRetard: 8, paye: 0, statut: "impayee" },
+    { idx: 6, joursRetard: 26, paye: 30000, statut: "partiel" },
+    { idx: 7, joursRetard: 0, paye: 0, statut: "impayee" },
+    { idx: 8, joursRetard: 0, paye: 75000, statut: "payee" },
+  ];
+  for (const ext of extensions) {
+    const e = eleves[ext.idx].eleve;
+    await db.echeanceFrais.create({
+      data: {
+        eleveId: e.id,
+        fraisId: fraisScolarite.id,
+        montant: 75000,
+        devise: "XOF",
+        dateEcheance: ext.joursRetard > 0 ? new Date(Date.now() - ext.joursRetard * 86400000) : new Date(Date.now() + 12 * 86400000),
+        montantPaye: ext.paye,
+        statut: ext.statut,
+      },
+    });
+  }
+
+  // 18) Paiements (étalés sur les 4 derniers mois → courbe de tendance)
+  const planPaiements = [
+    { idx: 0, mois: -3, montant: 100000, mode: "espece" },
+    { idx: 1, mois: -2, montant: 100000, mode: "mobile_money" },
+    { idx: 2, mois: -1, montant: 100000, mode: "virement" },
+    { idx: 3, mois: 0, montant: 40000, mode: "espece" },
+    { idx: 8, mois: -1, montant: 75000, mode: "cheque" },
+  ];
+  for (const pp of planPaiements) {
+    const e = eleves[pp.idx];
+    const d = new Date();
+    d.setMonth(d.getMonth() + pp.mois);
     await db.paiement.create({
       data: {
         ecoleId: ecole.id,
         eleveId: e.eleve.id,
-        montant: 100000,
+        montant: pp.montant,
         devise: "XOF",
-        modePaiement: "espece",
-        referenceTransaction: `REF-${i}-${Date.now()}`,
+        modePaiement: pp.mode,
+        referenceTransaction: `REF-${pp.idx}-${pp.mois}-${Date.now()}`,
         encaisseParId: dirUtilisateur.id,
+        datePaiement: d,
       },
     });
   }
@@ -694,6 +808,30 @@ async function main() {
     },
   });
 
+  // 26-bis) Notifications ciblées par portail métier — chaque intervenant
+  // voit dès l'ouverture ce qui LE concerne.
+  const notifsMetiers = [
+    { u: comptesMetiers[0].utilisateur, sujet: "3 échéances en retard à relancer", corps: "Retards de 8 à 26 jours — restant dû cumulé : 90 000 XOF." },
+    { u: comptesMetiers[1].utilisateur, sujet: "1 demande de congé en attente", corps: "Ousmane Diallo — congés annuels du 21/12 au 04/01, à valider." },
+    { u: comptesMetiers[3].utilisateur, sujet: "Appel non fait — CM2-A", corps: "2 séances planifiées ce matin, aucun pointage relevé. Relancer le titulaire." },
+    { u: comptesMetiers[4].utilisateur, sujet: "2 candidatures à instruire", corps: "Dossiers complets reçus cette semaine — planifier les tests d'admission." },
+    { u: comptesMetiers[6].utilisateur, sujet: "Rappel vaccin à vérifier", corps: "1 vaccination enregistrée avec rappel dépassé — contacter la famille." },
+  ];
+  for (const nm of notifsMetiers) {
+    await db.notification.create({
+      data: {
+        ecoleId: ecole.id,
+        destinataireId: nm.u.id,
+        destinataireType: "personnel",
+        sujet: nm.sujet,
+        corps: nm.corps,
+        canal: "in_app",
+        statut: "envoye",
+        dateEnvoi: new Date(),
+      },
+    });
+  }
+
   // 27) Manuels
   const manuelMaths = await db.manuelScolaire.create({
     data: {
@@ -785,8 +923,9 @@ async function main() {
     },
   });
 
-  // 31) Séance
+  // 31) Séance (historique) + EMPLOI DU TEMPS RICHE DU JOUR
   const salleA101 = await db.salle.findFirst({ where: { ecoleId: ecole.id, nom: "A101" } });
+  const salleB102 = await db.salle.findFirst({ where: { ecoleId: ecole.id, nom: "A102" } }) ?? salleA101;
   const seance = await db.seance.create({
     data: {
       classeId: classe6A.id,
@@ -811,6 +950,66 @@ async function main() {
       },
     });
   }
+
+  // 31-bis) SÉANCES DU JOUR (dates dynamiques : AUJOURD'HUI au moment du
+  // seed) — 6A et 5B sont appelées (pointages faits), CM2A NE L'EST PAS :
+  // l'anti-oubli d'appel du cockpit détecte « appel non fait ».
+  const auj = new Date();
+  const ceJour = new Date(Date.UTC(auj.getUTCFullYear(), auj.getUTCMonth(), auj.getUTCDate(), 8, 0, 0));
+  const edtJour = [
+    { classe: classe6A, ens: 0, salle: salleA101, debut: "08:00", fin: "10:00", prevu: "Nombres décimaux — exercices" },
+    { classe: classe6A, ens: 1, salle: salleA101, debut: "10:15", fin: "12:15", prevu: "Dictée et étude de texte" },
+    { classe: classe5B, ens: 2, salle: salleB102, debut: "08:00", fin: "10:00", prevu: "L'Afrique précoloniale" },
+    { classe: classe5B, ens: 3, salle: salleB102, debut: "10:15", fin: "12:15", prevu: "Les états de la matière" },
+    { classe: classeCM2A, ens: 4, salle: salleA101, debut: "08:00", fin: "10:00", prevu: "Irregular verbs — unit 2" },
+    { classe: classeCM2A, ens: 5, salle: salleB102, debut: "10:15", fin: "12:15", prevu: "Athlétisme — course d'endurance" },
+  ];
+  const seancesJour = [] as any[];
+  for (const c of edtJour) {
+    const s = await db.seance.create({
+      data: {
+        classeId: c.classe.id,
+        matiereId: enseignants[c.ens].matiere.id,
+        enseignantId: enseignants[c.ens].personnel.id,
+        date: ceJour,
+        heureDebut: c.debut,
+        heureFin: c.fin,
+        salleId: c.salle!.id,
+        contenuPrevu: c.prevu,
+        statut: "passee",
+      },
+    });
+    seancesJour.push({ seance: s, classe: c.classe, ens: c.ens });
+  }
+  // Appel fait pour 6A (4 présents, 1 absent) et 5B (3 présents, 1 retard)
+  const elevesDe = (classeId: string) => eleves.filter((x: any) => x.classe.id === classeId);
+  for (const { seance: s, classe: cl, ens } of [seancesJour[0], seancesJour[1]]) {
+    for (const el of elevesDe(cl.id)) {
+      await db.presence.create({
+        data: {
+          eleveId: el.eleve.id,
+          seanceId: s.id,
+          statut: el.eleve.id === eleves[1].eleve.id ? "absent" : "present",
+          motifAbsence: el.eleve.id === eleves[1].eleve.id ? "Fever — parent notifié" : null,
+          saisiParId: enseignants[ens].utilisateur.id,
+        },
+      });
+    }
+  }
+  for (const { seance: s, classe: cl, ens } of [seancesJour[2], seancesJour[3]]) {
+    for (const el of elevesDe(cl.id)) {
+      await db.presence.create({
+        data: {
+          eleveId: el.eleve.id,
+          seanceId: s.id,
+          statut: el.eleve.id === eleves[7].eleve.id ? "retard" : "present",
+          motifAbsence: el.eleve.id === eleves[7].eleve.id ? "Retard 20 min — transport" : null,
+          saisiParId: enseignants[ens].utilisateur.id,
+        },
+      });
+    }
+  }
+  // CM2A : séances planifiées mais AUCUN pointage → anti-oubli déclenché.
 
   // 32) Créneau + RDV
   const creneau = await db.creneauRdv.create({
@@ -1357,6 +1556,26 @@ async function main() {
     { roleId: roleSurveillant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSurveillant.id, permissionId: byCode("presences.saisir") },
     { roleId: roleSurveillant.id, permissionId: byCode("securite.gerer") },
+    { roleId: roleSurveillant.id, permissionId: byCode("vie_scolaire.gerer") },
+    // --- Portails métiers (chaque poste = ses permissions propres) ---
+    { roleId: roleRh.id, permissionId: byCode("rh.gerer") },
+    { roleId: roleRh.id, permissionId: byCode("communication.envoyer") },
+    { roleId: roleCenseur.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleCenseur.id, permissionId: byCode("presences.saisir") },
+    { roleId: roleCenseur.id, permissionId: byCode("vie_scolaire.gerer") },
+    { roleId: roleCenseur.id, permissionId: byCode("edt.gerer") },
+    { roleId: roleCenseur.id, permissionId: byCode("examens.gerer") },
+    { roleId: roleCenseur.id, permissionId: byCode("bulletins.valider") },
+    { roleId: roleSecretariat.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleSecretariat.id, permissionId: byCode("eleves.ecrire") },
+    { roleId: roleSecretariat.id, permissionId: byCode("communication.envoyer") },
+    { roleId: roleAssistant.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleAssistant.id, permissionId: byCode("eleves.ecrire") },
+    { roleId: roleAssistant.id, permissionId: byCode("communication.envoyer") },
+    { roleId: roleAssistant.id, permissionId: byCode("presences.saisir") },
+    { roleId: roleAssistant.id, permissionId: byCode("vie_scolaire.gerer") },
+    { roleId: roleInfirmier.id, permissionId: byCode("sante.gerer") },
+    { roleId: roleInfirmier.id, permissionId: byCode("eleves.lire") },
   ] });
   await db.utilisateurRole.createMany({ data: [
     { utilisateurId: dirUtilisateur.id, roleId: roleDirection.id },
@@ -1387,8 +1606,8 @@ async function main() {
   // D) Congés + remplacement
   const congeMaladie = await db.conge.create({ data: {
     personnelId: enseignants[2].personnel.id, type: "maladie",
-    dateDebut: new Date("2026-09-28"), dateFin: new Date("2026-10-09"),
-    statut: "accepte", motif: "Arrêt maladie — certificat fourni", traiteParId: dirUtilisateur.id,
+    dateDebut: new Date(Date.now() - 3 * 86400000), dateFin: new Date(Date.now() + 6 * 86400000),
+    statut: "valide", motif: "Arrêt maladie — certificat fourni", traiteParId: dirUtilisateur.id,
   } });
   await db.conge.create({ data: {
     personnelId: enseignants[4].personnel.id, type: "annuel",
@@ -1399,7 +1618,7 @@ async function main() {
     congeId: congeMaladie.id,
     personnelAbsentId: enseignants[2].personnel.id,
     personnelRemplacantId: enseignants[5].personnel.id,
-    dateDebut: new Date("2026-09-28"), dateFin: new Date("2026-10-09"), statut: "confirme",
+    dateDebut: new Date(Date.now() - 3 * 86400000), dateFin: new Date(Date.now() + 6 * 86400000), statut: "confirme",
   } });
 
   // E) Évaluation annuelle du personnel
@@ -1426,6 +1645,34 @@ async function main() {
   await db.avancementProgramme.create({ data: {
     chapitreId: chap2.id, classeId: classe6A.id, enseignantId: enseignants[0].personnel.id,
     pourcentage: 15,
+  } });
+
+  // F-bis) AVANCEMENTS COMPLETS — programmes FR (5B), HG/CM2 (CM2A) et
+  // figures usuelles (6A) : chaque classe a un suivi réel, dont un en
+  // retard marqué pour déclencher l'alerte du cockpit direction.
+  const programmeFr = await db.programme.create({ data: {
+    ecoleId: ecole.id, matiereId: enseignants[1].matiere.id, niveauId: n5.id, anneeScolaireId: annee.id,
+    titre: "Français 5e — Programme annuel", objectifs: "Grammaire, conjugaison, expression écrite.",
+    volumeHorairePrevu: 96, publie: true,
+  } });
+  const chapFr1 = await db.chapitre.create({ data: { programmeId: programmeFr.id, titre: "Les types de phrases", ordre: 1, volumeHorairePrevu: 10 } });
+  await db.avancementProgramme.create({ data: {
+    chapitreId: chapFr1.id, classeId: classe5B.id, enseignantId: enseignants[1].personnel.id,
+    pourcentage: 80, commentaire: "Bon rythme, dictées hebdomadaires en place.",
+  } });
+  const programmeHg = await db.programme.create({ data: {
+    ecoleId: ecole.id, matiereId: enseignants[2].matiere.id, niveauId: nCM2.id, anneeScolaireId: annee.id,
+    titre: "Histoire-Géo CM2 — Programme annuel", objectifs: "Repères historiques et lecture de cartes.",
+    volumeHorairePrevu: 72, publie: true,
+  } });
+  const chapHg1 = await db.chapitre.create({ data: { programmeId: programmeHg.id, titre: "Les grandes découvertes", ordre: 1, volumeHorairePrevu: 12 } });
+  await db.avancementProgramme.create({ data: {
+    chapitreId: chapHg1.id, classeId: classeCM2A.id, enseignantId: enseignants[2].personnel.id,
+    pourcentage: 35, commentaire: "Décalage dû à l'arrêt maladie — rattrapage planifié.",
+  } });
+  await db.avancementProgramme.create({ data: {
+    chapitreId: chap3.id, classeId: classe6A.id, enseignantId: enseignants[0].personnel.id,
+    pourcentage: 40,
   } });
 
   // G) Règles de calcul de moyenne par cycle

@@ -1,0 +1,20 @@
+const { PrismaClient } = require('@prisma/client');
+const db = new PrismaClient();
+(async () => {
+  const roles = await db.role.findMany({ select: { code: true } });
+  console.log('rôles:', roles.map(r => r.code).join(', '));
+  const users = await db.utilisateur.findMany({ where: { email: { in: ['comptable@vinci.sn','rh@vinci.sn','censeur@vinci.sn','surveillant@vinci.sn','secretariat@vinci.sn','assistant@vinci.sn','infirmiere@vinci.sn'] } }, select: { email: true } });
+  console.log('comptes métiers créés:', users.length, '/ 7');
+  const pr = await db.personnelRole.count({ where: { matiereId: { not: null } } });
+  console.log('affectations avec matière:', pr);
+  const auj = new Date().toISOString().slice(0, 10);
+  const seances = await db.seance.findMany({ where: { date: { gte: new Date(auj + 'T00:00:00Z'), lt: new Date(auj + 'T23:59:59Z') } }, select: { classeId: true, id: true } });
+  const presences = await db.presence.findMany({ select: { seanceId: true } });
+  const appelees = new Set(presences.filter(p => seances.some(s => s.id === p.seanceId)).map(p => seances.find(s => s.id === p.seanceId).classeId));
+  const classesSeances = [...new Set(seances.map(s => s.classeId))];
+  const manquantes = classesSeances.filter(c => !appelees.has(c));
+  console.log('séances du jour:', seances.length, '| classes appelées:', appelees.size, '| APPEL NON FAIT:', manquantes.length);
+  const notifs = await db.notification.count();
+  console.log('notifications totales:', notifs);
+  await db.$disconnect();
+})();

@@ -17,7 +17,14 @@ import * as actions from '@/app/actions';
 
 const COMPTES_DEMO = [
   { role: 'Super-Admin éditeur', email: 'editeur@platforme.com' },
-  { role: 'Direction', email: 'direction@vinci.sn' },
+  { role: 'Direction (vue 360° totale)', email: 'direction@vinci.sn' },
+  { role: 'Comptabilité', email: 'comptable@vinci.sn' },
+  { role: 'Ressources Humaines', email: 'rh@vinci.sn' },
+  { role: 'Censeur (vie scolaire)', email: 'censeur@vinci.sn' },
+  { role: 'Surveillant général', email: 'surveillant@vinci.sn' },
+  { role: 'Secrétariat', email: 'secretariat@vinci.sn' },
+  { role: 'Assistant de direction', email: 'assistant@vinci.sn' },
+  { role: 'Infirmière', email: 'infirmiere@vinci.sn' },
   { role: 'Enseignant', email: 'mamadou.fall@vinci.sn' },
   { role: 'Parent', email: 'parent.pape@gmail.com' },
   { role: 'Élève', email: 'eleve.diop@vinci.sn' },
