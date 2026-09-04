@@ -11,7 +11,7 @@ import { getSessionCourante } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { logAction, ActionError } from '@/lib/business/commun';
 
-const DOSSIER_RACINE = join(process.cwd(), 'stockage');
+const DOSSIER_RACINE = process.env.SG_STOCKAGE_DIR || join(process.cwd(), 'stockage');
 const TAILLE_MAX = 10 * 1024 * 1024; // 10 Mo
 const EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'];
 
@@ -33,7 +33,7 @@ export async function POST(requête: Request) {
 
     // Répertoire propre à l'école + nom aléatoire (anti-traversée, anti-collision)
     const dossier = join(DOSSIER_RACINE, ecoleId);
-    mkdirSync(dossier, { recursive: true });
+    try { mkdirSync(dossier, { recursive: true }); } catch { return Response.json({ ok: false, error: 'Stockage non disponible sur cet hébergeur (read-only).' }, { status: 503 }); }
     const nomStocké = `${Date.now().toString(36)}-${randomBytes(8).toString('hex')}${ext}`;
     const chemin = join(dossier, nomStocké);
     writeFileSync(chemin, Buffer.from(await fichier.arrayBuffer()));

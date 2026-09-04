@@ -1,49 +1,37 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionCourante } from "@/lib/auth";
 
 // ====================================================================
-// GET /api — health-check AUTHENTIFIÉ.
-// Sans session : seules les informations vitales minimales (statut/base),
-// jamais les compteurs (fuite d'information évitée). Message d'erreur
-// générique : aucune stack ni détail technique côté client.
+// GET /api — health check SANS base de données (diagnostic Vercel).
+// Si cette route répond, le problème vient de Prisma/DB.
+// Si elle 404, le problème vient du build/routing Next.js.
 // ====================================================================
 
 export async function GET() {
   const debut = Date.now();
+  const infos: Record<string, unknown> = {
+    service: "ScolaGestion V4",
+    statut: "ok",
+    latence_ms: 0,
+    vercel: process.env.VERCEL === "1",
+    node: process.version,
+    horodatage: new Date().toISOString(),
+  };
+
+  // Test Prisma (non bloquant : on renvoie quand même les infos de base)
   try {
-    const session = await getSessionCourante();
-    if (!session) {
-      // Anonyme : version minimale (utile au monitoring, inoffensive)
-      await db.ecole.count();
-      return NextResponse.json({
-        service: "ScolaGestion V4",
-        statut: "ok",
-        base: "connectée",
-        authentifie: false,
-        horodatage: new Date().toISOString(),
-      });
-    }
-    const [ecoles, eleves, personnels, sessionsActives, audits] = await Promise.all([
-      db.ecole.count(),
-      db.eleve.count(),
-      db.personnel.count(),
-      db.sessionUtilisateur.count({ where: { active: true, dateExpiration: { gt: new Date() } } }),
-      db.auditLog.count(),
-    ]);
-    return NextResponse.json({
-      service: "ScolaGestion V4",
-      statut: "ok",
-      base: "connectée",
-      authentifie: true,
-      latence_ms: Date.now() - debut,
-      donnees: { ecoles, eleves, personnels, sessionsActives, audits },
-      horodatage: new Date().toISOString(),
-    });
-  } catch {
-    return NextResponse.json(
-      { service: "ScolaGestion V4", statut: "erreur", base: "inaccessible" },
-      { status: 503 },
-    );
+    const { PrismaClient } = await import("@prisma/client");
+    const db = new PrismaClient();
+    const ecoles = await db.ecole.count().catch(() => -1);
+    await db.$disconnect();
+    infos.base = "connectée";
+    infos.donnees = { ecoles };
+  } catch (e) {
+    infos.base = "inaccessible";
+    infos.erreur_db = (e as Error).message.slice(0, 200);
+    infos.aide = "Vérifiez DATABASE_URL dans Vercel → Settings → Environment Variables";
+    return NextResponse.json(infos, { status: 503 });
   }
+
+  infos.latence_ms = Date.now() - debut;
+  return NextResponse.json(infos);
 }

@@ -24,12 +24,13 @@ export type ResultatSauvegarde = { ok: boolean; nomFichier?: string; tailleOctet
 
 export async function creerSauvegarde(db: PrismaClient, type: 'manuelle' | 'automatique' | 'pre-restauration' = 'manuelle', creeParId?: string): Promise<ResultatSauvegarde> {
   try {
-    mkdirSync(DOSSIER, { recursive: true });
+    try { mkdirSync(DOSSIER, { recursive: true }); } catch { /* Vercel: filesystem read-only */ }
     const nom = `${type === 'automatique' ? 'auto-' : type === 'pre-restauration' ? 'sec-' : ''}${horodatageNom()}`;
 
     // Méthode 1 : pg_dump (si le binaire est accessible sur le serveur)
     try {
-      const chemin = join(DOSSIER, `${nom}.sql`);
+      if (!existsSync(DOSSIER)) throw new Error('Filesystem non accessible (Vercel) — Neon gère les backups');
+    const chemin = join(DOSSIER, `${nom}.sql`);
       await execAsync(`pg_dump "${process.env.DATABASE_URL}" --no-owner --no-privileges -f "${chemin}"`, { timeout: 120_000 });
       const taille = statSync(chemin).size;
       await db.sauvegarde.create({ data: { nomFichier: `${nom}.sql`, tailleOctets: taille, type, statut: 'reussie', creeParId: creeParId ?? null } });

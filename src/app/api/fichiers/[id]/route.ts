@@ -9,7 +9,7 @@ import { join } from 'path';
 import { getSessionCourante } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-const DOSSIER_RACINE = join(process.cwd(), 'stockage');
+const DOSSIER_RACINE = process.env.SG_STOCKAGE_DIR || join(process.cwd(), 'stockage');
 
 export async function GET(requête: Request, contexte: { params: Promise<{ id: string }> | { id: string } }) {
   try {
