@@ -9,6 +9,7 @@ import { headers } from 'next/headers';
 import { z } from 'zod';
 import { ActionError, Ctx } from '@/lib/business';
 import { AuthError, requireSession } from '@/lib/auth';
+import { avecRetryBdd } from '@/lib/retry-bdd';
 import { db } from '@/lib/db';
 import { versCentimes } from '@/lib/format';
 import {
@@ -574,9 +575,11 @@ export async function initialiserEcole(formData: FormData): Promise<ActionResult
       adminEmail: d.email, adminMotDePasse: d.motDePasse,
     });
     // ⬅️ Connexion IMMÉDIATE : session créée pour l'administrateur
+    // (avec retry : la création vient de réveiller la base, la rafale
+    //  de connexions qui suit peut tomber sur un serveur pas encore chaud)
     const { creerSession } = await import('@/lib/auth');
-    await creerSession(r.adminId, userAgent, ip);
-    await db.utilisateur.update({ where: { id: r.adminId }, data: { derniereConnexion: new Date() } });
+    await avecRetryBdd(() => creerSession(r.adminId, userAgent, ip), 4, 400);
+    await avecRetryBdd(() => db.utilisateur.update({ where: { id: r.adminId }, data: { derniereConnexion: new Date() } }));
     return { ok: true, slug: r.slug, ecoleId: r.ecoleId };
   } catch (e) { return echec(e); }
 }
