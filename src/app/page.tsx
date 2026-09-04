@@ -8,7 +8,7 @@
 // ====================================================================
 
 import { redirect } from 'next/navigation';
-import { getSessionCourante, portailDuCompte } from '@/lib/auth';
+import { getSessionCourante, portailDuCompte, type SessionInfo } from '@/lib/auth';
 import { chargerDonneesPortail } from '@/lib/loaders/par-portail';
 import { avecRetryBdd } from '@/lib/retry-bdd';
 import AppShell from '@/components/app-shell';
@@ -17,8 +17,13 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ annee?: string }> | { annee?: string } }) {
-  const session = await getSessionCourante();
-  if (!session) redirect('/login');
+  let session: SessionInfo | null = null;
+  try {
+    session = await getSessionCourante();
+  } catch {
+    session = null; // BD injoignable un instant → écran de reprise ci-dessous
+  }
+  if (!session) redirect('/login'); // pas de session lisible → connexion
 
   const params = await Promise.resolve(searchParams);
   const anneeCibleId = params?.annee ?? null;

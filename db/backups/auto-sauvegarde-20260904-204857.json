@@ -1,0 +1,22 @@
+{
+  "_meta": [
+    {
+      "généréLe": "2026-09-04T20:50:57.389Z",
+      "type": "automatique"
+    }
+  ],
+  "factureSaas": [
+    {
+      "id": "cmtmh27ut0008uhmckxver8a2",
+      "ecoleId": "cmtmh278b0004uhmc9ijeasvj",
+      "abonnementId": "cmtmh27jm0006uhmcwu6s7rxd",
+      "periode": "2026-08",
+      "montant": 6500000,
+      "devise": "XOF",
+      "statut": "payee",
+      "modePaiement": "virement",
+      "dateEmission": "2026-09-04T04:46:50.693Z",
+      "datePaiement": "2026-08-05T00:00:00.000Z"
+    }
+  ]
+}

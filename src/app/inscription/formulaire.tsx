@@ -36,11 +36,19 @@ export function FormulaireInscription({ ecoles }: { ecoles: EcolePublique[] }) {
     setErreur(null);
     const fd = new FormData(e.currentTarget);
     startTransition(async () => {
-      const r = await ext.initialiserEcole(fd);
-      if (r && r.ok === false) { setErreur(r.error); return; }
-      // Session créée par le serveur → accès direct à l'interface
-      router.push('/');
-      router.refresh();
+      try {
+        const r = await ext.initialiserEcole(fd);
+        if (r && r.ok === false) { setErreur(r.error); return; }
+        // Session créée par le serveur → accès direct à l'interface
+        router.push('/');
+        router.refresh();
+      } catch {
+        // Action interrompue (fonction serverless interrompue, réseau…).
+        // L'école a PU être créée : proposer la connexion au lieu d'un crash.
+        setErreur('La création prend anormalement longtemps (serveur en cours de réveil). '
+          + 'Votre école a peut-être déjà été créée : essayez de vous connecter avec votre email et mot de passe, '
+          + 'ou réessayez la création dans un instant.');
+      }
     });
   }
 
@@ -51,9 +59,13 @@ export function FormulaireInscription({ ecoles }: { ecoles: EcolePublique[] }) {
     const fd = new FormData(e.currentTarget);
     fd.set('type', type);
     startTransition(async () => {
-      const r = await ext.demanderComptePublic(fd);
-      if (r && r.ok === false) { setErreur(r.error); return; }
-      setSucces(true);
+      try {
+        const r = await ext.demanderComptePublic(fd);
+        if (r && r.ok === false) { setErreur(r.error); return; }
+        setSucces(true);
+      } catch {
+        setErreur('La demande n\'a pas pu être envoyée (connexion instable). Réessayez dans un instant.');
+      }
     });
   }
 

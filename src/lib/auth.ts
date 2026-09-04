@@ -5,6 +5,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
+import { avecRetryBdd } from './retry-bdd';
 import { hashPassword, verifyPassword, genererCodesSecours, genererSecretTotp } from './auth-hash';
 export { hashPassword, verifyPassword, genererCodesSecours, genererSecretTotp };
 
@@ -54,11 +55,13 @@ export async function getSessionCourante(): Promise<SessionInfo | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const session = await db.sessionUtilisateur.findFirst({
+  // Retries : ces lectures tombent souvent juste après une action longue
+  // (création d'école…) quand le pool de connexions se réveille.
+  const session = await avecRetryBdd(() => db.sessionUtilisateur.findFirst({
     where: { tokenHash: sha256(token), active: true, dateExpiration: { gt: new Date() } },
-  });
+  }), 3, 300);
   if (!session) return null;
-  const utilisateur = await db.utilisateur.findFirst({
+  const utilisateur = await avecRetryBdd(() => db.utilisateur.findFirst({
     where: { id: session.utilisateurId, actif: true, deletedAt: null },
     include: {
       ecole: { select: { statut: true } },
@@ -67,14 +70,14 @@ export async function getSessionCourante(): Promise<SessionInfo | null> {
         include: { role: { include: { permissions: { include: { permission: true } } } } },
       },
     },
-  });
+  }), 3, 300);
   if (!utilisateur) return null;
   if (utilisateur.type !== 'super_admin' && utilisateur.ecole && ['suspendu', 'resilie'].includes(utilisateur.ecole.statut)) return null;
 
   const permissions = new Set<string>();
   const roles: string[] = [];
   if (utilisateur.type === 'super_admin') {
-    const toutes = await db.permission.findMany({ select: { code: true } });
+    const toutes = await avecRetryBdd(() => db.permission.findMany({ select: { code: true } }), 3, 300);
     for (const p of toutes) permissions.add(p.code);
   }
   for (const ur of utilisateur.roles) {

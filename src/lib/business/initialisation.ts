@@ -78,15 +78,37 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
       { c: 'COLL', lc: 'Collège', mode: 'chiffre', s: 'COLL', ls: 'Collège', n: [['6E', 'Sixième'], ['5E', 'Cinquième'], ['4E', 'Quatrième'], ['3E', 'Troisième']] },
       { c: 'LYC', lc: 'Lycée', mode: 'chiffre', s: 'LYC', ls: 'Lycée', n: [['2NDE', 'Seconde'], ['1ERE', 'Première'], ['TLE', 'Terminale']] },
     ];
+    // BATCHÉ : createMany + relire les ids — ~8 requêtes au lieu de ~38
+    // allers-retours séquentiels (critique sous Vercel : maxDuration).
     let ordre = 1;
+    const ordres = new Map<string, number>();
     for (const bloc of STRUCTURE) {
-      const cy = await tx.cycle.create({ data: { ecoleId: ecole.id, code: bloc.c, libelle: bloc.lc, ordre: ordre++, modeEvaluation: bloc.mode } });
-      const se = await tx.section.create({ data: { cycleId: cy.id, code: bloc.s, libelle: bloc.ls } });
-      for (const [code, libelle] of bloc.n) {
-        const nv = await tx.niveau.create({ data: { sectionId: se.id, code, libelle, ordre: ordre++ } });
-        await tx.classe.create({ data: { ecoleId: ecole.id, niveauId: nv.id, anneeScolaireId: annee.id, code: code + '-A', libelle: libelle + ' A', capaciteMax: 40 } });
-      }
+      ordres.set(bloc.c, ordre++);
+      for (const [code] of bloc.n) ordres.set(code, ordre++);
     }
+    await tx.cycle.createMany({
+      data: STRUCTURE.map((b) => ({ ecoleId: ecole.id, code: b.c, libelle: b.lc, ordre: ordres.get(b.c)!, modeEvaluation: b.mode })),
+    });
+    const cyclesCrees = await tx.cycle.findMany({ where: { ecoleId: ecole.id } });
+    const cycleParCode = new Map(cyclesCrees.map((c) => [c.code, c]));
+    await tx.section.createMany({
+      data: STRUCTURE.map((b) => ({ cycleId: cycleParCode.get(b.c)!.id, code: b.s, libelle: b.ls })),
+    });
+    const sectionsCreees = await tx.section.findMany({ where: { cycleId: { in: cyclesCrees.map((c) => c.id) } } });
+    const sectionParCycle = new Map(sectionsCreees.map((s) => [s.cycleId, s]));
+    await tx.niveau.createMany({
+      data: STRUCTURE.flatMap((b) => b.n.map(([code, libelle]) => ({
+        sectionId: sectionParCycle.get(cycleParCode.get(b.c)!.id)!.id, code, libelle, ordre: ordres.get(code)!,
+      }))),
+    });
+    const niveauxCrees = await tx.niveau.findMany({ where: { sectionId: { in: sectionsCreees.map((s) => s.id) } } });
+    const niveauParCode = new Map(niveauxCrees.map((n) => [n.code, n]));
+    await tx.classe.createMany({
+      data: STRUCTURE.flatMap((b) => b.n.map(([code, libelle]) => ({
+        ecoleId: ecole.id, niveauId: niveauParCode.get(code)!.id, anneeScolaireId: annee.id,
+        code: code + '-A', libelle: libelle + ' A', capaciteMax: 40,
+      }))),
+    });
 
     // 4) Rôles + permissions + matrice
     const ROLES: Array<{ code: string; libelle: string }> = [
@@ -111,21 +133,24 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
       assistant_direction: ['eleves.lire','eleves.ecrire','presences.saisir','vie_scolaire.gerer','communication.envoyer'],
       infirmier: ['eleves.lire','sante.gerer'],
     };
-    const roleIds = new Map<string, string>();
-    for (const r of ROLES) {
-      const cree = await tx.role.create({ data: { ecoleId: ecole.id, code: r.code, libelle: r.libelle } });
-      roleIds.set(r.code, cree.id);
-    }
+    // BATCHÉ : 1 createMany par famille + relecture des ids
+    await tx.role.createMany({ data: ROLES.map((r) => ({ ecoleId: ecole.id, code: r.code, libelle: r.libelle })) });
+    const rolesCrees = await tx.role.findMany({ where: { ecoleId: ecole.id } });
+    const roleIds = new Map(rolesCrees.map((r) => [r.code, r.id]));
     const PERMS = ['eleves.lire','eleves.ecrire','notes.saisir','bulletins.valider','finances.voir','finances.ecrire','finances.valider','presences.saisir','rh.gerer','communication.envoyer','admin.saas','vie_scolaire.gerer','securite.gerer','examens.gerer','services.gerer','edt.gerer','sante.gerer','salles.gerer','protection.gerer'];
-    const permIds = new Map<string, string>();
-    for (const code of PERMS) {
-      const p = await tx.permission.findUnique({ where: { code } }) ?? await tx.permission.create({ data: { code, libelle: code, module: code.split('.')[0] } });
-      permIds.set(code, p.id);
+    const permsExistants = await tx.permission.findMany({ where: { code: { in: PERMS } } });
+    const manquants = PERMS.filter((c) => !permsExistants.some((p) => p.code === c));
+    if (manquants.length) {
+      await tx.permission.createMany({ data: manquants.map((c) => ({ code: c, libelle: c, module: c.split('.')[0] })) });
     }
-    for (const [codeRole, codes] of Object.entries(MATRICE)) {
-      const roleId = roleIds.get(codeRole)!;
-      await tx.rolePermission.createMany({ data: codes.map((c) => ({ roleId, permissionId: permIds.get(c)! })) });
-    }
+    const permsFinaux = manquants.length
+      ? await tx.permission.findMany({ where: { code: { in: PERMS } } })
+      : permsExistants;
+    const permIds = new Map(permsFinaux.map((p) => [p.code, p.id]));
+    await tx.rolePermission.createMany({
+      data: Object.entries(MATRICE).flatMap(([codeRole, codes]) =>
+        codes.map((c) => ({ roleId: roleIds.get(codeRole)!, permissionId: permIds.get(c)! }))),
+    });
 
     // 5) Compte ADMIN (actif immédiatement — le PREMIER)
     const admin = await tx.utilisateur.create({
@@ -161,7 +186,10 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     });
 
     return { ecoleId: ecole.id, slug: slugFinal, adminId: admin.id, email };
-  }, { timeout: 120000, maxWait: 30000 });
+    // Timeout volontairement SOUS la limite Vercel (60 s) : en cas de base
+    // trop lente, l'action renvoie une erreur PROPRE (affichée dans le
+    // formulaire) au lieu d'être tuée en plein vol par la plateforme.
+  }, { timeout: 40000, maxWait: 10000 });
 
   return resultat;
 }
