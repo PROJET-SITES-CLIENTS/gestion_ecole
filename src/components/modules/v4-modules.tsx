@@ -633,15 +633,15 @@ export default function V4ModulesModule({ initialData }: { initialData: any }) {
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
       <PageHeader
-        title="Modules V4 — 37 failles corrigées"
-        subtitle="Couverture exhaustive du cahier des charges V4 (Parties A, B, C, D)"
+        title="Catalogue complémentaire"
+        subtitle="Vue d'inspection des tables spécialisées (lecture) — les actions métier vivent dans les modules dédiés"
       />
 
       {/* KPIs globaux */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Failles corrigées" value={`${totalFailles}/37`} sub="couverture V4" icon={CheckCircle2} color="emerald" />
-        <StatCard title="Failles avec données" value={faillesAvecDonnees} sub="seedées et opérationnelles" icon={CheckCircle2} color="blue" />
-        <StatCard title="Enregistrements V4" value={totalEnregistrementsV4.toLocaleString('fr-FR')} sub="dans la base démo" icon={Layers} color="purple" />
+        <StatCard title="Tables inspectées" value={`${totalFailles}/37`} sub="couverture du cahier des charges V4" icon={CheckCircle2} color="emerald" />
+        <StatCard title="Tables alimentées" value={faillesAvecDonnees} sub="avec données en base" icon={CheckCircle2} color="blue" />
+        <StatCard title="Enregistrements affichés" value={totalEnregistrementsV4.toLocaleString('fr-FR')} sub="en lecture seule" icon={Layers} color="purple" />
         <StatCard title="Modèles Prisma" value="126+" sub="71 existants + 55 nouveaux" icon={Layers} color="amber" />
       </div>
 
@@ -651,18 +651,19 @@ export default function V4ModulesModule({ initialData }: { initialData: any }) {
           <div className="flex items-start gap-3">
             <CheckCircle2 className="h-8 w-8 text-emerald-600 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-gray-900 text-sm">Audit V4 complet — couverture 100% du cahier des charges</h3>
+              <h3 className="font-semibold text-gray-900 text-sm">Catalogue complémentaire — inspection en lecture seule</h3>
               <p className="text-xs text-gray-600 mt-1">
-                Les 37 failles identifiées lors de l'audit sont maintenant couvertes par le schéma Prisma,
-                alimentées par le script de seed et exposées via l'interface. Chaque faille peut être
-                étendue avec des actions (CRUD) sur demande.
+                Cette vue expose les tables spécialisées du cahier des charges V4 (Parties A, B, C, D)
+                pour contrôle et vérification. Il s'agit d'une inspection en lecture seule :
+                les actions métier (créer, modifier, supprimer) vivent dans les modules dédiés
+                (Élèves, Finances, Communication, Sécurité…).
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Liste des 37 failles */}
+      {/* Liste des 37 tables */}
       <div className="space-y-2">
         {failles.map((f) => {
           const Icon = f.icon;

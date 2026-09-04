@@ -1,150 +1,192 @@
 'use client';
 
 // ====================================================================
-// Portail Parent — vue restreinte sur les enfants, bulletins,
-// paiements, RDV, notifications.
+// Portail Parent — F1 : données déjà filtrées côté serveur (mesEnfants,
+// mesBulletins, mesEcheances, mesRdvs). Plus AUCUNE donnée d'enfants
+// d'autres familles dans le payload, plus de repli « premier élève ».
+// F13 : réservation/annulation de RDV + justification d'absence en ligne.
 // ====================================================================
 
 import { useState } from 'react';
-import { Users, Wallet, BookOpen, Bell, CalendarDays, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, EmptyState, ModalForm, CreateButton } from '@/components/shared-ui';
+import { Wallet, BookOpen, Bell, CalendarDays } from 'lucide-react';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, EmptyState, ModalForm, useActionFeedback } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
-import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
+import { formatXOF, formatDate, formatDateTime } from '@/lib/format';
 
 export default function ParentPortalModule({ initialData, mode = 'full' }: { initialData: any; mode?: 'dashboard' | 'full' }) {
-  const eleves = initialData.eleves ?? [];
-  const bulletins = initialData.bulletins ?? [];
-  const echeances = initialData.echeances ?? [];
-  const paiements = initialData.paiements ?? [];
-  const creneaux = initialData.creneauxRdv ?? [];
-  const rdvs = initialData.rdvs ?? [];
-  const notifications = (initialData.notifications ?? []).filter((n: any) => n.destinataireId === initialData.session?.utilisateur?.id);
-  const classes = initialData.classes ?? [];
-  const personnels = initialData.personnels ?? [];
+  const mesEnfants: any[] = initialData.mesEnfants ?? [];
+  const mesBulletins: any[] = initialData.mesBulletins ?? [];
+  const mesEcheances: any[] = initialData.mesEcheances ?? [];
+  const mesRdvs: any[] = initialData.mesRdvs ?? [];
+  const creneauxDisponibles: any[] = (initialData.creneauxRdv ?? []).filter((c: any) => c.statut === 'disponible');
+  const notifications: any[] = initialData.notifications ?? [];
+  const kpi = initialData.kpi ?? {};
 
-  // Enfants RÉELS du parent connecté (session) — fin du choix arbitraire.
-  const session = initialData.session ?? {};
   const [enfantActifId, setEnfantActifId] = useState<string | null>(null);
-  const mesEnfants = (session.enfantsIds ?? []).length > 0
-    ? eleves.filter((e: any) => session.enfantsIds.includes(e.id))
-    : eleves.slice(0, 1); // repli pour compatibilité
+  const { run, Message, pending } = useActionFeedback();
   const enfant = mesEnfants.find((e: any) => e.id === enfantActifId) ?? mesEnfants[0] ?? null;
-  const enfantsListe = mesEnfants;
-  const enfantClasse = enfant ? classes.find((c: any) => c.id === enfant.classeActuelleId) : null;
-  const enfantBulletins = enfant ? bulletins.filter((b: any) => b.eleveId === enfant.id && b.statut === 'publie') : [];
-  const enfantEcheances = enfant ? echeances.filter((e: any) => e.eleveId === enfant.id) : [];
-  const enfantPaiements = enfant ? paiements.filter((p: any) => p.eleveId === enfant.id) : [];
-  const enfantRdvs = enfant ? rdvs.filter((r: any) => r.eleveId === enfant.id) : [];
-
-  const totalDu = enfantEcheances.filter((e: any) => e.statut !== 'payee').reduce((s: number, e: any) => s + (e.montant - e.montantPaye), 0);
+  const enfantBulletins = enfant ? mesBulletins.filter((b: any) => b.eleveId === enfant.id) : [];
+  const enfantEcheances = enfant ? mesEcheances.filter((e: any) => e.eleveId === enfant.id) : [];
+  const enfantRdvs = enfant ? mesRdvs.filter((r: any) => r.eleveId === enfant.id) : [];
 
   return (
-    <div className="p-4 lg:p-6 max-w-5xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-6">
       <PageHeader
         title="Portail Parent"
-        subtitle={enfant ? `Vous suivez ${enfant.prenom} ${enfant.nom} · ${enfantClasse?.libelle ?? '—'}` : 'Aucun enfant associé'}
+        subtitle={enfant ? `Vous suivez ${enfant.prenom} ${enfant.nom} · ${enfant.classeActuelle?.libelle ?? '—'}` : 'Aucun enfant associé à votre compte'}
       />
 
-      {enfantsListe.length > 1 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {enfantsListe.map((e: any) => (
-            <Button key={e.id} variant="outline" size="sm" className={enfant?.id === e.id ? 'border-emerald-400 bg-emerald-50' : ''} onClick={() => setEnfantActifId(e.id)}>
-              {e.prenom} {e.nom}
-            </Button>
-          ))}
-        </div>
-      )}
+      {Message}
 
-      {enfant && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard title="Échéances dues" value={formatMontant(totalDu, 'XOF')} sub={`${enfantEcheances.filter((e: any) => e.statut !== 'payee').length} échéance(s)`} icon={Wallet} color="rose" />
-          <StatCard title="Bulletins reçus" value={enfantBulletins.length} icon={BookOpen} color="emerald" />
-          <StatCard title="RDV à venir" value={enfantRdvs.length} icon={CalendarDays} color="blue" />
-          <StatCard title="Notifications" value={notifications.length} icon={Bell} color="amber" />
-        </div>
-      )}
+      {mesEnfants.length === 0 ? (
+        <EmptyState
+          title="Aucun enfant rattaché à votre compte"
+          description="Contactez le secrétariat de l'établissement pour rattacher votre compte à votre (vos) enfant(s)."
+        />
+      ) : (
+        <>
+          {mesEnfants.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {mesEnfants.map((e: any) => (
+                <button
+                  key={e.id}
+                  onClick={() => setEnfantActifId(e.id)}
+                  className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                    enfant?.id === e.id ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:border-emerald-300'
+                  }`}
+                >
+                  {e.prenom} {e.nom}
+                </button>
+              ))}
+            </div>
+          )}
 
-      <div className="space-y-6">
-        {/* Bloc enfant */}
-        <SectionBlock title={enfant ? `Mon enfant — ${enfant.prenom} ${enfant.nom}` : 'Mon enfant'}>
-          {enfant ? (
-            <div className="grid md:grid-cols-2 gap-3">
-              <div>
-                <div className="text-sm space-y-1">
-                  <div><span className="text-gray-500">Matricule :</span> <span className="font-medium">{enfant.matricule}</span></div>
-                  <div><span className="text-gray-500">Classe :</span> <span className="font-medium">{enfantClasse?.libelle}</span></div>
-                  <div><span className="text-gray-500">Statut :</span> <StatusBadge statut={enfant.statut} /></div>
+          {/* KPI serveur */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Restant dû" value={formatXOF(kpi.totalDu ?? 0)} sub="tous enfants" icon={<Wallet className="h-4 w-4" />} />
+            <StatCard title="Bulletins publiés" value={String(mesBulletins.length)} sub="année en cours" icon={<BookOpen className="h-4 w-4" />} />
+            <StatCard title="Rendez-vous" value={String(mesRdvs.length)} sub="avec les enseignants" icon={<CalendarDays className="h-4 w-4" />} />
+            <StatCard title="Notifications" value={String(notifications.length)} sub="reçues" icon={<Bell className="h-4 w-4" />} />
+          </div>
+
+          {/* Dernier bulletin */}
+          <SectionBlock title="Dernier bulletin">
+            {enfantBulletins[0] ? (
+              <div className="rounded-lg border p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{enfantBulletins[0].periode?.libelle ?? 'Période'}</div>
+                  <div className="text-xs text-gray-500">Publié le {formatDate(enfantBulletins[0].datePublication)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold">{enfantBulletins[0].moyenneGenerale?.toFixed(2) ?? '—'}/20</div>
+                  <div className="text-xs text-gray-500">Rang {enfantBulletins[0].rang ?? '—'}</div>
                 </div>
               </div>
-              <div className="text-sm">
-                <h4 className="font-medium mb-1">Dernier bulletin</h4>
-                {enfantBulletins.length === 0 ? (
-                  <p className="text-gray-500 text-xs">Aucun bulletin publié</p>
-                ) : (
-                  <div className="p-2 bg-emerald-50 rounded border border-emerald-200">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Moyenne générale</span>
-                      <span className="font-bold text-lg">{enfantBulletins[0].moyenneGenerale}/20</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : <EmptyState title="Aucun enfant associé à votre compte" />}
-        </SectionBlock>
+            ) : (
+              <EmptyState title="Aucun bulletin publié" description="Les bulletins apparaîtront ici dès leur publication." />
+            )}
+          </SectionBlock>
 
-        {/* Échéances à payer + bouton encaissement */}
-        <SectionBlock
-          title="Échéances à régler"
-          description="Suivi des paiements attendus pour votre enfant"
-        >
-          <DataTable
-            columns={[
-              { key: 'frais', label: 'Libellé', render: (e) => e.frais?.libelle ?? '—' },
-              { key: 'montant', label: 'Attendu', render: (e) => formatMontant(e.montant, e.devise) },
-              { key: 'montantPaye', label: 'Payé', render: (e) => formatMontant(e.montantPaye, e.devise) },
-              { key: 'restant', label: 'Restant', render: (e) => formatMontant(e.montant - e.montantPaye, e.devise) },
-              { key: 'dateEcheance', label: 'Échéance', render: (e) => formatDate(e.dateEcheance) },
-              { key: 'statut', label: 'Statut', render: (e) => <StatusBadge statut={e.statut} /> },
-            ]}
-            rows={enfantEcheances}
-            emptyLabel="Aucune échéance en attente"
-          />
-        </SectionBlock>
+          {/* Échéances */}
+          <SectionBlock title="Échéances de paiement">
+            <DataTable
+              columns={[
+                { key: 'frais', label: 'Frais', render: (e: any) => e.frais?.libelle ?? '—' },
+                { key: 'date', label: 'Échéance', render: (e: any) => formatDate(e.dateEcheance) },
+                { key: 'net', label: 'Montant', render: (e: any) => formatXOF((e.montant ?? 0) - (e.remise ?? 0)) },
+                { key: 'paye', label: 'Payé', render: (e: any) => formatXOF(e.montantPaye) },
+                { key: 'restant', label: 'Restant', render: (e: any) => formatXOF(Math.max(0, (e.montant ?? 0) - (e.remise ?? 0) - (e.montantPaye ?? 0))) },
+                { key: 'statut', label: 'Statut', render: (e: any) => <StatusBadge statut={e.statut} /> },
+              ]}
+              rows={enfantEcheances}
+            />
+          </SectionBlock>
 
-        {/* RDV à venir */}
-        <SectionBlock
-          title="Rendez-vous avec les enseignants"
-          description="Vos RDV à venir"
-        >
-          <DataTable
-            columns={[
-              { key: 'personnel', label: 'Enseignant', render: (r) => { const c = creneaux.find((x: any) => x.id === r.creneauRdvId); const p = c ? personnels.find((y: any) => y.id === c.personnelId) : null; return p ? `${p.prenom} ${p.nom}` : '—'; } },
-              { key: 'date', label: 'Date', render: (r) => { const c = creneaux.find((x: any) => x.id === r.creneauRdvId); return c ? formatDate(c.date) : '—'; } },
-              { key: 'heure', label: 'Heure', render: (r) => { const c = creneaux.find((x: any) => x.id === r.creneauRdvId); return c ? `${c.heureDebut}-${c.heureFin}` : '—'; } },
-              { key: 'motif', label: 'Motif' },
-              { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
-            ]}
-            rows={enfantRdvs}
-            emptyLabel="Aucun RDV à venir"
-          />
-        </SectionBlock>
+          {/* F13 — RDV : réservation en ligne par le parent */}
+          <SectionBlock
+            title="Rendez-vous enseignants"
+            action={
+              creneauxDisponibles.length > 0 ? (
+                <ModalForm
+                  title="Réserver un rendez-vous"
+                  action={actions.reserverRdv}
+                  trigger={<button className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1.5">Réserver un créneau</button>}
+                  fields={[
+                    { name: 'creneauRdvId', label: 'Créneau', type: 'select', required: true,
+                      options: creneauxDisponibles.slice(0, 30).map((c: any) => ({
+                        value: c.id,
+                        label: `${formatDate(c.date)} ${c.heureDebut}–${c.heureFin} · ${c.personnel ? `${c.personnel.prenom} ${c.personnel.nom}` : '—'}`,
+                      })) },
+                    ...(enfant ? [{ name: 'eleveId', label: 'Enfant', type: 'hidden' as const, defaultValue: enfant.id }] : []),
+                    { name: 'motif', label: 'Motif', type: 'textarea' },
+                  ]}
+                />
+              ) : undefined
+            }
+          >
+            <DataTable
+              columns={[
+                { key: 'date', label: 'Date', render: (r: any) => formatDate(r.creneauRdv?.date) },
+                { key: 'horaire', label: 'Horaire', render: (r: any) => (r.creneauRdv ? `${r.creneauRdv.heureDebut}–${r.creneauRdv.heureFin}` : '—') },
+                { key: 'enseignant', label: 'Enseignant', render: (r: any) => (r.creneauRdv?.personnel ? `${r.creneauRdv.personnel.prenom} ${r.creneauRdv.personnel.nom}` : '—') },
+                { key: 'motif', label: 'Motif', render: (r: any) => r.motif ?? '—' },
+                { key: 'statut', label: 'Statut', render: (r: any) => <StatusBadge statut={r.statut} /> },
+                { key: 'action', label: 'Action', render: (r: any) =>
+                  r.statut === 'confirme' ? (
+                    <button onClick={() => run(() => actions.annulerRdv(r.id), 'Rendez-vous annulé — le créneau est libéré.')} disabled={pending} className="text-xs text-rose-600 hover:underline">
+                      Annuler
+                    </button>
+                  ) : '—' },
+              ]}
+              rows={enfantRdvs}
+            />
+          </SectionBlock>
 
-        {/* Notifications */}
-        <SectionBlock title="Mes notifications">
-          <div className="space-y-2">
-            {notifications.length === 0 && <p className="text-sm text-gray-500">Aucune notification</p>}
-            {notifications.slice(0, 8).map((n: any) => (
-              <div key={n.id} className="p-2 border border-gray-200 rounded bg-white">
-                <div className="text-sm font-medium">{n.sujet}</div>
-                <div className="text-xs text-gray-600">{n.corps}</div>
-                <div className="text-[10px] text-gray-400 mt-1">{formatDateTime(n.dateEnvoi)}</div>
-              </div>
-            ))}
-          </div>
-        </SectionBlock>
-      </div>
+          {/* F13 — justification d'absence en ligne */}
+          {enfant && (
+            <SectionBlock
+              title="Justifier une absence"
+              description="Les justifications soumises en ligne sont validées par la vie scolaire ; l'absence passe alors en « excusé »."
+              action={
+                <ModalForm
+                  title={`Justifier une absence — ${enfant.prenom} ${enfant.nom}`}
+                  action={actions.justifierAbsence}
+                  trigger={<button className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1.5">Soumettre une justification</button>}
+                  fields={[
+                    { name: 'eleveId', label: 'Enfant', type: 'hidden', defaultValue: enfant.id },
+                    { name: 'dateAbsence', label: "Date de l'absence", type: 'date', required: true },
+                    { name: 'motif', label: 'Motif', type: 'select', required: true,
+                      options: [
+                        { value: 'maladie', label: 'Maladie' },
+                        { value: 'familial', label: 'Raison familiale' },
+                        { value: 'rendez_vous_medical', label: 'Rendez-vous médical' },
+                        { value: 'ceremonie', label: 'Cérémonie' },
+                        { value: 'transport', label: 'Problème de transport' },
+                        { value: 'autre', label: 'Autre' },
+                      ] },
+                    { name: 'dureeHeures', label: 'Durée (heures)', type: 'number', step: '1' },
+                    { name: 'description', label: 'Précisions', type: 'textarea' },
+                  ]}
+                />
+              }
+            >
+              <p className="text-sm text-gray-500">Aucun justificatif papier requis au dépôt : la vie scolaire peut vous contacter pour pièces complémentaires.</p>
+            </SectionBlock>
+          )}
+
+          {/* Notifications */}
+          <SectionBlock title="Notifications">
+            <DataTable
+              columns={[
+                { key: 'sujet', label: 'Sujet', render: (n: any) => n.sujet ?? '—' },
+                { key: 'corps', label: 'Message', render: (n: any) => (n.corps ?? '').slice(0, 80) },
+                { key: 'date', label: 'Reçue le', render: (n: any) => formatDateTime(n.dateEnvoi ?? n.dateCreation) },
+              ]}
+              rows={notifications.slice(0, 8)}
+            />
+          </SectionBlock>
+        </>
+      )}
     </div>
   );
 }

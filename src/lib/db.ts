@@ -10,4 +10,6 @@ export const db =
     log: process.env.PRISMA_LOG_QUERY === '1' ? ['query'] : ['error'],
   })
 
+// pas besoin des pragmas SQLite (WAL/busy_timeout).
+
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db

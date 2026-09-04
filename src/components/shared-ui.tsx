@@ -2,7 +2,7 @@
 
 // Composants UI partagés utilisés par tous les modules.
 
-import { ReactNode, useState, useTransition } from 'react';
+import { ReactNode, useCallback, useState, useTransition } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,32 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, X, Eye, Pencil } from 'lucide-react';
+import { Plus, X, Eye, Pencil, ChevronDown } from 'lucide-react';
 import { statutColor, statutLabel } from '@/lib/format';
+
+// --------------------------------------------------------------------
+// F5.3 — feedback uniforme des actions directes (boutons useTransition) :
+// finies les erreurs avalées silencieusement. Retourne { run, message, pending }.
+// --------------------------------------------------------------------
+export function useActionFeedback() {
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const run = useCallback(
+    (fn: () => Promise<{ ok: boolean; error?: string } | null | undefined>, succes: string) => {
+      setMessage(null);
+      startTransition(async () => {
+        try {
+          const r = await fn();
+          setMessage(r && r.ok === false ? `✗ ${r.error ?? 'Opération refusée.'}` : `✓ ${succes}`);
+        } catch {
+          setMessage('✗ Une erreur est survenue. Réessayez.');
+        }
+      });
+    },
+    [startTransition],
+  );
+  return { run, message, pending, Message: message ? <div role="status" className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">{message}</div> : null };
+}
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
@@ -60,11 +84,15 @@ export function StatusBadge({ statut, label }: { statut: string; label?: string 
   return <Badge variant="outline" className={`text-xs ${statutColor(statut)}`}>{label ?? statutLabel(statut)}</Badge>;
 }
 
-export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée' }: {
+export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total, onLoadMore, loadingMore }: {
   columns: { key: string; label: string; render?: (row: any) => ReactNode }[];
   rows: any[];
   emptyLabel?: string;
+  total?: number; // F14 — compte total serveur quand la liste est plafonnée
+  onLoadMore?: () => void; // F14 — charger la suite (action paginée)
+  loadingMore?: boolean;
 }) {
+  const plafonne = typeof total === 'number' && rows.length < total;
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
       <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
@@ -91,6 +119,19 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée' }: {
           </TableBody>
         </Table>
       </div>
+      {(plafonne || typeof total === 'number') && (
+        <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+          <span>
+            {rows.length} affiché(s){typeof total === 'number' ? ` sur ${total}` : ''}
+          </span>
+          {plafonne && onLoadMore && (
+            <Button size="sm" variant="outline" onClick={onLoadMore} disabled={loadingMore}>
+              <ChevronDown className="h-4 w-4 mr-1" />
+              {loadingMore ? 'Chargement…' : 'Charger plus'}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -110,7 +151,7 @@ export function FormField({ label, children, required, hidden }: { label: string
 type FieldDef = {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox' | 'hidden';
+  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'month' | 'select' | 'textarea' | 'checkbox' | 'hidden';
   options?: { value: string; label: string }[];
   required?: boolean;
   placeholder?: string;

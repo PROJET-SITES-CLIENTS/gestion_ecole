@@ -1,17 +1,13 @@
+# ====================================================================
+# Passerelle Caddy — F15
+# - Le handler @transform_port_query (proxy OUVERT vers n'importe quel
+#   port localhost à la demande = SSRF interne) a été SUPPRIMÉ.
+# - En-têtes de sécurité ajoutés (doublés côté Next.js).
+# - TLS : en local l'app écoute en HTTP sur :81 ; en production, remplacer
+#   le bloc ci-dessous par celui commenté (domaine + HTTPS automatique).
+# ====================================================================
+
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
-
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
-
 	handle {
 		reverse_proxy localhost:3000 {
 			header_up Host {host}
@@ -19,5 +15,29 @@
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 		}
+		header {
+			X-Content-Type-Options nosniff
+			X-Frame-Options DENY
+			Referrer-Policy strict-origin-when-cross-origin
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		}
 	}
 }
+
+# ---- PRODUCTION (décommenter et renseigner le domaine : certificat auto) ----
+# monecole.example.com {
+# 	handle {
+# 		reverse_proxy localhost:3000 {
+# 			header_up Host {host}
+# 			header_up X-Forwarded-For {remote_host}
+# 			header_up X-Forwarded-Proto {scheme}
+# 			header_up X-Real-IP {remote_host}
+# 		}
+# 		header {
+# 			Strict-Transport-Security "max-age=63072000; includeSubDomains"
+# 			X-Content-Type-Options nosniff
+# 			X-Frame-Options DENY
+# 			Referrer-Policy strict-origin-when-cross-origin
+# 		}
+# 	}
+# }

@@ -18,8 +18,10 @@ export const metadata: Metadata = {
   description: "Plateforme SaaS complète de gestion scolaire : élèves, personnel, pédagogie, finances, communication, multi-tenant.",
   keywords: ["ScolaGestion", "gestion scolaire", "SaaS", "école", "éducation", "Next.js"],
   authors: [{ name: "ScolaGestion" }],
+  // D4 — PWA : manifeste d'installation (icône SVG : public/logo.svg)
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
   openGraph: {
     title: "ScolaGestion V4",

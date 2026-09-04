@@ -20,7 +20,7 @@ import {
   CheckCircle2, Clock, PiggyBank, Award, Shield, Activity,
 } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock } from '@/components/shared-ui';
-import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
+import { formatXOF, formatDate, formatDateTime } from '@/lib/format';
 import { toJour, toMois, nomComplet, etatAppels, joursEntre } from '@/lib/cockpit';
 
 type PortailMetier = 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant';
@@ -124,17 +124,17 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
       <div className="p-4 lg:p-6 max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · Année ${initialData.anneeScolaire?.libelle ?? '—'}`} />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard title={`Encaissé ${moisActif ?? '—'}`} value={formatMontant(encaisseMois, devise)} sub={`${paiements.length} paiements au total`} icon={TrendingUp} color="emerald" />
-          <StatCard title={`Dépenses ${moisActif ?? '—'}`} value={formatMontant(depensesMois, devise)} sub={aValider.length ? `${aValider.length} à valider` : 'toutes validées'} icon={TrendingDown} color="amber" />
-          <StatCard title="Restant dû scolarité" value={formatMontant(restantDu, devise)} sub={`${retardataires.length} échéance(s) en retard`} icon={PiggyBank} color={retardataires.length ? 'rose' : 'emerald'} />
-          <StatCard title="Solde du mois" value={formatMontant(encaisseMois - depensesMois, devise)} sub="recettes − dépenses" icon={Wallet} color={encaisseMois - depensesMois >= 0 ? 'emerald' : 'rose'} />
+          <StatCard title={`Encaissé ${moisActif ?? '—'}`} value={formatXOF(encaisseMois, devise)} sub={`${paiements.length} paiements au total`} icon={TrendingUp} color="emerald" />
+          <StatCard title={`Dépenses ${moisActif ?? '—'}`} value={formatXOF(depensesMois, devise)} sub={aValider.length ? `${aValider.length} à valider` : 'toutes validées'} icon={TrendingDown} color="amber" />
+          <StatCard title="Restant dû scolarité" value={formatXOF(restantDu, devise)} sub={`${retardataires.length} échéance(s) en retard`} icon={PiggyBank} color={retardataires.length ? 'rose' : 'emerald'} />
+          <StatCard title="Solde du mois" value={formatXOF(encaisseMois - depensesMois, devise)} sub="recettes − dépenses" icon={Wallet} color={encaisseMois - depensesMois >= 0 ? 'emerald' : 'rose'} />
         </div>
         <SectionBlock title="Retards de paiement — à relancer" description="Trié par ancienneté de retard">
           <DataTable
             columns={[
               { key: 'eleve', label: 'Élève' },
               { key: 'classe', label: 'Classe' },
-              { key: 'restant', label: 'Restant dû', render: (r) => <span className="font-semibold text-rose-700">{formatMontant(r.restant, devise)}</span> },
+              { key: 'restant', label: 'Restant dû', render: (r) => <span className="font-semibold text-rose-700">{formatXOF(r.restant, devise)}</span> },
               { key: 'jours', label: 'Retard', render: (r) => `${r.jours} j` },
               { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
             ]}
@@ -147,7 +147,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             <DataTable
               columns={[
                 { key: 'eleve', label: 'Élève', render: (p) => nomComplet(eleveById.get(p.eleveId)) },
-                { key: 'montant', label: 'Montant', render: (p) => formatMontant(p.montant, p.devise ?? devise) },
+                { key: 'montant', label: 'Montant', render: (p) => formatXOF(p.montant, p.devise ?? devise) },
                 { key: 'modePaiement', label: 'Mode' },
                 { key: 'datePaiement', label: 'Date', render: (p) => formatDate(p.datePaiement) },
               ]}
@@ -160,8 +160,8 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
               columns={[
                 { key: 'budget', label: 'Budget' },
                 { key: 'libelle', label: 'Ligne' },
-                { key: 'montantPrevu', label: 'Prévu', render: (l) => formatMontant(l.montantPrevu, devise) },
-                { key: 'montantRealise', label: 'Réalisé', render: (l) => formatMontant(l.montantRealise, devise) },
+                { key: 'montantPrevu', label: 'Prévu', render: (l) => formatXOF(l.montantPrevu, devise) },
+                { key: 'montantRealise', label: 'Réalisé', render: (l) => formatXOF(l.montantRealise, devise) },
               ]}
               rows={budgetLignes}
               emptyLabel="Aucun budget"
@@ -173,7 +173,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             columns={[
               { key: 'categorie', label: 'Catégorie' },
               { key: 'description', label: 'Description' },
-              { key: 'montant', label: 'Montant', render: (d) => formatMontant(d.montant, d.devise ?? devise) },
+              { key: 'montant', label: 'Montant', render: (d) => formatXOF(d.montant, d.devise ?? devise) },
               { key: 'validee', label: 'Validée', render: (d) => <StatusBadge statut={d.validee ? 'valide' : 'en_attente'} label={d.validee ? 'Validée' : 'À valider'} /> },
               { key: 'dateDepense', label: 'Date', render: (d) => formatDate(d.dateDepense) },
             ]}
@@ -202,7 +202,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
           <StatCard title="Effectif actif" value={actifs.length} sub={`${personnels.length} au total`} icon={Users} color="emerald" />
           <StatCard title="Congés à valider" value={aValider.length} sub="demandes en attente" icon={ClipboardList} color={aValider.length ? 'amber' : 'gray'} />
           <StatCard title="En congé" value={enCours.length} sub="actuellement absents" icon={CalendarDays} color="blue" />
-          <StatCard title="Masse salariale" value={formatMontant(masseSalariale, devise)} sub={moisActif ?? '—'} icon={Wallet} color="purple" />
+          <StatCard title="Masse salariale" value={formatXOF(masseSalariale, devise)} sub={moisActif ?? '—'} icon={Wallet} color="purple" />
         </div>
         <SectionBlock title="Congés — validations en attente" description="À traiter depuis le module Personnel">
           <DataTable
@@ -224,7 +224,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
               columns={[
                 { key: 'personnel', label: 'Personnel', render: (b) => nomComplet(personnelById.get(b.personnelId)) },
                 { key: 'periode', label: 'Période' },
-                { key: 'netAPayer', label: 'Net à payer', render: (b) => <span className="font-semibold">{formatMontant(b.netAPayer, devise)}</span> },
+                { key: 'netAPayer', label: 'Net à payer', render: (b) => <span className="font-semibold">{formatXOF(b.netAPayer, devise)}</span> },
                 { key: 'statut', label: 'Statut', render: (b) => <StatusBadge statut={b.statut} /> },
               ]}
               rows={derniersPaies.slice(0, 8)}
@@ -519,7 +519,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
         <StatCard title="Élèves actifs" value={eleves.filter((e: any) => e.statut === 'actif').length} sub={`${classes.length} classes`} icon={Users} color="emerald" />
         <StatCard title="Absents du jour" value={absentsJour.length} sub={`${appels?.manquants.length ?? 0} appel(s) non fait(s)`} icon={AlertTriangle} color={absentsJour.length ? 'rose' : 'gray'} />
         <StatCard title="Retards scolarité" value={retardataires} sub="échéances échues impayées" icon={PiggyBank} color={retardataires ? 'amber' : 'emerald'} />
-        <StatCard title="Encaissé du mois" value={formatMontant(encaisseMois, devise)} sub={moisActif ?? '—'} icon={Wallet} color="purple" />
+        <StatCard title="Encaissé du mois" value={formatXOF(encaisseMois, devise)} sub={moisActif ?? '—'} icon={Wallet} color="purple" />
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Congés à valider" value={congesAValider} sub="RH" icon={ClipboardList} color={congesAValider ? 'amber' : 'gray'} />

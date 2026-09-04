@@ -1,5 +1,30 @@
 // Fonctions utilitaires partagées : formatage, statuts, etc.
 
+// --------------------------------------------------------------------
+// F16 — Montants en CENTIMES (Int) en base. Helpers de conversion et
+// d'affichage : TOUT l'affichage passe par formatXOF, TOUTE saisie
+// passe par versCentimes.
+// --------------------------------------------------------------------
+
+/** Convertit un montant saisi en unités (XOF) vers des centimes (Int). */
+export function versCentimes(montant: number | string | null | undefined): number {
+  const n = typeof montant === 'string' ? parseFloat(montant.replace(',', '.')) : (montant ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100);
+}
+
+/** Convertit des centimes vers des unités (XOF). */
+export function depuisCentimes(centimes: number | null | undefined): number {
+  return (centimes ?? 0) / 100;
+}
+
+/** Affiche un montant stocké en CENTIMES. */
+export function formatXOF(centimes: number | null | undefined, devise = 'XOF'): string {
+  if (centimes === null || centimes === undefined) return '-';
+  return formatMontant(depuisCentimes(centimes), devise);
+}
+
+/** Affiche un montant en unités (compat : nombres déjà en unités). */
 export function formatMontant(montant: number | null | undefined, devise = "XOF"): string {
   if (montant === null || montant === undefined) return "-";
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(montant) + " " + devise;

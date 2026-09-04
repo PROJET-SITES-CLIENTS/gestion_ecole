@@ -24,13 +24,16 @@ import {
   Users, GraduationCap, Wallet, ClipboardList, BookOpen, Bell, AlertCircle,
   TrendingUp, TrendingDown, CalendarClock, PiggyBank, FileCheck, UserCheck,
   Activity, AlertTriangle, School, Clock, Award, Stethoscope, Download, Settings2,
+  CalendarRange, Printer, BarChart3, Hourglass,
 } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatMontant, formatDate, formatDateTime } from '@/lib/format';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { formatXOF, depuisCentimes, formatDate, formatDateTime } from '@/lib/format';
 import { toJour, toMois, joursEntre, nomComplet, etatAppels, serieMensuelle, telechargerCsv } from '@/lib/cockpit';
+import * as ext from '@/app/actions/completions';
 
 // Seuils d'alerte paramétrables (persistés en localStorage du poste)
 const SEUILS_DEFAUT = { retardJours: 15, avancement: 50, budget: 90, absence: 8 };
@@ -55,6 +58,194 @@ function TagVert({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200">{children}</span>;
 }
 
+// V1 — barre de taux de recouvrement : rouge < 50 %, ambre < 80 %, vert ≥ 80 %
+// `inverse` : pour un taux « négatif » (ex. absentéisme) — élevé = rouge.
+function BarreTaux({ taux, inverse = false }: { taux: number; inverse?: boolean }) {
+  const reference = inverse ? 100 - taux : taux;
+  const couleur = reference < 50 ? 'bg-rose-500' : reference < 80 ? 'bg-amber-400' : 'bg-emerald-500';
+  const texte = reference < 50 ? 'text-rose-700' : reference < 80 ? 'text-amber-700' : 'text-emerald-700';
+  return (
+    <div className="flex items-center gap-2 min-w-[130px]">
+      <div className="h-2 flex-1 rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full rounded-full ${couleur}`} style={{ width: `${Math.min(100, Math.max(0, taux))}%` }} />
+      </div>
+      <span className={`text-xs font-semibold tabular-nums w-12 text-right ${texte}`}>{taux.toFixed(1)}%</span>
+    </div>
+  );
+}
+
+// Libellés de mois courts en français — déterministes (aucun Intl local → zéro mismatch SSR)
+const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const libelleMois = (cle: string) => {
+  const [annee, mois] = cle.split('-');
+  return `${MOIS_COURTS[Number(mois) - 1] ?? mois} ${annee?.slice(2) ?? ''}`;
+};
+
+// V1 — couleurs des tranches de vieillissement des impayés
+const COULEURS_VIEILLISSEMENT: Record<string, string> = {
+  'à jour': 'bg-emerald-50 border-emerald-200 text-emerald-800',
+  '1-30 j': 'bg-sky-50 border-sky-200 text-sky-800',
+  '31-60 j': 'bg-amber-50 border-amber-200 text-amber-800',
+  '61-90 j': 'bg-orange-50 border-orange-200 text-orange-800',
+  '90+ j': 'bg-rose-50 border-rose-200 text-rose-800',
+};
+
+// Ouvre une fenêtre d'impression contenant le document (pattern bulletin imprimable).
+function imprimerDocument(titre: string, elementId: string) {
+  const contenu = document.getElementById(elementId)?.innerHTML ?? '';
+  const f = window.open('', '_blank', 'width=900,height=1000');
+  if (f) {
+    f.document.write(`<html><head><title>${titre}</title><style>body{font-family:system-ui,sans-serif;padding:24px;font-size:13px;color:#111} table{width:100%;border-collapse:collapse;margin:12px 0} th,td{border:1px solid #999;padding:6px 8px;text-align:left} th{background:#f3f4f6;font-weight:600}</style></head><body>${contenu}</body></html>`);
+    f.document.close();
+    f.print();
+  } else {
+    window.print(); // fenêtre bloquée : impression de la page courante
+  }
+}
+
+// --------------------------------------------------------------------
+// V7 — RAPPORT DE TRIMESTRE CONSOLIDÉ (génération à la demande + impression)
+// --------------------------------------------------------------------
+function RapportTrimestre({ periodes, devise }: { periodes: any[]; devise: string }) {
+  const [periodeId, setPeriodeId] = useState('');
+  const [rapport, setRapport] = useState<any>(null);
+  const [ouvert, setOuvert] = useState(false);
+  const retour = useActionFeedback();
+
+  function generer() {
+    if (!periodeId) return;
+    retour.run(async () => {
+      const r: any = await ext.genererRapportTrimestre(periodeId);
+      if (r && r.ok === false) return { ok: false, error: r.error };
+      setRapport(r.rapport);
+      setOuvert(true);
+      return { ok: true };
+    }, 'Rapport de trimestre généré');
+  }
+
+  const r = rapport;
+  const tauxEncaissement = r?.finances?.attendu > 0 ? Math.round((r.finances.encaissé / r.finances.attendu) * 100) : null;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <div>
+          <label className="text-[11px] font-medium text-gray-700 block mb-1">Période (trimestre / semestre)</label>
+          <select
+            value={periodeId}
+            onChange={(e) => setPeriodeId(e.target.value)}
+            className="h-8 min-w-[220px] rounded-md border border-gray-200 bg-transparent px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="">— Choisir une période —</option>
+            {periodes.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.libelle}</option>
+            ))}
+          </select>
+        </div>
+        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-8 gap-1.5" disabled={!periodeId || retour.pending} onClick={generer}>
+          <Printer className="h-3.5 w-3.5" /> {retour.pending ? 'Génération…' : 'Générer le rapport'}
+        </Button>
+      </div>
+      {retour.Message}
+      {periodes.length === 0 && (
+        <p className="text-sm text-gray-500">Aucune période configurée pour l&apos;année consultée — créez les trimestres dans le module Pédagogique.</p>
+      )}
+
+      <Dialog open={ouvert} onOpenChange={setOuvert}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Rapport de trimestre consolidé</DialogTitle></DialogHeader>
+          {r && (
+            <>
+              <div id="rapport-trimestre-imprimable" className="border border-gray-300 rounded-lg p-5 bg-white text-sm">
+                {/* En-tête école / période */}
+                <div style={{ textAlign: 'center', borderBottom: '1px solid #d1d5db', paddingBottom: 12, marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 18 }}>{r.ecole?.nom ?? 'École'}</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>RAPPORT CONSOLIDÉ — {r.periode?.libelle}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>du {formatDate(r.periode?.debut)} au {formatDate(r.periode?.fin)}</div>
+                </div>
+
+                {/* Effectifs & résultats */}
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Effectifs</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r.effectifs}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>élèves actifs</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Moyenne générale</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r.pedagogie?.moyenneGénérale ?? '—'}/20</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>toutes matières</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Taux de réussite</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r.pedagogie?.tauxRéussite != null ? `${r.pedagogie.tauxRéussite}%` : '—'}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>moyenne ≥ 10/20</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Bulletins</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r.pedagogie?.bulletinsPubliés ?? 0}/{r.pedagogie?.bulletinsTotal ?? 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>publiés / total</div>
+                  </div>
+                </div>
+
+                {/* Finances */}
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Attendu sur la période</div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{formatXOF(r.finances?.attendu, devise)}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Encaissé</div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{formatXOF(r.finances?.encaissé, devise)}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{tauxEncaissement != null ? `taux d'encaissement : ${tauxEncaissement}%` : '—'}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 140, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Vie scolaire</div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{r.vieScolaire?.incidents ?? 0} incident(s)</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{r.vieScolaire?.absences ?? 0} absence(s) relevée(s)</div>
+                  </div>
+                </div>
+
+                {/* Résultats par matière */}
+                <div style={{ fontWeight: 600, margin: '14px 0 4px' }}>Résultats par matière</div>
+                <table>
+                  <thead><tr><th>Matière</th><th>Moyenne /20</th><th>Notes</th></tr></thead>
+                  <tbody>
+                    {(r.pedagogie?.parMatiere ?? []).map((m: any, i: number) => (
+                      <tr key={i}><td>{m.matiere}</td><td>{m.moyenne ?? '—'}</td><td>{m.notes}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Résultats par classe */}
+                <div style={{ fontWeight: 600, margin: '14px 0 4px' }}>Résultats par classe</div>
+                <table>
+                  <thead><tr><th>Classe</th><th>Moyenne /20</th><th>Notes</th></tr></thead>
+                  <tbody>
+                    {(r.pedagogie?.parClasse ?? []).map((c: any, i: number) => (
+                      <tr key={i}><td>{c.classe}</td><td>{c.moyenne ?? '—'}</td><td>{c.notes}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Pied : génération + signature */}
+                <div style={{ borderTop: '1px dashed #9ca3af', marginTop: 24, paddingTop: 12, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280' }}>
+                  <span>Généré le {r.généréLe ? formatDateTime(r.généréLe) : '—'}</span>
+                  <span>Signature de la direction</span>
+                </div>
+              </div>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 w-full" onClick={() => imprimerDocument(`Rapport ${r.periode?.libelle ?? 'trimestre'}`, 'rapport-trimestre-imprimable')}>
+                <Printer className="h-4 w-4 mr-2" />Imprimer le rapport
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+
 // Courbe de tendance SVG native — recettes vs dépenses sur 6 mois.
 // Aucune dépendance externe, rendu identique serveur/client (valeurs pures).
 function CourbeTendances({ recettes, depenses, devise }: { recettes: { label: string; total: number }[]; depenses: { label: string; total: number }[]; devise: string }) {
@@ -64,7 +255,8 @@ function CourbeTendances({ recettes, depenses, devise }: { recettes: { label: st
   const x = (i: number) => PAD + (i * (L - 2 * PAD)) / (n - 1);
   const y = (v: number) => H - PAD - (v / max) * (H - 2 * PAD);
   const chemin = (serie: { total: number }[]) => serie.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(p.total)}`).join(' ');
-  const fmt = (v: number) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`);
+  // F16 — totaux en centimes : conversion en unités avant formatage de l'axe
+  const fmt = (v: number) => { const u = depuisCentimes(v); return u >= 1000000 ? `${(u / 1000000).toFixed(1)}M` : u >= 1000 ? `${Math.round(u / 1000)}k` : `${u}`; };
 
   if (recettes.every((r) => r.total === 0) && depenses.every((d) => d.total === 0)) return null;
 
@@ -102,7 +294,7 @@ function CourbeTendances({ recettes, depenses, devise }: { recettes: { label: st
           </g>
         ))}
       </svg>
-      <p className="text-[11px] text-gray-500">Montants en {devise} · encaissements de scolarité vs dépenses enregistrées · {recettes.at(-1)?.label} : +{formatMontant(recettes.at(-1)?.total ?? 0, devise)} / −{formatMontant(depenses.at(-1)?.total ?? 0, devise)}</p>
+      <p className="text-[11px] text-gray-500">Montants en {devise} · encaissements de scolarité vs dépenses enregistrées · {recettes.at(-1)?.label} : +{formatXOF(recettes.at(-1)?.total ?? 0, devise)} / −{formatXOF(depenses.at(-1)?.total ?? 0, devise)}</p>
     </div>
   );
 }
@@ -157,6 +349,12 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const matieres = initialData.matieres ?? [];
   const incidents = initialData.incidents ?? [];
   const notifications = initialData.notifications ?? [];
+  // V1/V2 — analytics pré-agrégées côté serveur (direction / super_admin)
+  const anneesScolaires: any[] = initialData.anneesScolaires ?? [];
+  const anneeConsultee: any = initialData.anneeConsultee ?? null;
+  const financieres: any = initialData.analyticsFinancieres ?? null;
+  const pedagogiques: any = initialData.analyticsPedagogiques ?? null;
+  const periodes: any[] = initialData.periodes ?? [];
 
   // Vue complète (finances + RH) réservée à la direction — pas au portail enseignant
   const vueComplete = portalLabel !== 'Enseignant';
@@ -183,6 +381,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
     paiements.forEach((p: any) => ts.push(new Date(p.datePaiement).getTime()));
     depenses.forEach((d: any) => ts.push(new Date(d.dateDepense).getTime()));
     echeances.forEach((e: any) => ts.push(new Date(e.dateEcheance).getTime()));
+    presences.forEach((p: any) => ts.push(new Date(p.dateSaisie).getTime())); // V3 — absentéisme 12 mois
     return ts.length ? new Date(Math.max(...ts)) : null;
   })();
   const refDate = now ?? fallbackRef;
@@ -392,6 +591,63 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
     }));
   const prochainExamen = prochainsExamens.find((x: any) => !x.passe);
 
+  // ============ 10bis. V1 — ANALYTIQUE FINANCIÈRE (agrégats serveur) ============
+  const recettesParType: any[] = financieres?.recettesParType ?? [];
+  const maxRecetteType = Math.max(1, ...recettesParType.map((r: any) => r.montant ?? 0));
+  const recouvrementParClasse: any[] = [...(financieres?.recouvrementParClasse ?? [])].sort((a: any, b: any) => (a.taux ?? 0) - (b.taux ?? 0)); // les plus en difficulté d'abord
+  const vieillissementImpayes: any[] = financieres?.vieillissementImpayes ?? [];
+  const projectionTresorerie: any[] = financieres?.projectionTresorerie ?? [];
+
+  // ============ 10ter. V2 — ANALYTIQUE PÉDAGOGIQUE ============
+  const pedagoParMatiere: any[] = [...(pedagogiques?.parMatiere ?? [])].sort((a: any, b: any) => (a.moyenne ?? 0) - (b.moyenne ?? 0)); // difficultés en premier
+  const pedagoParClasse: any[] = [...(pedagogiques?.parClasse ?? [])].sort((a: any, b: any) => (a.moyenne ?? 0) - (b.moyenne ?? 0));
+  const pedagoParEnseignant: any[] = [...(pedagogiques?.parEnseignant ?? [])].sort((a: any, b: any) => (a.moyenne ?? 0) - (b.moyenne ?? 0));
+  const couleurMoyenne = (m: number | null | undefined) => (m == null ? 'text-gray-500' : m >= 14 ? 'text-emerald-700' : m >= 10 ? 'text-amber-600' : 'text-rose-700');
+
+  // ============ 10quater. V3 — ABSENTÉISME 12 DERNIERS MOIS ============
+  const presences12m = refDate
+    ? presences.filter((p: any) => p.dateSaisie && new Date(p.dateSaisie) >= new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth() - 11, 1)))
+    : [];
+  const absences12m = presences12m.filter((p: any) => p.statut === 'absent').length;
+  const retards12m = presences12m.filter((p: any) => p.statut === 'retard').length;
+  const presents12m = presences12m.filter((p: any) => p.statut === 'present').length;
+  const tauxAbsenteisme = presents12m + absences12m > 0 ? Number(((absences12m / (presents12m + absences12m)) * 100).toFixed(1)) : null;
+
+  // Par classe — la classe vient de la séance pointée (incluse par le loader)
+  const absenteismeParClasse = (() => {
+    const m = new Map<string, { id: string; classe: string; absences: number; retards: number; pointages: number }>();
+    presences12m.forEach((p: any) => {
+      const classe = p.seance?.classe?.libelle ?? p.seance?.classe?.code ?? 'Sans classe';
+      const cur = m.get(classe) ?? { id: classe, classe, absences: 0, retards: 0, pointages: 0 };
+      cur.pointages += 1;
+      if (p.statut === 'absent') cur.absences += 1;
+      if (p.statut === 'retard') cur.retards += 1;
+      m.set(classe, cur);
+    });
+    return [...m.values()]
+      .map((l) => ({ ...l, taux: l.pointages > 0 ? Number(((l.absences / l.pointages) * 100).toFixed(1)) : 0 }))
+      .sort((a, b) => b.taux - a.taux); // classes les plus impactées d'abord
+  })();
+
+  // Par mois — barres simples sur 12 mois (via dateSaisie)
+  const serieAbsences12m = (() => {
+    if (!refDate) return [];
+    const mois: { cle: string; absences: number; retards: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth() - i, 1));
+      mois.push({ cle: d.toISOString().slice(0, 7), absences: 0, retards: 0 });
+    }
+    const index = new Map(mois.map((m) => [m.cle, m]));
+    presences12m.forEach((p: any) => {
+      const cible = index.get(toMois(p.dateSaisie));
+      if (!cible) return;
+      if (p.statut === 'absent') cible.absences += 1;
+      else if (p.statut === 'retard') cible.retards += 1;
+    });
+    return mois;
+  })();
+  const maxAbsMois = Math.max(1, ...serieAbsences12m.map((m) => m.absences));
+
   // ============ 11. ALERTES CONSOLIDÉES ============
   const alertes: { label: string; detail: string; severite: 'rouge' | 'ambre' }[] = [];
   if (appelsManquants.length > 0)
@@ -400,7 +656,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
     alertes.push({ label: `Absentéisme élevé : ${100 - tauxJour}%`, detail: `Au-delà du seuil de ${seuils.absence}% paramétré (${absentsJour.length + retardsJour.length} absences/retards sur ${presencesDuJour.length} pointages)`, severite: 'rouge' });
   if (retardataires.length > 0 && vueComplete) {
     const critiques = retardataires.filter((r: any) => r.jours > seuils.retardJours);
-    alertes.push({ label: `${retardataires.length} échéance(s) de scolarité en retard`, detail: `Restant dû cumulé : ${formatMontant(restantDu, devise)} — ${new Set(retardataires.map((r: any) => r.eleve)).size} élève(s) concerné(s)${critiques.length ? `, dont ${critiques.length} au-delà de ${seuils.retardJours} j` : ''}`, severite: critiques.length ? 'rouge' : 'ambre' });
+    alertes.push({ label: `${retardataires.length} échéance(s) de scolarité en retard`, detail: `Restant dû cumulé : ${formatXOF(restantDu, devise)} — ${new Set(retardataires.map((r: any) => r.eleve)).size} élève(s) concerné(s)${critiques.length ? `, dont ${critiques.length} au-delà de ${seuils.retardJours} j` : ''}`, severite: critiques.length ? 'rouge' : 'ambre' });
   }
   if (avancementsEnRetard.length > 0)
     alertes.push({ label: `${avancementsEnRetard.length} programme(s) en retard`, detail: `Avancement < ${seuils.avancement}% — voir « Suivi du programme »`, severite: 'ambre' });
@@ -409,9 +665,9 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   if (congesAValider.length > 0 && vueComplete)
     alertes.push({ label: `${congesAValider.length} demande(s) de congé à valider`, detail: 'Module Personnel → congés', severite: 'ambre' });
   if (depensesNonValidees.length > 0 && vueComplete)
-    alertes.push({ label: `${depensesNonValidees.length} dépense(s) à valider`, detail: `Montant en attente : ${formatMontant(depensesNonValidees.reduce((s: number, d: any) => s + d.montant, 0), devise)}`, severite: 'ambre' });
+    alertes.push({ label: `${depensesNonValidees.length} dépense(s) à valider`, detail: `Montant en attente : ${formatXOF(depensesNonValidees.reduce((s: number, d: any) => s + d.montant, 0), devise)}`, severite: 'ambre' });
   if (budgetPct != null && budgetPct > seuils.budget && vueComplete)
-    alertes.push({ label: `Budget consommé à ${budgetPct}%`, detail: `Au-delà du seuil de ${seuils.budget}% paramétré — ${formatMontant(budgetRealise, devise)} réalisés sur ${formatMontant(budgetPrevu, devise)} prévus`, severite: 'rouge' });
+    alertes.push({ label: `Budget consommé à ${budgetPct}%`, detail: `Au-delà du seuil de ${seuils.budget}% paramétré — ${formatXOF(budgetRealise, devise)} réalisés sur ${formatXOF(budgetPrevu, devise)} prévus`, severite: 'rouge' });
   if (nonAffectes > 0)
     alertes.push({ label: `${nonAffectes} élève(s) actif(s) sans classe`, detail: 'Aucune classe actuelle renseignée', severite: 'rouge' });
 
@@ -441,6 +697,38 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           </div>
         }
       />
+
+      {/* ---------- V4 — Sélecteur d'année scolaire ---------- */}
+      {anneesScolaires.length > 0 && (
+        <Card className="mb-4">
+          <CardContent className="p-3 flex flex-wrap items-center gap-3">
+            <label htmlFor="select-annee" className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+              <CalendarRange className="h-3.5 w-3.5 text-emerald-600" /> Année scolaire consultée
+            </label>
+            <select
+              id="select-annee"
+              value={anneeConsultee?.id ?? ''}
+              onChange={(e) => {
+                router.push(`/?annee=${e.target.value}`);
+                router.refresh();
+              }}
+              className="h-8 rounded-md border border-gray-200 bg-transparent px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {anneesScolaires.map((a: any) => (
+                <option key={a.id} value={a.id}>
+                  {a.libelle}{a.active ? ' (active)' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-gray-500">Basculez d&apos;année pour consulter les archives — les données du cockpit suivent l&apos;année choisie.</span>
+          </CardContent>
+        </Card>
+      )}
+      {anneeConsultee && anneeConsultee.active === false && (
+        <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900" role="status">
+          📚 Consultation de l&apos;année {anneeConsultee.libelle} (clôturée) — données en lecture
+        </div>
+      )}
 
       {/* ---------- Panneau des seuils paramétrables ---------- */}
       {panneauSeuils && (
@@ -472,6 +760,197 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         </Card>
       )}
 
+      {/* ---------- V1 — Analytique financière ---------- */}
+      {vueComplete && financieres && (
+        <SectionBlock
+          title="Analytique financière — recettes, recouvrement, impayés, trésorerie"
+          description={`Recettes par type (année civile) · recouvrement par classe (tri croissant) · vieillissement des impayés · projection de trésorerie à 3 mois`}
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+            {/* Bloc 1 — Recettes par type de frais (mini barres horizontales) */}
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2 flex items-center gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Recettes par type de frais</h4>
+              {recettesParType.length === 0 && <p className="text-sm text-gray-500">Aucun encaissement enregistré cette année civile.</p>}
+              <div className="space-y-2">
+                {recettesParType.map((r: any) => (
+                  <div key={r.type} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-700 w-32 truncate capitalize flex-shrink-0" title={r.type}>{r.type.replace(/_/g, ' ')}</span>
+                    <div className="h-3 flex-1 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.round(((r.montant ?? 0) / maxRecetteType) * 100)}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-800 tabular-nums whitespace-nowrap">{formatXOF(r.montant, devise)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Bloc 3 — Vieillissement des impayés (5 badges) */}
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2 flex items-center gap-1.5"><Hourglass className="h-3.5 w-3.5" /> Vieillissement des impayés</h4>
+              <div className="flex flex-wrap gap-2">
+                {vieillissementImpayes.map((v: any) => (
+                  <span key={v.tranche} className={`inline-flex flex-col items-start rounded-lg border px-3 py-2 ${COULEURS_VIEILLISSEMENT[v.tranche] ?? 'bg-gray-50 border-gray-200 text-gray-700'}`}>
+                    <span className="text-[11px] font-medium">{v.tranche}</span>
+                    <span className="text-sm font-bold tabular-nums">{formatXOF(v.montant, devise)}</span>
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">Restant dû par ancienneté d&apos;échéance — au-delà de 60 j, relancez les familles (module Finances).</p>
+            </div>
+          </div>
+
+          {/* Bloc 2 — Recouvrement par classe (table, tri par taux croissant) */}
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Recouvrement par classe — les plus en difficulté en premier</h4>
+          <DataTable
+            columns={[
+              { key: 'classe', label: 'Classe' },
+              { key: 'du', label: 'Dû', render: (r) => formatXOF(r.du, devise) },
+              { key: 'paye', label: 'Payé', render: (r) => <span className="font-semibold">{formatXOF(r.paye, devise)}</span> },
+              { key: 'taux', label: 'Taux de recouvrement', render: (r) => <BarreTaux taux={r.taux} /> },
+            ]}
+            rows={recouvrementParClasse}
+            emptyLabel="Aucune échéance de frais sur l'année — module Finances → frais & échéanciers"
+          />
+
+          {/* Bloc 4 — Projection de trésorerie 3 mois */}
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2 mt-4">Projection de trésorerie — 3 prochains mois</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {projectionTresorerie.map((p: any) => (
+              <Card key={p.mois} className={depuisCentimes(p.montant) === 0 ? 'border-gray-200' : 'border-emerald-200 bg-emerald-50/40'}>
+                <CardContent className="p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500 font-medium">{libelleMois(p.mois)}</p>
+                  <p className="text-lg font-bold text-gray-900 tabular-nums">{formatXOF(p.montant, devise)}</p>
+                  <p className="text-[11px] text-gray-500">attendu (échéances restant dues)</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </SectionBlock>
+      )}
+
+      {/* ---------- V2 — Analytique pédagogique ---------- */}
+      {pedagogiques && (
+        <SectionBlock
+          title="Analytique pédagogique — moyennes par matière, classe et enseignant"
+          description={`${pedagogiques.totalNotes ?? 0} notes prises en compte · matière la plus fragile en premier (tri croissant) · échelle /20`}
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <StatCard
+              title="Moyenne générale"
+              value={pedagogiques.moyenneGlobale != null ? `${pedagogiques.moyenneGlobale.toFixed(2)}/20` : '—'}
+              sub={`${pedagogiques.totalNotes ?? 0} notes · ${pedagoParMatiere.length} matière(s)`}
+              icon={Award}
+              color={pedagogiques.moyenneGlobale != null && pedagogiques.moyenneGlobale < 10 ? 'rose' : pedagogiques.moyenneGlobale != null && pedagogiques.moyenneGlobale < 14 ? 'amber' : 'emerald'}
+            />
+            <StatCard title="Classes évaluées" value={pedagoParClasse.length} sub="moyenne par classe" icon={School} color="blue" />
+            <StatCard title="Enseignants notés" value={pedagoParEnseignant.length} sub="moyenne par enseignant" icon={GraduationCap} color="purple" />
+            <StatCard
+              title="Matière la plus fragile"
+              value={pedagoParMatiere[0]?.moyenne != null ? `${pedagoParMatiere[0].moyenne.toFixed(2)}/20` : '—'}
+              sub={pedagoParMatiere[0]?.matiere ?? 'Aucune note'}
+              icon={AlertTriangle}
+              color={pedagoParMatiere[0]?.moyenne != null && pedagoParMatiere[0].moyenne < 10 ? 'rose' : 'amber'}
+            />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Par matière — difficultés en premier</h4>
+              <DataTable
+                columns={[
+                  { key: 'matiere', label: 'Matière' },
+                  { key: 'moyenne', label: 'Moy. /20', render: (r) => <span className={`font-semibold ${couleurMoyenne(r.moyenne)}`}>{r.moyenne != null ? r.moyenne.toFixed(2) : '—'}</span> },
+                  { key: 'notes', label: 'Notes' },
+                ]}
+                rows={pedagoParMatiere}
+                emptyLabel="Aucune note saisie"
+              />
+            </div>
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Par classe</h4>
+              <DataTable
+                columns={[
+                  { key: 'classe', label: 'Classe' },
+                  { key: 'moyenne', label: 'Moy. /20', render: (r) => <span className={`font-semibold ${couleurMoyenne(r.moyenne)}`}>{r.moyenne != null ? r.moyenne.toFixed(2) : '—'}</span> },
+                  { key: 'notes', label: 'Notes' },
+                ]}
+                rows={pedagoParClasse}
+                emptyLabel="Aucune note saisie"
+              />
+            </div>
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Par enseignant</h4>
+              <DataTable
+                columns={[
+                  { key: 'enseignant', label: 'Enseignant' },
+                  { key: 'moyenne', label: 'Moy. /20', render: (r) => <span className={`font-semibold ${couleurMoyenne(r.moyenne)}`}>{r.moyenne != null ? r.moyenne.toFixed(2) : '—'}</span> },
+                  { key: 'notes', label: 'Notes' },
+                ]}
+                rows={pedagoParEnseignant}
+                emptyLabel="Aucune note saisie"
+              />
+            </div>
+          </div>
+        </SectionBlock>
+      )}
+
+      {/* ---------- V3 — Absentéisme 12 mois ---------- */}
+      <SectionBlock
+        title="Absentéisme — 12 derniers mois"
+        description={`${presences12m.length} pointage(s) sur la fenêtre · ${absences12m} absence(s) · ${retards12m} retard(s) · taux d'absentéisme : ${tauxAbsenteisme != null ? `${tauxAbsenteisme}%` : '—'}`}
+      >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <StatCard title="Absences (12 mois)" value={absences12m} sub="tous élèves confondus" icon={AlertTriangle} color={absences12m > 0 ? 'rose' : 'gray'} />
+          <StatCard title="Retards (12 mois)" value={retards12m} sub="tous élèves confondus" icon={Clock} color={retards12m > 0 ? 'amber' : 'gray'} />
+          <StatCard title="Taux d'absentéisme" value={tauxAbsenteisme != null ? `${tauxAbsenteisme}%` : '—'} sub="absences / (présences + absences)" icon={ClipboardList} color={tauxAbsenteisme != null && tauxAbsenteisme > seuils.absence ? 'rose' : 'emerald'} />
+          <StatCard title="Présences pointées" value={presents12m} sub={`${presences12m.length} pointages au total`} icon={UserCheck} color="emerald" />
+        </div>
+
+        {/* Barres simples par mois (absences et retards, via dateSaisie) */}
+        {serieAbsences12m.length > 0 && (
+          <div className="mb-4 p-3 border border-gray-200 rounded-lg bg-white">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Évolution mensuelle — absences & retards</h4>
+              <div className="flex items-center gap-3 text-[11px] text-gray-600">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-rose-500" /> Absences</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-amber-400" /> Retards</span>
+              </div>
+            </div>
+            <div className="flex items-end gap-1.5 h-28">
+              {serieAbsences12m.map((m) => (
+                <div key={m.cle} className="flex-1 flex flex-col items-center gap-1 group" title={`${libelleMois(m.cle)} — ${m.absences} absence(s), ${m.retards} retard(s)`}>
+                  <div className="w-full flex items-end justify-center gap-0.5 h-20">
+                    <div className="w-2.5 rounded-t bg-rose-500" style={{ height: `${Math.round((m.absences / maxAbsMois) * 100)}%`, minHeight: m.absences > 0 ? 3 : 0 }} />
+                    <div className="w-2.5 rounded-t bg-amber-400" style={{ height: `${Math.round((m.retards / maxAbsMois) * 100)}%`, minHeight: m.retards > 0 ? 3 : 0 }} />
+                  </div>
+                  <span className="text-[9px] text-gray-500 tabular-nums">{libelleMois(m.cle).replace(' ', '\u00a0')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <DataTable
+          columns={[
+            { key: 'classe', label: 'Classe' },
+            { key: 'pointages', label: 'Pointages' },
+            { key: 'absences', label: 'Absences', render: (r) => (r.absences > 0 ? <TagRouge>{r.absences}</TagRouge> : <TagVert>0</TagVert>) },
+            { key: 'retards', label: 'Retards' },
+            { key: 'taux', label: 'Taux d\'absentéisme', render: (r) => <BarreTaux taux={r.taux} inverse /> },
+          ]}
+          rows={absenteismeParClasse}
+          emptyLabel="Aucun pointage de présence sur les 12 derniers mois"
+        />
+      </SectionBlock>
+
+      {/* ---------- V7 — Rapport de trimestre ---------- */}
+      {vueComplete && (
+        <SectionBlock
+          title="Rapport de trimestre consolidé"
+          description="Synthèse officielle d'une période : effectifs, résultats, finances, vie scolaire — générée à la demande, imprimable"
+        >
+          <RapportTrimestre periodes={periodes} devise={devise} />
+        </SectionBlock>
+      )}
+
       {/* ---------- KPIs principaux ---------- */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard title="Élèves actifs" value={elevesActifs.length} sub={`${classes.length} classes · ${nonAffectes > 0 ? `${nonAffectes} non affectés` : 'tous affectés'}`} icon={Users} color="emerald" />
@@ -492,10 +971,10 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         />
         {vueComplete && (
           <>
-            <StatCard title={`Encaissé ${moisActif ? `(${moisActif})` : 'mois courant'}`} value={formatMontant(encaisseMois, devise)} sub={`${paiements.length} paiements au total`} icon={Wallet} color="purple" />
-            <StatCard title="Scolarité — restant dû" value={formatMontant(restantDu, devise)} sub={`Recouvrement : ${tauxRecouvrement}% · ${retardataires.length} en retard`} icon={PiggyBank} color={retardataires.length > 0 ? 'amber' : 'emerald'} />
-            <StatCard title={`Dépenses ${moisActif ? `(${moisActif})` : 'mois courant'}`} value={formatMontant(depensesMois, devise)} sub={depensesNonValidees.length > 0 ? `${depensesNonValidees.length} à valider` : `${depenses.length} au total`} icon={TrendingDown} color="amber" />
-            <StatCard title="Solde du mois" value={formatMontant(soldeMois, devise)} sub={`Cumul : ${formatMontant(encaisseCumule - depensesCumulees, devise)}`} icon={TrendingUp} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
+            <StatCard title={`Encaissé ${moisActif ? `(${moisActif})` : 'mois courant'}`} value={formatXOF(encaisseMois, devise)} sub={`${paiements.length} paiements au total`} icon={Wallet} color="purple" />
+            <StatCard title="Scolarité — restant dû" value={formatXOF(restantDu, devise)} sub={`Recouvrement : ${tauxRecouvrement}% · ${retardataires.length} en retard`} icon={PiggyBank} color={retardataires.length > 0 ? 'amber' : 'emerald'} />
+            <StatCard title={`Dépenses ${moisActif ? `(${moisActif})` : 'mois courant'}`} value={formatXOF(depensesMois, devise)} sub={depensesNonValidees.length > 0 ? `${depensesNonValidees.length} à valider` : `${depenses.length} au total`} icon={TrendingDown} color="amber" />
+            <StatCard title="Solde du mois" value={formatXOF(soldeMois, devise)} sub={`Cumul : ${formatXOF(encaisseCumule - depensesCumulees, devise)}`} icon={TrendingUp} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
           </>
         )}
         {!vueComplete && (
@@ -723,7 +1202,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           {/* ---------- 7. Scolarité / recouvrement ---------- */}
           <SectionBlock
             title="Scolarité — qui a payé, qui n'a pas payé, qui est en retard"
-            description={`Restant dû global : ${formatMontant(restantDu, devise)} · taux de recouvrement : ${tauxRecouvrement}% · ${retardataires.length} échéance(s) en retard (trié par ancienneté)`}
+            description={`Restant dû global : ${formatXOF(restantDu, devise)} · taux de recouvrement : ${tauxRecouvrement}% · ${retardataires.length} échéance(s) en retard (trié par ancienneté)`}
             action={
               <Button
                 variant="outline" size="sm" className="h-7 text-xs gap-1.5"
@@ -736,15 +1215,15 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard title="Élèves à jour" value={Math.max(0, elevesAJour)} sub={`sur ${elevesActifs.length} actifs`} icon={UserCheck} color="emerald" />
               <StatCard title="En retard" value={new Set(retardataires.map((r: any) => r.eleve)).size} sub={`${retardataires.length} échéance(s)`} icon={AlertTriangle} color={retardataires.length ? 'rose' : 'gray'} />
-              <StatCard title="Restant dû" value={formatMontant(restantDu, devise)} sub={`sur ${formatMontant(totalDu, devise)} attendus`} icon={PiggyBank} color="amber" />
-              <StatCard title="Encaissé" value={formatMontant(totalPaye, devise)} sub={`${paiements.length} paiements`} icon={Wallet} color="purple" />
+              <StatCard title="Restant dû" value={formatXOF(restantDu, devise)} sub={`sur ${formatXOF(totalDu, devise)} attendus`} icon={PiggyBank} color="amber" />
+              <StatCard title="Encaissé" value={formatXOF(totalPaye, devise)} sub={`${paiements.length} paiements`} icon={Wallet} color="purple" />
             </div>
             <DataTable
               columns={[
                 { key: 'eleve', label: 'Élève' },
                 { key: 'classe', label: 'Classe' },
                 { key: 'frais', label: 'Frais' },
-                { key: 'restant', label: 'Restant dû', render: (r) => <span className="font-semibold text-rose-700">{formatMontant(r.restant, devise)}</span> },
+                { key: 'restant', label: 'Restant dû', render: (r) => <span className="font-semibold text-rose-700">{formatXOF(r.restant, devise)}</span> },
                 { key: 'jours', label: 'Retard', render: (r) => <TagRouge>{r.jours} j</TagRouge> },
                 { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
               ]}
@@ -762,10 +1241,10 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             description={`Mois de référence : ${moisActif ?? '—'} · ${depenses.length} dépense(s) enregistrée(s) · ${budgetLignes.length} ligne(s) budgétaires`}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <StatCard title="Recettes du mois" value={formatMontant(encaisseMois, devise)} sub="scolarité & frais encaissés" icon={TrendingUp} color="emerald" />
-              <StatCard title="Dépenses du mois" value={formatMontant(depensesMois, devise)} sub={depensesNonValidees.length ? `${depensesNonValidees.length} en attente de validation` : 'toutes validées'} icon={TrendingDown} color="amber" />
-              <StatCard title="Solde du mois" value={formatMontant(soldeMois, devise)} sub={`cumul saison : ${formatMontant(encaisseCumule - depensesCumulees, devise)}`} icon={Wallet} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
-              <StatCard title="Masse salariale" value={formatMontant(masseSalarialeMois, devise)} sub={moisActif ?? '—'} icon={GraduationCap} color="purple" />
+              <StatCard title="Recettes du mois" value={formatXOF(encaisseMois, devise)} sub="scolarité & frais encaissés" icon={TrendingUp} color="emerald" />
+              <StatCard title="Dépenses du mois" value={formatXOF(depensesMois, devise)} sub={depensesNonValidees.length ? `${depensesNonValidees.length} en attente de validation` : 'toutes validées'} icon={TrendingDown} color="amber" />
+              <StatCard title="Solde du mois" value={formatXOF(soldeMois, devise)} sub={`cumul saison : ${formatXOF(encaisseCumule - depensesCumulees, devise)}`} icon={Wallet} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
+              <StatCard title="Masse salariale" value={formatXOF(masseSalarialeMois, devise)} sub={moisActif ?? '—'} icon={GraduationCap} color="purple" />
             </div>
             {/* Tendances recettes vs dépenses — 6 derniers mois (SVG natif) */}
             <CourbeTendances recettes={serieRecettes} depenses={serieDepenses} devise={devise} />
@@ -773,8 +1252,8 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
               columns={[
                 { key: 'budget', label: 'Budget' },
                 { key: 'libelle', label: 'Ligne' },
-                { key: 'montantPrevu', label: 'Prévu', render: (l) => formatMontant(l.montantPrevu, devise) },
-                { key: 'montantRealise', label: 'Réalisé', render: (l) => formatMontant(l.montantRealise, devise) },
+                { key: 'montantPrevu', label: 'Prévu', render: (l) => formatXOF(l.montantPrevu, devise) },
+                { key: 'montantRealise', label: 'Réalisé', render: (l) => formatXOF(l.montantRealise, devise) },
                 { key: 'consommation', label: 'Consommation', render: (l) => (l.montantPrevu > 0 ? <MiniBar pct={(l.montantRealise / l.montantPrevu) * 100} /> : '—') },
               ]}
               rows={budgetLignes}
@@ -782,7 +1261,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             />
             {budgetPct != null && (
               <p className="text-xs text-gray-500 mt-2">
-                Consommation budgétaire globale : <strong>{budgetPct}%</strong> ({formatMontant(budgetRealise, devise)} réalisés sur {formatMontant(budgetPrevu, devise)} prévus)
+                Consommation budgétaire globale : <strong>{budgetPct}%</strong> ({formatXOF(budgetRealise, devise)} réalisés sur {formatXOF(budgetPrevu, devise)} prévus)
                 {budgetPct > 95 && ' — budget quasi épuisé, vigilance requise.'}
               </p>
             )}
@@ -819,7 +1298,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
                   columns={[
                     { key: 'personnel', label: 'Personnel' },
                     { key: 'periode', label: 'Période' },
-                    { key: 'net', label: 'Net à payer', render: (b) => <span className="font-semibold">{formatMontant(b.net, devise)}</span> },
+                    { key: 'net', label: 'Net à payer', render: (b) => <span className="font-semibold">{formatXOF(b.net, devise)}</span> },
                     { key: 'statut', label: 'Statut', render: (b) => <StatusBadge statut={b.statut} /> },
                   ]}
                   rows={derniersPaies}
@@ -873,7 +1352,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             <DataTable
               columns={[
                 { key: 'eleve', label: 'Élève', render: (p) => nomComplet(eleveById.get(p.eleveId)) },
-                { key: 'montant', label: 'Montant', render: (p) => formatMontant(p.montant, p.devise ?? devise) },
+                { key: 'montant', label: 'Montant', render: (p) => formatXOF(p.montant, p.devise ?? devise) },
                 { key: 'modePaiement', label: 'Mode' },
                 { key: 'datePaiement', label: 'Date', render: (p) => formatDate(p.datePaiement) },
               ]}

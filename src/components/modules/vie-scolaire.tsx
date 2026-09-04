@@ -4,9 +4,9 @@
 // Module Vie Scolaire / Discipline — incidents + sanctions
 // ====================================================================
 
-import { useTransition } from 'react';
 import { Shield, AlertTriangle, FileText } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
+import { Button } from '@/components/ui/button';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime } from '@/lib/format';
 
@@ -15,7 +15,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
   const sanctions = initialData.sanctions ?? [];
   const eleves = initialData.eleves ?? [];
   const personnels = initialData.personnels ?? [];
-  const [pending, startTransition] = useTransition();
+  const retourSanctions = useActionFeedback();
 
   const incidentsGraves = incidents.filter((i: any) => i.gravite === 'grave').length;
   const incidentsModeres = incidents.filter((i: any) => i.gravite === 'modere').length;
@@ -75,6 +75,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
         </SectionBlock>
 
         <SectionBlock title="Sanctions">
+          {retourSanctions.Message}
           <DataTable
             columns={[
               { key: 'incident', label: 'Incident', render: (s) => { const i = incidents.find((x: any) => x.id === s.incidentId); const e = i ? eleves.find((y: any) => y.id === i.eleveId) : null; return e ? `${e.prenom} ${e.nom}` : '—'; } },
@@ -82,6 +83,13 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
               { key: 'description', label: 'Description' },
               { key: 'statut', label: 'Statut', render: (s) => <StatusBadge statut={s.statut} /> },
               { key: 'notifie', label: 'Parents', render: (s) => s.notifieParents ? <span className="text-emerald-600 text-xs">Notifiés</span> : <span className="text-gray-400 text-xs">Non</span> },
+              {
+                key: 'actions', label: 'Action', render: (s) => s.statut === 'decidee' ? (
+                  <Button size="sm" variant="outline" disabled={retourSanctions.pending} onClick={() => retourSanctions.run(() => actions.executerSanction(s.id), 'Sanction exécutée')}>
+                    Exécuter
+                  </Button>
+                ) : null,
+              },
             ]}
             rows={sanctions}
             emptyLabel="Aucune sanction décidée"
@@ -90,21 +98,34 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
       </div>
 
       <SectionBlock title="Sanctionner un incident" description="La sanction notifie automatiquement les parents/tuteurs">
-        <ModalForm
-          trigger={<CreateButton label="Sanctionner un incident" />}
-          title="Décider une sanction"
-          fields={[
-            { name: 'incidentId', label: 'Incident', type: 'select', options: incidents.map((i: any) => { const e = eleves.find((x: any) => x.id === i.eleveId); return { value: i.id, label: `${e?.prenom ?? ''} ${e?.nom ?? ''} — ${i.type} (${formatDate(i.dateHeure)})` }; }), required: true },
-            { name: 'type', label: 'Type de sanction', type: 'select', options: [
-              { value: 'avertissement', label: 'Avertissement' },
-              { value: 'retenue', label: 'Retenue' },
-              { value: 'exclusion', label: 'Exclusion' },
-              { value: 'convocation', label: 'Convocation parent' },
-            ], required: true },
-            { name: 'description', label: 'Description', type: 'textarea', required: true },
-          ]}
-          action={actions.sanctionner}
-        />
+        <div className="flex gap-2 flex-wrap">
+          <ModalForm
+            trigger={<CreateButton label="Sanctionner un incident" />}
+            title="Décider une sanction"
+            fields={[
+              { name: 'incidentId', label: 'Incident', type: 'select', options: incidents.map((i: any) => { const e = eleves.find((x: any) => x.id === i.eleveId); return { value: i.id, label: `${e?.prenom ?? ''} ${e?.nom ?? ''} — ${i.type} (${formatDate(i.dateHeure)})` }; }), required: true },
+              { name: 'type', label: 'Type de sanction', type: 'select', options: [
+                { value: 'avertissement', label: 'Avertissement' },
+                { value: 'retenue', label: 'Retenue' },
+                { value: 'exclusion', label: 'Exclusion' },
+                { value: 'convocation', label: 'Convocation parent' },
+              ], required: true },
+              { name: 'description', label: 'Description', type: 'textarea', required: true },
+            ]}
+            action={actions.sanctionner}
+          />
+          <ModalForm
+            trigger={<Button size="sm" variant="outline">Exclusion temporaire</Button>}
+            title="Décider une exclusion temporaire"
+            fields={[
+              { name: 'incidentId', label: 'Incident', type: 'select', options: incidents.map((i: any) => { const e = eleves.find((x: any) => x.id === i.eleveId); return { value: i.id, label: `${e?.prenom ?? ''} ${e?.nom ?? ''} — ${i.type} (${formatDate(i.dateHeure)})` }; }), required: true },
+              { name: 'dateDebut', label: 'Date de début', type: 'date', required: true },
+              { name: 'dateFin', label: 'Date de fin', type: 'date', required: true },
+              { name: 'description', label: 'Description / conditions', type: 'textarea', required: true },
+            ]}
+            action={actions.exclureTemporairement}
+          />
+        </div>
       </SectionBlock>
     </div>
   );

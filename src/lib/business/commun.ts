@@ -152,6 +152,27 @@ export function tranchesSeChevauchent(d1: string, f1: string, d2: string, f2: st
   return toMin(d1) < toMin(f2) && toMin(d2) < toMin(f1);
 }
 
+// --------------------------------------------------------------------
+// VERROU D'ÉCRITURE IN-PROCESS (T2 définitif)
+// Le SQLite embarqué de cette plateforme tolère des lectures « sales »
+// entre connexions (une 2e transaction VOIT les écritures non commitées de
+// la 1re — constaté expérimentalement : les verrous conditionnels SQL sont
+// alors contournables). On sérialise donc les opérations sensibles au sein
+// du processus — là où la concurrence réelle se produit (requêtes serveur).
+// --------------------------------------------------------------------
+const verrous = new Map<string, Promise<unknown>>();
+
+export function avecVerrou<T>(cle: string, fn: () => Promise<T>): Promise<T> {
+  const precedent = verrous.get(cle) ?? Promise.resolve();
+  const execution = precedent.then(fn, fn);
+  const stockee = execution.catch(() => { /* le suivant doit partir quoi qu'il arrive */ });
+  verrous.set(cle, stockee);
+  stockee.then(() => {
+    if (verrous.get(cle) === stockee) verrous.delete(cle);
+  });
+  return execution;
+}
+
 /**
  * Retry automatique sur conflit d'écriture concurrente (P2034 / SQLite
  * "database is locked") : le perdant de la course RETENTE la transaction

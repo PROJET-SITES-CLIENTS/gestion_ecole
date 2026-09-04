@@ -17,7 +17,7 @@ async function main() {
 
   // 2. Tables réellement présentes en DB
   const tables = await prisma.$queryRawUnsafe<{ name: string }[]>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'"
+    "SELECT table_name as name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name NOT LIKE '_prisma%'"
   );
   const tableNames = tables.map((t) => t.name);
   console.log(`Tables en base : ${tableNames.length}`);

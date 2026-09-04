@@ -4,9 +4,9 @@
 // Module RDV parents-professeurs + réunions collectives
 // ====================================================================
 
-import { useTransition } from 'react';
 import { CalendarDays, Clock, Users } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
+import { Button } from '@/components/ui/button';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime } from '@/lib/format';
 
@@ -16,7 +16,7 @@ export default function RdvModule({ initialData }: { initialData: any }) {
   const reunions = initialData.reunionsCollectives ?? [];
   const personnels = initialData.personnels ?? [];
   const classes = initialData.classes ?? [];
-  const [pending, startTransition] = useTransition();
+  const retourRdvs = useActionFeedback();
 
   const creneauxDisponibles = creneaux.filter((c: any) => c.statut === 'disponible').length;
   const rdvsAVenir = rdvs.filter((r: any) => r.statut === 'confirme').length;
@@ -64,6 +64,7 @@ export default function RdvModule({ initialData }: { initialData: any }) {
       </SectionBlock>
 
       <SectionBlock title="RDV individuels réservés" description="Rappel automatique notifié 24h avant">
+        {retourRdvs.Message}
         <DataTable
           columns={[
             { key: 'personnel', label: 'Enseignant', render: (r) => { const c = creneaux.find((x: any) => x.id === r.creneauRdvId); const p = c ? personnels.find((y: any) => y.id === c.personnelId) : null; return p ? `${p.prenom} ${p.nom}` : '—'; } },
@@ -71,6 +72,13 @@ export default function RdvModule({ initialData }: { initialData: any }) {
             { key: 'motif', label: 'Motif' },
             { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
             { key: 'createdAt', label: 'Réservé le', render: (r) => formatDate(r.createdAt) },
+            {
+              key: 'actions', label: 'Action', render: (r) => r.statut === 'confirme' ? (
+                <Button size="sm" variant="outline" disabled={retourRdvs.pending} onClick={() => retourRdvs.run(() => actions.annulerRdv(r.id), 'Rendez-vous annulé')}>
+                  Annuler
+                </Button>
+              ) : null,
+            },
           ]}
           rows={rdvs}
           emptyLabel="Aucun RDV réservé"

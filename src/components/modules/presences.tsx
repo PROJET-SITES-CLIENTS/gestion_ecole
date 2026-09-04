@@ -1,18 +1,40 @@
 'use client';
 
 // ====================================================================
-// Module Présences — saisie d'appel (offline-ready) + historique
+// Module Présences — saisie d'appel en ligne + historique + justifications
 // ====================================================================
 
-import { useTransition } from 'react';
-import { ClipboardList, Users, CheckCircle2, XCircle, Clock, Wifi } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, EmptyState, FormField } from '@/components/shared-ui';
+import { useState, useTransition } from 'react';
+import { Users, CheckCircle2, XCircle, Clock, Wifi } from 'lucide-react';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, EmptyState, ModalForm, CreateButton, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useState } from 'react';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime, initiales } from '@/lib/format';
+
+// Classes statiques EXPLICITES : les classes dynamiques `bg-${color}-100`
+// ne sont pas compilées par Tailwind (le scanner ne résout pas les templates).
+const CLASSES_STATUT_PRESENCE: Record<string, string> = {
+  emerald: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+  rose: 'bg-rose-100 text-rose-700 border-rose-300',
+  amber: 'bg-amber-100 text-amber-700 border-amber-300',
+  gray: 'bg-gray-100 text-gray-700 border-gray-300',
+};
+
+const LIBELLES_MOTIF: Record<string, string> = {
+  maladie: 'Maladie',
+  familial: 'Familial',
+  rendez_vous_medical: 'Rendez-vous médical',
+  ceremonie: 'Cérémonie',
+  transport: 'Transport',
+  autre: 'Autre',
+};
+
+const LIBELLES_STATUT_JUSTIFICATION: Record<string, { statut: string; label: string }> = {
+  soumis: { statut: 'en_attente', label: 'Soumise' },
+  valide: { statut: 'payee', label: 'Validée' },
+  rejete: { statut: 'impayee', label: 'Rejetée' },
+};
 
 export default function PresencesModule({ initialData }: { initialData: any }) {
   const seances = initialData.seances ?? [];
@@ -21,9 +43,12 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
   const matieres = initialData.matieres ?? [];
   const classes = initialData.classes ?? [];
   const personnels = initialData.personnels ?? [];
+  const justifications = initialData.justificationsAbsence ?? [];
 
   const [selectedSeanceId, setSelectedSeanceId] = useState<string | null>(seances[0]?.id ?? null);
   const [pending, startTransition] = useTransition();
+  const [erreurAppel, setErreurAppel] = useState<string | null>(null);
+  const retourJustifications = useActionFeedback();
 
   const seance = seances.find((s: any) => s.id === selectedSeanceId);
   const elevesClasse = seance ? eleves.filter((e: any) => e.classeActuelleId === seance.classeId) : [];
@@ -39,7 +64,7 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
       <PageHeader
         title="Présences — Appel de classe"
-        subtitle="Saisie rapide par séance · Mode hors-ligne pris en charge (sync différée)"
+        subtitle="Saisie rapide par séance · confirmation immédiate"
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
@@ -47,7 +72,7 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
         <StatCard title="Présents" value={presents} icon={CheckCircle2} color="emerald" />
         <StatCard title="Absents" value={absents} icon={XCircle} color="rose" />
         <StatCard title="Retards" value={retards} icon={Clock} color="amber" />
-        <StatCard title="Mode hors-ligne" value="Prêt" sub="IndexedDB + sync" icon={Wifi} color="blue" />
+        <StatCard title="Saisie en ligne" value="Immédiate" sub="synchronisation directe" icon={Wifi} color="blue" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
@@ -80,11 +105,26 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
                   <span className="text-xs font-normal text-gray-500">{formatDate(seance.date)} · {seance.heureDebut}</span>
                 </CardTitle>
                 <p className="text-xs text-gray-500">
-                  Cliquez sur un statut pour chaque élève. La saisie est sauvegardée automatiquement (mode hors-ligne pris en charge).
+                  Cliquez sur un statut pour chaque élève. La saisie est enregistrée côté serveur.
                 </p>
               </CardHeader>
               <CardContent>
-                <form action={async (fd) => { await actions.saisirAppel(fd); }} className="space-y-2">
+                {erreurAppel && (
+                  <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+                    {erreurAppel}
+                  </div>
+                )}
+                <form action={(fd) => {
+                  setErreurAppel(null);
+                  startTransition(async () => {
+                    try {
+                      const r = await actions.saisirAppel(fd);
+                      if (r && r.ok === false) setErreurAppel(r.error ?? 'Enregistrement refusé.');
+                    } catch {
+                      setErreurAppel('Une erreur est survenue. Réessayez.');
+                    }
+                  });
+                }} className="space-y-2">
                   <input type="hidden" name="seanceId" value={seance.id} />
                   {elevesClasse.map((e: any) => {
                     const p = presencesSeance.find((x: any) => x.eleveId === e.id);
@@ -104,7 +144,7 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
                             { value: 'retard', label: 'Retard', color: 'amber' },
                             { value: 'excuse', label: 'Excusé', color: 'gray' },
                           ].map(opt => (
-                            <label key={opt.value} className={`cursor-pointer px-2 py-1 rounded text-xs border ${p?.statut === opt.value ? `bg-${opt.color}-100 text-${opt.color}-700 border-${opt.color}-300` : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                            <label key={opt.value} className={`cursor-pointer px-2 py-1 rounded text-xs border ${p?.statut === opt.value ? CLASSES_STATUT_PRESENCE[opt.color] : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                               <input type="radio" name={`presence_${e.id}`} value={opt.value} defaultChecked={p?.statut === opt.value} className="sr-only" />
                               {opt.label}
                             </label>
@@ -127,6 +167,51 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
           )}
         </div>
       </div>
+
+      <SectionBlock
+        title="Justifications d'absence"
+        description="Déclaration par les familles ou l'établissement, puis validation ou rejet par la vie scolaire"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Justifier une absence" />}
+            title="Justifier une absence"
+            fields={[
+              { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
+              { name: 'dateAbsence', label: 'Date de l\'absence', type: 'date', required: true },
+              { name: 'motif', label: 'Motif', type: 'select', options: Object.entries(LIBELLES_MOTIF).map(([value, label]) => ({ value, label })), required: true },
+              { name: 'dureeHeures', label: 'Durée (heures)', type: 'number', step: '0.5', placeholder: '2' },
+              { name: 'description', label: 'Description', type: 'textarea' },
+            ]}
+            action={actions.justifierAbsence}
+          />
+        }
+      >
+        {retourJustifications.Message}
+        <DataTable
+          columns={[
+            { key: 'eleve', label: 'Élève', render: (j) => { const e = eleves.find((x: any) => x.id === j.eleveId); return e ? `${e.prenom} ${e.nom}` : '—'; } },
+            { key: 'dateAbsence', label: 'Date', render: (j) => formatDate(j.dateAbsence) },
+            { key: 'motif', label: 'Motif', render: (j) => LIBELLES_MOTIF[j.motif] ?? j.motif },
+            { key: 'dureeHeures', label: 'Durée', render: (j) => (j.dureeHeures ? `${j.dureeHeures} h` : '—') },
+            { key: 'description', label: 'Description', render: (j) => <span className="text-xs text-gray-600 line-clamp-1">{j.description ?? '—'}</span> },
+            { key: 'statut', label: 'Statut', render: (j) => { const m = LIBELLES_STATUT_JUSTIFICATION[j.statut]; return m ? <StatusBadge statut={m.statut} label={m.label} /> : <StatusBadge statut={j.statut} />; } },
+            {
+              key: 'actions', label: 'Actions', render: (j) => j.statut === 'soumis' ? (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline" disabled={retourJustifications.pending} onClick={() => retourJustifications.run(() => actions.traiterJustification(j.id, 'valide'), 'Justification validée')}>
+                    Valider
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={retourJustifications.pending} onClick={() => retourJustifications.run(() => actions.traiterJustification(j.id, 'rejete'), 'Justification rejetée')}>
+                    Refuser
+                  </Button>
+                </div>
+              ) : null,
+            },
+          ]}
+          rows={justifications}
+          emptyLabel="Aucune justification d'absence soumise"
+        />
+      </SectionBlock>
 
       <SectionBlock title="Historique des présences" description="Toutes les saisies récentes">
         <DataTable

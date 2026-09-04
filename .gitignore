@@ -51,4 +51,7 @@ prompt
 
 server.log
 # Skills directory
-/skills/
+/skills/db/backups/
+db/custom.db*
+stockage/
+tool-results/

@@ -8,6 +8,9 @@
 // modules uniquement. Déconnexion réelle. Recherche globale.
 // Temps réel : /api/pulse sondé toutes les 15 s → rafraîchissement
 // automatique dès qu'une donnée change (paiement, absence…).
+// D1 : SSE /api/flux — le serveur POUSSE les changements, le polling
+// 15 s reste en repli. D4 : PWA (manifest + service worker). D5 :
+// sélecteur multi-écoles. C2 : notifications non lues marquables lues.
 // ====================================================================
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
@@ -16,7 +19,8 @@ import {
   LayoutDashboard, Building2, Users, GraduationCap, ClipboardList, CalendarDays,
   BookOpen, Bus, BookMarked, Calendar, FileCheck, MessageSquare, Shield,
   ScrollText, Wallet, School, ChevronDown, Bell, Menu, X,
-  CheckCircle2, HeartPulse, LogOut, Search, Activity,
+  CheckCircle2, HeartPulse, LogOut, Search, Activity, Gavel, Plug, CheckCheck,
+  UserPlus, ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +35,7 @@ import DirectionModule from './modules/direction';
 import ElevesModule from './modules/eleves';
 import PersonnelModule from './modules/personnel';
 import PedagogiqueModule from './modules/pedagogique';
+import ConseilsModule from './modules/conseils';
 import PresencesModule from './modules/presences';
 import VieScolaireModule from './modules/vie-scolaire';
 import FinancesModule from './modules/finances';
@@ -40,12 +45,16 @@ import ExamensModule from './modules/examens';
 import RdvModule from './modules/rdv';
 import SecuriteModule from './modules/securite';
 import CommunicationModule from './modules/communication';
+import IntegrationsModule from './modules/integrations';
 import AuditModule from './modules/audit';
 import ParentPortalModule from './modules/parent-portal';
 import ElevePortalModule from './modules/eleve-portal';
 import V4ModulesModule from './modules/v4-modules';
 import SanteModule from './modules/sante';
+import AdmissionsModule from './modules/admissions';
+import ProtectionModule from './modules/protection';
 import PortailMetiers from './modules/portail-metiers';
+import * as ext from '@/app/actions/extensions';
 
 export type Portal =
   | 'super_admin' | 'direction' | 'enseignant' | 'parent' | 'eleve'
@@ -54,7 +63,8 @@ export type Portal =
 export type ModuleId =
   | 'dashboard' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
-  | 'rdv' | 'securite' | 'communication' | 'audit' | 'sante' | 'parent_portal' | 'eleve_portal' | 'v4_modules';
+  | 'rdv' | 'securite' | 'communication' | 'integrations' | 'audit' | 'sante' | 'parent_portal' | 'eleve_portal' | 'v4_modules' | 'conseils'
+  | 'admissions' | 'protection';
 
 type ModuleDef = {
   id: ModuleId;
@@ -69,6 +79,7 @@ const MODULES: ModuleDef[] = [
   { id: 'eleves', label: 'Élèves', icon: Users, portals: ['super_admin', 'direction', 'enseignant', 'secretariat', 'assistant'] },
   { id: 'personnel', label: 'Personnel', icon: GraduationCap, portals: ['super_admin', 'direction', 'rh'] },
   { id: 'pedagogique', label: 'Pédagogique', icon: BookOpen, portals: ['super_admin', 'direction', 'enseignant'] },
+  { id: 'conseils', label: 'Conseils de classe', icon: Gavel, portals: ['direction', 'super_admin'] },
   { id: 'presences', label: 'Présences', icon: ClipboardList, portals: ['super_admin', 'direction', 'enseignant', 'vie_scolaire', 'assistant'] },
   { id: 'vie_scolaire', label: 'Vie scolaire', icon: Shield, portals: ['super_admin', 'direction', 'enseignant', 'vie_scolaire', 'assistant'] },
   { id: 'finances', label: 'Finances', icon: Wallet, portals: ['super_admin', 'direction', 'comptabilite'] },
@@ -77,10 +88,13 @@ const MODULES: ModuleDef[] = [
   { id: 'salles', label: 'Salles & Calendrier', icon: School, portals: ['super_admin', 'direction', 'vie_scolaire'] },
   { id: 'examens', label: 'Examens officiels', icon: FileCheck, portals: ['super_admin', 'direction', 'vie_scolaire'] },
   { id: 'rdv', label: 'RDV parents-profs', icon: CalendarDays, portals: ['super_admin', 'direction', 'enseignant', 'parent', 'secretariat'] },
+  { id: 'admissions', label: 'Admissions', icon: UserPlus, portals: ['direction', 'secretariat', 'super_admin'] },
+  { id: 'protection', label: 'Protection enfance', icon: ShieldAlert, portals: ['direction', 'super_admin'] },
   { id: 'securite', label: 'Sécurité site', icon: Shield, portals: ['super_admin', 'direction', 'vie_scolaire'] },
   { id: 'communication', label: 'Communication', icon: MessageSquare, portals: ['super_admin', 'direction', 'comptabilite', 'rh', 'secretariat', 'assistant'] },
+  { id: 'integrations', label: 'Intégrations', icon: Plug, portals: ['direction', 'super_admin'] },
   { id: 'audit', label: "Journal d'audit", icon: ScrollText, portals: ['super_admin', 'direction'] },
-  { id: 'v4_modules', label: 'Modules V4 (37 failles)', icon: CheckCircle2, portals: ['super_admin', 'direction'] },
+  { id: 'v4_modules', label: 'Catalogue complémentaire', icon: CheckCircle2, portals: ['super_admin', 'direction'] },
   { id: 'parent_portal', label: 'Portail Parent', icon: Users, portals: ['parent'] },
   { id: 'eleve_portal', label: 'Portail Élève', icon: GraduationCap, portals: ['eleve'] },
 ];
@@ -202,13 +216,21 @@ export default function AppShell({ initialData }: { initialData: any }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingLogout, startLogout] = useTransition();
   const [enDirect, setEnDirect] = useState(false);
+  const [tempsReel, setTempsReel] = useState(false); // D1 — SSE connecté
+  const [pendingEcole, startEcole] = useTransition(); // D5 — bascule d'école
+  const [pendingNotifs, startNotifs] = useTransition(); // C2 — tout marquer lu
 
-  // ---- Temps réel : /api/pulse toutes les 15 s ----
-  // Dès qu'un compteur bouge (paiement, présence, notification…),
-  // la page est re-rendue côté serveur → données fraîches partout.
+  // ---- Temps réel : SSE /api/flux (D1) + polling /api/pulse en repli ----
+  // Le serveur pousse « changement » dès qu'un compteur bouge →
+  // router.refresh() immédiat. En cas d'erreur SSE (proxy, coupure),
+  // on ferme le flux et on se rabat sur le sondage 15 s existant,
+  // avec une nouvelle tentative d'abonnement 30 s plus tard.
   useEffect(() => {
     let dernier: number | null = null;
     let vivant = true;
+    let flux: EventSource | null = null;
+    let reprise: ReturnType<typeof setTimeout> | null = null;
+
     const sonder = async () => {
       try {
         const r = await fetch('/api/pulse', { cache: 'no-store' });
@@ -223,15 +245,72 @@ export default function AppShell({ initialData }: { initialData: any }) {
         if (vivant) setEnDirect(false);
       }
     };
+
+    const abonnerFlux = () => {
+      if (!vivant || typeof EventSource === 'undefined') return;
+      flux = new EventSource('/api/flux');
+      flux.addEventListener('init', () => { if (vivant) setTempsReel(true); });
+      flux.addEventListener('ping', () => { if (vivant) setTempsReel(true); });
+      flux.addEventListener('changement', () => {
+        if (!vivant) return;
+        setTempsReel(true);
+        router.refresh();
+      });
+      flux.onerror = () => {
+        if (!vivant) return;
+        setTempsReel(false);
+        flux?.close();
+        flux = null;
+        // Repli : le polling 15 s reste actif ; on retente le SSE après 30 s.
+        reprise = setTimeout(abonnerFlux, 30_000);
+      };
+    };
+    abonnerFlux();
+
     void sonder();
     const id = setInterval(sonder, 15_000);
-    return () => { vivant = false; clearInterval(id); };
+    return () => {
+      vivant = false;
+      clearInterval(id);
+      if (reprise) clearTimeout(reprise);
+      flux?.close();
+    };
   }, [router]);
+
+  // ---- D4 — PWA : enregistrement du service worker (best effort) ----
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* hors ligne/unsupported : silencieux */ });
+  }, []);
+
+  // ---- D5 — Multi-écoles : liste des établissements accessibles ----
+  const [ecolesAccessibles, setEcolesAccessibles] = useState<{ id: string; nom: string; slug: string; devise?: string }[] | null>(null);
+  useEffect(() => {
+    let vivant = true;
+    ext.ecolesAccessibles()
+      .then((r) => { if (vivant && r && r.ok !== false) setEcolesAccessibles(((r as any).ecoles ?? []) as any); })
+      .catch(() => { /* périmètre mono-école : silencieux */ });
+    return () => { vivant = false; };
+  }, []);
+
+  // Options du sélecteur : la liste renvoyée par le serveur fait foi
+  // (la bascule y est vérifiée) ; repli sur initialData.ecoles.
+  const optionsEcoles = ecolesAccessibles ?? (initialData.ecoles ?? []);
+  const plusieursEcoles = (initialData.ecoles?.length ?? 0) > 1 || optionsEcoles.length > 1;
+
+  function changerEcoleActive(ecoleId: string) {
+    startEcole(async () => {
+      const r = await ext.changerEcoleActive(ecoleId);
+      if (r && r.ok === false) return;
+      router.refresh();
+    });
+  }
 
   const visibleModules = useMemo(() => MODULES.filter((m) => m.portals.includes(portal)), [portal]);
 
   const school = initialData.ecole;
   const notifications = initialData.notifications ?? [];
+  const nonLues = notifications.filter((n: any) => !n.dateLecture).length; // C2
   const sessionUser = initialData.session?.utilisateur;
   const initiales = sessionUser
     ? `${sessionUser.prenom?.[0] ?? ''}${sessionUser.nom?.[0] ?? ''}`.toUpperCase()
@@ -253,6 +332,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'eleves': return <ElevesModule {...props} />;
       case 'personnel': return <PersonnelModule {...props} />;
       case 'pedagogique': return <PedagogiqueModule {...props} />;
+      case 'conseils': return <ConseilsModule {...props} />;
       case 'presences': return <PresencesModule {...props} />;
       case 'vie_scolaire': return <VieScolaireModule {...props} />;
       case 'finances': return <FinancesModule {...props} />;
@@ -261,8 +341,11 @@ export default function AppShell({ initialData }: { initialData: any }) {
       case 'salles': return <SallesModule {...props} />;
       case 'examens': return <ExamensModule {...props} />;
       case 'rdv': return <RdvModule {...props} />;
+      case 'admissions': return <AdmissionsModule {...props} />;
+      case 'protection': return <ProtectionModule {...props} />;
       case 'securite': return <SecuriteModule {...props} />;
       case 'communication': return <CommunicationModule {...props} />;
+      case 'integrations': return <IntegrationsModule {...props} />;
       case 'audit': return <AuditModule {...props} />;
       case 'v4_modules': return <V4ModulesModule {...props} />;
       case 'parent_portal': return <ParentPortalModule {...props} mode="full" />;
@@ -276,6 +359,15 @@ export default function AppShell({ initialData }: { initialData: any }) {
       const { deconnexion: seDeconnecter } = await import('@/app/actions');
       await seDeconnecter();
       router.replace('/login');
+      router.refresh();
+    });
+  }
+
+  // C2 — marquer toutes les notifications du compte comme lues
+  function toutMarquerLu() {
+    startNotifs(async () => {
+      const r = await ext.marquerNotificationsLues();
+      if (r && r.ok === false) return;
       router.refresh();
     });
   }
@@ -333,7 +425,11 @@ export default function AppShell({ initialData }: { initialData: any }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          <GlobalSearch initialData={initialData} onNavigate={(m) => setActive(m)} />
+          {/* Recherche globale : masquée pour les portails élève/parent, dont le
+              périmètre est déjà réduit (listes globales vides par conception). */}
+          {portal !== 'eleve' && portal !== 'parent' && (
+            <GlobalSearch initialData={initialData} onNavigate={(m) => setActive(m)} />
+          )}
 
           <div className="flex-1 text-sm text-gray-600 min-w-0 truncate">
             <span className="text-gray-400">{PORTAL_LABELS[portal]}</span>
@@ -341,41 +437,68 @@ export default function AppShell({ initialData }: { initialData: any }) {
             <span className="font-medium text-gray-900">{MODULES.find((m) => m.id === active)?.label}</span>
           </div>
 
-          {/* Indicateur temps réel */}
+          {/* D5 — Sélecteur multi-écoles (affiché si plusieurs établissements accessibles) */}
+          {plusieursEcoles && optionsEcoles.length > 0 && (
+            <select
+              value={school?.id ?? ''}
+              onChange={(e) => changerEcoleActive(e.target.value)}
+              disabled={pendingEcole}
+              title="Changer l'école active de la session"
+              className="hidden md:block h-8 max-w-[180px] truncate rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {optionsEcoles.map((e: any) => (
+                <option key={e.id} value={e.id}>{e.nom}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Indicateur temps réel — D1 : badge « Temps réel » quand le SSE est connecté */}
           <span
             className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-              enDirect ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'
+              tempsReel ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : enDirect ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-500'
             }`}
-            title={enDirect ? 'Connecté au flux temps réel — rafraîchissement automatique' : 'Flux temps réel indisponible'}
+            title={tempsReel ? 'Connecté au flux SSE — les changements sont poussés par le serveur' : enDirect ? 'Sondage périodique (15 s) — flux SSE indisponible' : 'Flux temps réel indisponible'}
           >
-            <Activity className={`h-3 w-3 ${enDirect ? 'animate-pulse' : ''}`} />
-            {enDirect ? 'En direct' : 'Hors ligne'}
+            <Activity className={`h-3 w-3 ${tempsReel || enDirect ? 'animate-pulse' : ''}`} />
+            {tempsReel ? 'Temps réel' : enDirect ? 'En direct' : 'Hors ligne'}
           </span>
 
-          {/* Notifications du compte connecté */}
+          {/* Notifications du compte connecté — C2 : badge = non lues */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="relative">
                 <Bell className="h-4 w-4" />
-                {notifications.length > 0 && (
+                {nonLues > 0 && (
                   <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center">
-                    {notifications.length}
+                    {nonLues}
                   </span>
                 )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications ({notifications.length})</DropdownMenuLabel>
+              <DropdownMenuLabel>Notifications ({nonLues} non lue{nonLues > 1 ? 's' : ''} sur {notifications.length})</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {notifications.slice(0, 5).map((n: any) => (
                 <DropdownMenuItem key={n.id} className="flex-col items-start py-2">
-                  <div className="text-sm font-medium">{n.sujet}</div>
+                  <div className="flex items-center gap-1.5 w-full">
+                    {!n.dateLecture && <span className="h-1.5 w-1.5 rounded-full bg-rose-500 flex-shrink-0" aria-label="non lue" />}
+                    <div className="text-sm font-medium">{n.sujet}</div>
+                  </div>
                   <div className="text-xs text-gray-500 line-clamp-2">{n.corps}</div>
                 </DropdownMenuItem>
               ))}
               {notifications.length === 0 && (
                 <DropdownMenuItem className="text-gray-500 text-sm">Aucune notification</DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={toutMarquerLu}
+                disabled={pendingNotifs || nonLues === 0}
+                className="text-emerald-700 focus:text-emerald-700 text-sm"
+              >
+                <CheckCheck className="h-4 w-4 mr-2" />
+                {pendingNotifs ? 'Marquage…' : 'Tout marquer comme lu'}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 

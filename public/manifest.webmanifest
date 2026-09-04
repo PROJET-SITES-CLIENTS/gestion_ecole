@@ -1,0 +1,26 @@
+{
+  "name": "ScolaGestion",
+  "short_name": "ScolaGestion",
+  "description": "Plateforme SaaS de gestion scolaire : élèves, personnel, pédagogie, finances, communication.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f9fafb",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

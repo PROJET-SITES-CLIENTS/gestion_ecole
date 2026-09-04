@@ -6,23 +6,21 @@ import { db } from "../src/lib/db";
 import { Prisma } from "@prisma/client";
 import { randomBytes, scryptSync } from "crypto";
 
-// Mot de passe de démonstration unique — haché en scrypt (P0 auth réelle)
-const MOT_DE_PASSE_DEMO = "Demo1234!";
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const N = 16384, r = 8, p = 1;
-  const hash = scryptSync(password, salt, 64, { N, r, p }).toString("hex");
-  return `scrypt$${N}$${r}$${p}$${salt}$${hash}`;
+// Mot de passe de démonstration — piloté par la variable d'environnement
+// SG_MDP_DEMO (F2) ; le repli "Demo1234!" ne vaut que pour le développement.
+import { hashPassword, genererCodesSecours, genererSecretTotp } from "../src/lib/auth-hash";
+import { createHash } from "crypto";
+const MOT_DE_PASSE_DEMO = process.env.SG_MDP_DEMO || "Demo1234!";
+if (!process.env.SG_MDP_DEMO && process.env.NODE_ENV === "production") {
+  console.warn("⚠️  SG_MDP_DEMO absente en production : mot de passe de repli utilisé. Définissez SG_MDP_DEMO.");
 }
 
 // Nettoyage idempotent : supprime toutes les lignes de toutes les tables,
 // dans l'ordre topologique (tables porteuses de FK supprimées en premier),
 // pour pouvoir ré-exécuter le seed sans erreur de contrainte unique.
 async function wipeAll() {
-  // Désactive les FK au cas où la connexion le permette (SQLite par connexion)
-  try {
-    await db.$executeRawUnsafe("PRAGMA foreign_keys = OFF;");
-  } catch { /* non bloquant : l'ordre topologique suffit */ }
+  // PostgreSQL : transactions natives, pas besoin de pragma
+  // PostgreSQL : le multi-passes gère les cycles naturellement
 
   const models = Prisma.dmmf.datamodel.models;
   const names = new Set(models.map((m) => m.name));
@@ -37,53 +35,50 @@ async function wipeAll() {
     }
   }
 
-  // Tri topologique (algorithme de Kahn itératif)
+  // Suppression MULTI-PASSES tolérante aux FK : on tente chaque modèle dans
+  // l'ordre topologique ; celui qui échoue (encore référencé) est retiré et
+  // sera retenté à la passe suivante — converge toujours sur un DAG, même si
+  // le PRAGMA foreign_keys=OFF n'a pas pu s'appliquer à la connexion du pool.
   const done = new Set<string>();
-  const remaining = [...names];
-  let progress = true;
-  while (remaining.length > 0 && progress) {
-    progress = false;
-    for (let i = 0; i < remaining.length; i++) {
-      const name = remaining[i];
+  let remaining = [...names];
+  for (let passe = 0; passe < 15 && remaining.length > 0; passe++) {
+    const avant = remaining.length;
+    const encore: string[] = [];
+    for (const name of remaining) {
       const pending = [...deps.get(name)!].filter((d) => !done.has(d));
-      if (pending.length === 0) {
-        const key = name.charAt(0).toLowerCase() + name.slice(1);
-        const delegate = (db as any)[key];
-        if (delegate && typeof delegate.deleteMany === "function") {
+      const key = name.charAt(0).toLowerCase() + name.slice(1);
+      const delegate = (db as any)[key];
+      // Passe 0 : ordre topologique strict. Passes 1+ : on TENTE tout —
+      // un modèle bloqué par une FK encore vivante est repoussé à la passe
+      // suivante (ses dépendances seront supprimées entre-temps) → convergence.
+      const tentable = pending.length === 0 || passe >= 1;
+      if (delegate && typeof delegate.deleteMany === "function" && tentable) {
+        try {
           await delegate.deleteMany({});
-        }
-        done.add(name);
-        remaining.splice(i, 1);
-        i--;
-        progress = true;
+          done.add(name);
+          continue;
+        } catch { /* encore référencé : repoussé */ }
       }
+      encore.push(name);
     }
+    remaining = encore;
+    if (remaining.length === avant) break; // plus AUCUN progrès → stop
   }
-
-  // Filet de sécurité pour les cycles résiduels (self-relations, etc.)
+  // Dernier filet : tout ce qui reste (ne devrait pas arriver)
   for (const name of remaining) {
     const key = name.charAt(0).toLowerCase() + name.slice(1);
     const delegate = (db as any)[key];
     if (delegate && typeof delegate.deleteMany === "function") {
-      try {
-        await delegate.deleteMany({});
-      } catch { /* cycle protégé par le PRAGMA OFF si actif */ }
+      try { await delegate.deleteMany({}); done.add(name); } catch { /* FK tenace */ }
     }
   }
 
   // Tables de jointure implicites many-to-many : absentes du DMMF, il faut
   // les vider en SQL brut, sinon leurs lignes deviennent orphelines à chaque
   // re-seed (violation PRAGMA foreign_key_check).
-  const implicitJoinTables = ["_EcoleToPermission"];
-  for (const t of implicitJoinTables) {
-    try {
-      await db.$executeRawUnsafe(`DELETE FROM "${t}";`);
-    } catch { /* table absente : schéma sans cette relation */ }
-  }
+  // PostgreSQL : jointures implicites gérées par le DMMF
 
-  try {
-    await db.$executeRawUnsafe("PRAGMA foreign_keys = ON;");
-  } catch { /* non bloquant */ }
+
 }
 
 async function main() {
@@ -91,12 +86,134 @@ async function main() {
   console.log("🧹 Nettoyage de la base (idempotence)...");
   await wipeAll();
 
+  // ==================================================================
+  // MODE ÉCOLE VIERGE (déploiement réel) : SEED_VIERGE=1 npm run seed
+  // Crée UNIQUEMENT : école réelle, année + 3 périodes, structure
+  // académique (15 niveaux, 1 classe/niveau), 9 rôles, 19 permissions,
+  // compte direction, paie par défaut. ZÉRO donnée fictive.
+  // ==================================================================
+  if (process.env.SEED_VIERGE === "1") {
+    const nom = process.env.SEED_ECOLE_NOM || "Mon École";
+    const slug = (process.env.SEED_ECOLE_SLUG || nom).toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/^-+|-+$/g, "");
+    const emailDirection = process.env.SEED_DIRECTION_EMAIL || "direction@mon-ecole.sn";
+    const mdp = process.env.SEED_DIRECTION_MDP || process.env.SG_MDP_DEMO || "Demo1234!";
+    console.log(`🏫 École VIERGE : « ${nom} » (slug: ${slug})`);
+
+    const ecoleVierge = await db.ecole.create({
+      data: { nom, slug, pays: process.env.SEED_ECOLE_PAYS || "SN", devise: "XOF", fuseauHoraire: "Africa/Dakar", statut: "actif" },
+    });
+
+    const debut = new Date().getMonth() >= 6 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+    const anneeV = await db.anneeScolaire.create({
+      data: { ecoleId: ecoleVierge.id, libelle: `${debut}-${debut + 1}`, dateDebut: new Date(Date.UTC(debut, 8, 1)), dateFin: new Date(Date.UTC(debut + 1, 6, 31)), active: true },
+    });
+    await db.periode.createMany({ data: [
+      { ecoleId: ecoleVierge.id, anneeScolaireId: anneeV.id, code: "T1", libelle: "Trimestre 1", dateDebut: new Date(Date.UTC(debut, 8, 1)), dateFin: new Date(Date.UTC(debut, 11, 15)), typeBulletin: "college_lycee" },
+      { ecoleId: ecoleVierge.id, anneeScolaireId: anneeV.id, code: "T2", libelle: "Trimestre 2", dateDebut: new Date(Date.UTC(debut + 1, 0, 5)), dateFin: new Date(Date.UTC(debut + 1, 2, 30)), typeBulletin: "college_lycee" },
+      { ecoleId: ecoleVierge.id, anneeScolaireId: anneeV.id, code: "T3", libelle: "Trimestre 3", dateDebut: new Date(Date.UTC(debut + 1, 3, 1)), dateFin: new Date(Date.UTC(debut + 1, 5, 30)), typeBulletin: "college_lycee" },
+    ] });
+    let ordre = 1;
+    const STRUCTURE: Array<{ c: string; lc: string; mode: string; s: string; ls: string; n: Array<[string, string]> }> = [
+      { c: "MAT", lc: "Maternelle", mode: "competences", s: "MAT", ls: "Maternelle", n: [["PS", "Petite section"], ["MS", "Moyenne section"], ["GS", "Grande section"]] },
+      { c: "PRIM", lc: "Primaire", mode: "chiffre", s: "PRIM", ls: "Primaire", n: [["CP", "CP"], ["CE1", "CE1"], ["CE2", "CE2"], ["CM1", "CM1"], ["CM2", "CM2"]] },
+      { c: "COLL", lc: "Collège", mode: "chiffre", s: "COLL", ls: "Collège", n: [["6E", "Sixième"], ["5E", "Cinquième"], ["4E", "Quatrième"], ["3E", "Troisième"]] },
+      { c: "LYC", lc: "Lycée", mode: "chiffre", s: "LYC", ls: "Lycée", n: [["2NDE", "Seconde"], ["1ERE", "Première"], ["TLE", "Terminale"]] },
+    ];
+    for (const bloc of STRUCTURE) {
+      const cy = await db.cycle.create({ data: { ecoleId: ecoleVierge.id, code: bloc.c, libelle: bloc.lc, ordre: ordre++, modeEvaluation: bloc.mode } });
+      const se = await db.section.create({ data: { cycleId: cy.id, code: bloc.s, libelle: bloc.ls } });
+      for (const [code, libelle] of bloc.n) {
+        const nv = await db.niveau.create({ data: { sectionId: se.id, code, libelle, ordre: ordre++ } });
+        await db.classe.create({ data: { ecoleId: ecoleVierge.id, niveauId: nv.id, anneeScolaireId: anneeV.id, code: code + "-A", libelle: libelle + " A", capaciteMax: 40 } });
+      }
+    }
+
+    const ROLES: Array<{ code: string; libelle: string; twofaRequis?: boolean }> = [
+      { code: "direction", libelle: "Direction", twofaRequis: true },
+      { code: "enseignant", libelle: "Enseignant" },
+      { code: "comptabilite", libelle: "Comptabilité", twofaRequis: true },
+      { code: "surveillant", libelle: "Surveillant" },
+      { code: "rh", libelle: "Ressources Humaines" },
+      { code: "censeur", libelle: "Censeur" },
+      { code: "secretariat", libelle: "Secrétariat" },
+      { code: "assistant_direction", libelle: "Assistant de Direction" },
+      { code: "infirmier", libelle: "Infirmier(ère)" },
+    ];
+    const MATRICE: Record<string, string[]> = {
+      direction: ["eleves.lire","eleves.ecrire","bulletins.valider","finances.voir","finances.ecrire","finances.valider","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer"],
+      enseignant: ["eleves.lire","notes.saisir","presences.saisir","vie_scolaire.gerer","edt.gerer"],
+      comptabilite: ["finances.voir","finances.ecrire","finances.valider"],
+      surveillant: ["eleves.lire","presences.saisir","vie_scolaire.gerer","securite.gerer"],
+      rh: ["eleves.lire","rh.gerer","communication.envoyer"],
+      censeur: ["eleves.lire","bulletins.valider","presences.saisir","vie_scolaire.gerer","examens.gerer","edt.gerer","protection.gerer"],
+      secretariat: ["eleves.lire","eleves.ecrire","communication.envoyer"],
+      assistant_direction: ["eleves.lire","eleves.ecrire","presences.saisir","vie_scolaire.gerer","communication.envoyer"],
+      infirmier: ["eleves.lire","sante.gerer"],
+    };
+    const roleIds = new Map<string, string>();
+    for (const r of ROLES) {
+      const cree = await db.role.create({ data: { ecoleId: ecoleVierge.id, code: r.code, libelle: r.libelle, twofaRequis: r.twofaRequis ?? false } });
+      roleIds.set(r.code, cree.id);
+    }
+    const PERMS = ["eleves.lire","eleves.ecrire","notes.saisir","bulletins.valider","finances.voir","finances.ecrire","finances.valider","presences.saisir","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer"];
+    const permIds = new Map<string, string>();
+    for (const code of PERMS) {
+      const existante = await db.permission.findUnique({ where: { code } });
+      const prm = existante ?? await db.permission.create({ data: { code, libelle: code, module: code.split(".")[0] } });
+      // PostgreSQL : relation m2m remplie par le graphe Prisma naturellement
+      permIds.set(code, prm.id);
+    }
+    for (const [codeRole, codes] of Object.entries(MATRICE)) {
+      const roleId = roleIds.get(codeRole)!;
+      await db.rolePermission.createMany({ data: codes.map((c) => ({ roleId, permissionId: permIds.get(c)! })) });
+    }
+
+    const dirV = await db.utilisateur.create({
+      data: { ecoleId: ecoleVierge.id, email: emailDirection, motDePasseHash: hashPassword(mdp), nom: "Direction", prenom: nom, type: "personnel", twofaActive: true },
+    });
+    await db.utilisateurRole.create({ data: { utilisateurId: dirV.id, roleId: roleIds.get("direction")! } });
+    // Le rôle Direction EXIGE la 2FA (C4) : on pré-active une méthode TOTP et
+    // des codes de secours, affichés UNE SEULE FOIS ci-dessous. Sans cela, le
+    // premier login serait bloqué (rôle exigeant la 2FA, compte sans méthode).
+    const secretVierge = genererSecretTotp();
+    await db.twoFactorMethod.create({ data: { utilisateurId: dirV.id, methode: "totp", secret: secretVierge, actif: true } });
+    const codesVierges = genererCodesSecours();
+    await db.twoFactorBackupCode.createMany({
+      data: codesVierges.map((c) => ({ utilisateurId: dirV.id, codeHash: createHash("sha256").update(c).digest("hex") })),
+    });
+    await db.personnel.create({ data: { ecoleId: ecoleVierge.id, utilisateurId: dirV.id, matricule: "PER-0001", nom: "Direction", prenom: nom, email: emailDirection, dateEmbauche: new Date(), typeContrat: "CDI", statut: "actif" } });
+    await db.configurationPaie.create({ data: { ecoleId: ecoleVierge.id } });
+
+    console.log("");
+    console.log("════════════ ÉCOLE VIERGE CRÉÉE ════════════");
+    console.log(`École        : ${nom} (${slug}) — statut actif`);
+    console.log(`Année        : ${debut}-${debut + 1} active · 3 trimestres · 15 niveaux · 15 classes (1/niveau)`);
+    console.log(`Direction    : ${emailDirection}`);
+    console.log(`Mot de passe : ${mdp === "Demo1234!" ? "Demo1234! (⚠ repli — définissez SEED_DIRECTION_MDP)" : "(SEED_DIRECTION_MDP — non affichée)"}`);
+    console.log("");
+    console.log("🔐 DOUBLE AUTHENTIFICATION (2FA obligatoire pour la direction) :");
+    console.log(`   Secret TOTP : ${secretVierge}`);
+    console.log("   → Ajoutez ce secret dans une appli d'authentification (Google Authenticator, Authy…)");
+    console.log("     Le code à 6 chiffres sera demandé à chaque connexion.");
+    console.log("   Codes de secours (usage unique, conservez-les en lieu sûr) :");
+    codesVierges.forEach((c) => console.log("      " + c));
+    console.log("");
+    console.log("PROCHAINES ÉTAPES :");
+    console.log("  1. Module « Salles & Calendrier » → sections Matières/Classes : ajouter vos matières et classes réelles + titulaires");
+    console.log("  2. Module Personnel : créer les enseignants (avec comptes) et le personnel");
+    console.log("  3. Module Élèves : inscrire les élèves + rattacher les parents");
+    console.log("  4. Module Sécurité : activer la 2FA du compte direction");
+    console.log("  5. Module Finances : créer les frais de scolarité puis générer les échéances par classe");
+    console.log("════════════════════════════════════════════");
+    return;
+  }
+
   // 1) Plans tarifaires SaaS
   const planEssentiel = await db.planTarifaire.create({
     data: {
       nom: "Essentiel",
-      prixMensuel: 25000,
-      prixAnnuel: 270000,
+      prixMensuel: 2500000,
+      prixAnnuel: 27000000,
       dureeEssaiJours: 14,
       modulesInclus: JSON.stringify(["eleves", "personnel", "pedagogique", "presences", "finances_basic"]),
     },
@@ -104,8 +221,9 @@ async function main() {
   const planPro = await db.planTarifaire.create({
     data: {
       nom: "Pro",
-      prixMensuel: 65000,
-      prixAnnuel: 700000,
+      prixMensuel: 6500000,
+      prixAnnuel: 70000000,
+      limiteEleves: 100,
       dureeEssaiJours: 30,
       modulesInclus: JSON.stringify(["eleves", "personnel", "pedagogique", "presences", "finances_full", "vie_scolaire", "rh", "services", "salles", "rdv"]),
     },
@@ -113,8 +231,9 @@ async function main() {
   const planIllimite = await db.planTarifaire.create({
     data: {
       nom: "Illimité",
-      prixMensuel: 120000,
-      prixAnnuel: 1300000,
+      prixMensuel: 12000000,
+      prixAnnuel: 130000000,
+      limiteEleves: 0,
       dureeEssaiJours: 30,
       modulesInclus: JSON.stringify(["*"]),
     },
@@ -150,7 +269,7 @@ async function main() {
       ecoleId: ecole.id,
       abonnementId: abonnement.id,
       periode: "2026-08",
-      montant: 65000,
+      montant: 6500000,
       devise: "XOF",
       statut: "payee",
       modePaiement: "virement",
@@ -166,7 +285,7 @@ async function main() {
       nom: "Éditeur",
       prenom: "Super-Admin",
       type: "super_admin",
-      twofaActive: true,
+      twofaActive: false, // F10 : 2FA seulement si une méthode active existe
       consentementPortail: true,
       consentementDate: new Date(),
     },
@@ -299,6 +418,17 @@ async function main() {
       typeBulletin: "college_lycee",
     },
   });
+  await db.periode.create({
+    data: {
+      ecoleId: ecole.id,
+      anneeScolaireId: annee.id,
+      code: "T3",
+      libelle: "Trimestre 3",
+      dateDebut: new Date("2027-04-01"),
+      dateFin: new Date("2027-06-30"),
+      typeBulletin: "college_lycee",
+    },
+  });
 
   // 13) Personnel (enseignants) + matières
   const enseignants = [] as any[];
@@ -334,7 +464,7 @@ async function main() {
         dateEmbauche: new Date("2020-09-01"),
         statut: "actif",
         typeContrat: "CDI",
-        salaireBrut: 350000,
+        salaireBrut: 35000000,
         email: u.email!,
         telephone: "+221 77 000 00 00",
         diplomePrincipal: "Master Enseignement",
@@ -366,13 +496,13 @@ async function main() {
   // secrétaire, assistant de direction, infirmière : chacun son accès
   // dédié (portail métier propre, permissions ciblées).
   const metiers = [
-    { role: roleComptable, nom: "Sarr", prenom: "Bineta", email: "comptable@vinci.sn", matricule: "CPT-01", fonction: "Comptable", contrat: "CDD", salaire: 280000 },
-    { role: roleRh, nom: "Ndiaye", prenom: "Sophie", email: "rh@vinci.sn", matricule: "RH-01", fonction: "Responsable RH", contrat: "CDI", salaire: 320000 },
-    { role: roleCenseur, nom: "Diagne", prenom: "Ibrahima", email: "censeur@vinci.sn", matricule: "CEN-01", fonction: "Censeur", contrat: "CDI", salaire: 340000 },
-    { role: roleSurveillant, nom: "Kane", prenom: "Modou", email: "surveillant@vinci.sn", matricule: "SUR-01", fonction: "Surveillant général", contrat: "CDD", salaire: 220000 },
-    { role: roleSecretariat, nom: "Fall", prenom: "Coumba", email: "secretariat@vinci.sn", matricule: "SEC-01", fonction: "Secrétaire", contrat: "CDI", salaire: 240000 },
-    { role: roleAssistant, nom: "Mbaye", prenom: "Khadija", email: "assistant@vinci.sn", matricule: "AD-01", fonction: "Assistante de direction", contrat: "CDI", salaire: 300000 },
-    { role: roleInfirmier, nom: "Sow", prenom: "Aminata", email: "infirmiere@vinci.sn", matricule: "INF-01", fonction: "Infirmière", contrat: "CDD", salaire: 230000 },
+    { role: roleComptable, nom: "Sarr", prenom: "Bineta", email: "comptable@vinci.sn", matricule: "CPT-01", fonction: "Comptable", contrat: "CDD", salaire: 28000000 },
+    { role: roleRh, nom: "Ndiaye", prenom: "Sophie", email: "rh@vinci.sn", matricule: "RH-01", fonction: "Responsable RH", contrat: "CDI", salaire: 32000000 },
+    { role: roleCenseur, nom: "Diagne", prenom: "Ibrahima", email: "censeur@vinci.sn", matricule: "CEN-01", fonction: "Censeur", contrat: "CDI", salaire: 34000000 },
+    { role: roleSurveillant, nom: "Kane", prenom: "Modou", email: "surveillant@vinci.sn", matricule: "SUR-01", fonction: "Surveillant général", contrat: "CDD", salaire: 22000000 },
+    { role: roleSecretariat, nom: "Fall", prenom: "Coumba", email: "secretariat@vinci.sn", matricule: "SEC-01", fonction: "Secrétaire", contrat: "CDI", salaire: 24000000 },
+    { role: roleAssistant, nom: "Mbaye", prenom: "Khadija", email: "assistant@vinci.sn", matricule: "AD-01", fonction: "Assistante de direction", contrat: "CDI", salaire: 30000000 },
+    { role: roleInfirmier, nom: "Sow", prenom: "Aminata", email: "infirmiere@vinci.sn", matricule: "INF-01", fonction: "Infirmière", contrat: "CDD", salaire: 23000000 },
   ];
   const comptesMetiers = [] as any[];
   for (const met of metiers) {
@@ -439,6 +569,10 @@ async function main() {
         consentementPhotoInterne: i % 3 === 0,
         consentementPhotoExterne: i % 5 === 0,
       },
+    });
+    // Historique de classe dès l'inscription (F9)
+    await db.eleveHistoriqueClasse.create({
+      data: { eleveId: eleve.id, classeId: classe.id, dateEntree: new Date("2026-09-01") },
     });
     eleves.push({ eleve, classe });
   }
@@ -550,7 +684,7 @@ async function main() {
       ecoleId: ecole.id,
       libelle: "Frais de scolarité - Trimestre 1",
       type: "scolarite",
-      montant: 75000,
+      montant: 7500000,
       devise: "XOF",
       periodicite: "trimestriel",
       anneeScolaireId: annee.id,
@@ -561,7 +695,7 @@ async function main() {
       ecoleId: ecole.id,
       libelle: "Frais d'inscription",
       type: "inscription",
-      montant: 25000,
+      montant: 2500000,
       devise: "XOF",
       periodicite: "unique",
       anneeScolaireId: annee.id,
@@ -574,12 +708,12 @@ async function main() {
       data: {
         eleveId: e.id,
         fraisId: fraisScolarite.id,
-        montant: 75000,
+        montant: 7500000,
         devise: "XOF",
         // Élève 4 : échéance ÉCHUE (retard réel ~19 j au 03/09) ;
         // autres : à venir le 15/09.
         dateEcheance: i === 4 ? new Date(Date.now() - 19 * 86400000) : new Date("2026-09-15"),
-        montantPaye: i < 3 ? 75000 : i === 3 ? 40000 : 0,
+        montantPaye: i < 3 ? 7500000 : i === 3 ? 4000000 : 0,
         statut: i < 3 ? "payee" : i === 3 ? "partiel" : "impayee",
       },
     });
@@ -587,10 +721,10 @@ async function main() {
       data: {
         eleveId: e.id,
         fraisId: fraisInscription.id,
-        montant: 25000,
+        montant: 2500000,
         devise: "XOF",
         dateEcheance: new Date("2026-09-10"),
-        montantPaye: 25000,
+        montantPaye: 2500000,
         statut: "payee",
       },
     });
@@ -600,9 +734,9 @@ async function main() {
   // cockpit — 8 j, 26 j, à venir, payée.
   const extensions = [
     { idx: 5, joursRetard: 8, paye: 0, statut: "impayee" },
-    { idx: 6, joursRetard: 26, paye: 30000, statut: "partiel" },
+    { idx: 6, joursRetard: 26, paye: 3000000, statut: "partiel" },
     { idx: 7, joursRetard: 0, paye: 0, statut: "impayee" },
-    { idx: 8, joursRetard: 0, paye: 75000, statut: "payee" },
+    { idx: 8, joursRetard: 0, paye: 7500000, statut: "payee" },
   ];
   for (const ext of extensions) {
     const e = eleves[ext.idx].eleve;
@@ -610,7 +744,7 @@ async function main() {
       data: {
         eleveId: e.id,
         fraisId: fraisScolarite.id,
-        montant: 75000,
+        montant: 7500000,
         devise: "XOF",
         dateEcheance: ext.joursRetard > 0 ? new Date(Date.now() - ext.joursRetard * 86400000) : new Date(Date.now() + 12 * 86400000),
         montantPaye: ext.paye,
@@ -621,11 +755,11 @@ async function main() {
 
   // 18) Paiements (étalés sur les 4 derniers mois → courbe de tendance)
   const planPaiements = [
-    { idx: 0, mois: -3, montant: 100000, mode: "espece" },
-    { idx: 1, mois: -2, montant: 100000, mode: "mobile_money" },
-    { idx: 2, mois: -1, montant: 100000, mode: "virement" },
-    { idx: 3, mois: 0, montant: 40000, mode: "espece" },
-    { idx: 8, mois: -1, montant: 75000, mode: "cheque" },
+    { idx: 0, mois: -3, montant: 10000000, mode: "espece" },
+    { idx: 1, mois: -2, montant: 10000000, mode: "mobile_money" },
+    { idx: 2, mois: -1, montant: 10000000, mode: "virement" },
+    { idx: 3, mois: 0, montant: 4000000, mode: "espece" },
+    { idx: 8, mois: -1, montant: 7500000, mode: "cheque" },
   ];
   for (const pp of planPaiements) {
     const e = eleves[pp.idx];
@@ -651,7 +785,7 @@ async function main() {
       ecoleId: ecole.id,
       categorie: "Fournitures bureau",
       description: "Achat papier + cartouches imprimante",
-      montant: 45000,
+      montant: 4500000,
       devise: "XOF",
       dateDepense: new Date("2026-09-12"),
       fournisseur: "Sénégal Boutique",
@@ -811,7 +945,7 @@ async function main() {
   // 26-bis) Notifications ciblées par portail métier — chaque intervenant
   // voit dès l'ouverture ce qui LE concerne.
   const notifsMetiers = [
-    { u: comptesMetiers[0].utilisateur, sujet: "3 échéances en retard à relancer", corps: "Retards de 8 à 26 jours — restant dû cumulé : 90 000 XOF." },
+    { u: comptesMetiers[0].utilisateur, sujet: "3 échéances en retard à relancer", corps: "Retards de 8 à 26 jours — restant dû cumulé : 900 000 XOF." },
     { u: comptesMetiers[1].utilisateur, sujet: "1 demande de congé en attente", corps: "Ousmane Diallo — congés annuels du 21/12 au 04/01, à valider." },
     { u: comptesMetiers[3].utilisateur, sujet: "Appel non fait — CM2-A", corps: "2 séances planifiées ce matin, aucun pointage relevé. Relancer le titulaire." },
     { u: comptesMetiers[4].utilisateur, sujet: "2 candidatures à instruire", corps: "Dossiers complets reçus cette semaine — planifier les tests d'admission." },
@@ -866,7 +1000,7 @@ async function main() {
       quantite: 250,
       seuilAlerte: 50,
       unite: "pièce",
-      prixUnitaire: 750,
+      prixUnitaire: 75000,
     },
   });
   await db.mouvementStock.create({
@@ -893,7 +1027,7 @@ async function main() {
       eleveId: eleves[3].eleve.id,
       classeId: eleves[3].classe.id,
       ligneId: ligne.id,
-      tarif: 15000,
+      tarif: 1500000,
       actif: true,
     },
   });
@@ -1063,7 +1197,7 @@ async function main() {
   // 35) Audit logs
   await db.auditLog.createMany({
     data: [
-      { ecoleId: ecole.id, utilisateurId: dirUtilisateur.id, action: "paiement.encaissement", cibleType: "paiement", details: JSON.stringify({ montant: 100000, eleveId: eleves[0].eleve.id }), dateAction: new Date() },
+      { ecoleId: ecole.id, utilisateurId: dirUtilisateur.id, action: "paiement.encaissement", cibleType: "paiement", details: JSON.stringify({ montantCentimes: 10000000, eleveId: eleves[0].eleve.id }), dateAction: new Date() },
       { ecoleId: ecole.id, utilisateurId: enseignants[0].utilisateur.id, action: "note.saisie", cibleType: "evaluation", details: JSON.stringify({ evaluationId: eval1.id, classeId: classe6A.id }), dateAction: new Date() },
       { ecoleId: ecole.id, utilisateurId: dirUtilisateur.id, action: "eleve.inscription", cibleType: "eleve", details: JSON.stringify({ eleveId: eleves[4].eleve.id, classeId: classe6A.id }), dateAction: new Date() },
       { ecoleId: ecole.id, utilisateurId: dirUtilisateur.id, action: "support.connexion_en_tant_que", cibleType: "ecole", details: JSON.stringify({ motif: "Vérification paramètres" }), dateAction: new Date() },
@@ -1148,12 +1282,12 @@ async function main() {
       ecoleId: ecole.id,
       personnelId: enseignants[0].personnel.id,
       periode: "2026-08",
-      salaireBrut: 280000,
-      salaireNet: 210000,
-      cotisationsTotales: 70000,
+      salaireBrut: 28000000,
+      salaireNet: 21000000,
+      cotisationsTotales: 7000000,
       retenuesTotales: 0,
-      primesTotales: 25000,
-      netAPayer: 235000,
+      primesTotales: 2500000,
+      netAPayer: 23500000,
       devise: "XOF",
       statut: "valide",
       dateValidation: new Date(),
@@ -1162,17 +1296,17 @@ async function main() {
   });
   await db.ligneBulletinPaie.createMany({
     data: [
-      { bulletinId: bulletinPaie1.id, type: "salaire_base", libelle: "Salaire de base (35h)", montant: 250000, sens: "plus" },
-      { bulletinId: bulletinPaie1.id, type: "prime", libelle: "Prime d'ancienneté", montant: 15000, sens: "plus" },
-      { bulletinId: bulletinPaie1.id, type: "indemnite", libelle: "Indemnité de transport", montant: 10000, sens: "plus" },
-      { bulletinId: bulletinPaie1.id, type: "heures_sup", libelle: "Heures supplémentaires (4h à 125%)", montant: 5000, sens: "plus", quantite: 4, taux: 1250 },
+      { bulletinId: bulletinPaie1.id, type: "salaire_base", libelle: "Salaire de base (35h)", montant: 25000000, sens: "plus" },
+      { bulletinId: bulletinPaie1.id, type: "prime", libelle: "Prime d'ancienneté", montant: 1500000, sens: "plus" },
+      { bulletinId: bulletinPaie1.id, type: "indemnite", libelle: "Indemnité de transport", montant: 1000000, sens: "plus" },
+      { bulletinId: bulletinPaie1.id, type: "heures_sup", libelle: "Heures supplémentaires (4h à 125%)", montant: 500000, sens: "plus", quantite: 4, taux: 125000 },
     ],
   });
   await db.cotisationSociale.create({
-    data: { bulletinId: bulletinPaie1.id, libelle: "IPM ( retraite)", assiette: 280000, tauxEmployeur: 0.084, tauxSalarie: 0.0524, partEmployeur: 23520, partSalarie: 14672 },
+    data: { bulletinId: bulletinPaie1.id, libelle: "IPM ( retraite)", assiette: 28000000, tauxEmployeur: 0.084, tauxSalarie: 0.0524, partEmployeur: 2352000, partSalarie: 1467200 },
   });
   await db.variablePaie.create({
-    data: { ecoleId: ecole.id, personnelId: enseignants[0].personnel.id, periode: "2026-08", type: "prime", libelle: "Prime de rendement", montant: 10000, attribueParId: dirUtilisateur.id },
+    data: { ecoleId: ecole.id, personnelId: enseignants[0].personnel.id, periode: "2026-08", type: "prime", libelle: "Prime de rendement", montant: 1000000, attribueParId: dirUtilisateur.id },
   });
 
   // POINT 5 — Recrutement
@@ -1304,27 +1438,27 @@ async function main() {
   });
   await db.ligneBudget.createMany({
     data: [
-      { budgetId: budget2026.id, categorie: "recettes", sousCategorie: "frais_scolarite", libelle: "Frais de scolarité", montantPrevu: 5000000, montantRealise: 1500000, devise: "XOF" },
-      { budgetId: budget2026.id, categorie: "recettes", sousCategorie: "subventions", libelle: "Subvention État", montantPrevu: 800000, montantRealise: 400000, devise: "XOF" },
-      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "salaries", libelle: "Salaires & charges", montantPrevu: 3500000, montantRealise: 875000, devise: "XOF" },
-      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "fonctionnement", libelle: "Fonctionnement (eau/électricité/fournitures)", montantPrevu: 600000, montantRealise: 150000, devise: "XOF" },
-      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "equipement", libelle: "Équipements informatiques", montantPrevu: 1200000, montantRealise: 0, devise: "XOF" },
+      { budgetId: budget2026.id, categorie: "recettes", sousCategorie: "frais_scolarite", libelle: "Frais de scolarité", montantPrevu: 500000000, montantRealise: 150000000, devise: "XOF" },
+      { budgetId: budget2026.id, categorie: "recettes", sousCategorie: "subventions", libelle: "Subvention État", montantPrevu: 80000000, montantRealise: 40000000, devise: "XOF" },
+      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "salaries", libelle: "Salaires & charges", montantPrevu: 350000000, montantRealise: 87500000, devise: "XOF" },
+      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "fonctionnement", libelle: "Fonctionnement (eau/électricité/fournitures)", montantPrevu: 60000000, montantRealise: 15000000, devise: "XOF" },
+      { budgetId: budget2026.id, categorie: "depenses", sousCategorie: "equipement", libelle: "Équipements informatiques", montantPrevu: 120000000, montantRealise: 0, devise: "XOF" },
     ],
   });
 
   // POINT 16 — Comptabilité générale
-  const compteBanque = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "512", libelle: "Banque", type: "actif", solde: 2500000, devise: "XOF" } });
-  const compteFournisseurs = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "401", libelle: "Fournisseurs", type: "passif", solde: 350000, devise: "XOF" } });
-  const compteClients = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "411", libelle: "Clients (parents)", type: "actif", solde: 850000, devise: "XOF" } });
-  const compteAchats = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "607", libelle: "Achats de marchandises", type: "charge", solde: 420000, devise: "XOF" } });
+  const compteBanque = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "512", libelle: "Banque", type: "actif", solde: 250000000, devise: "XOF" } });
+  const compteFournisseurs = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "401", libelle: "Fournisseurs", type: "passif", solde: 35000000, devise: "XOF" } });
+  const compteClients = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "411", libelle: "Clients (parents)", type: "actif", solde: 85000000, devise: "XOF" } });
+  const compteAchats = await db.compteComptable.create({ data: { ecoleId: ecole.id, numero: "607", libelle: "Achats de marchandises", type: "charge", solde: 42000000, devise: "XOF" } });
   const journalACH = await db.journalComptable.create({ data: { ecoleId: ecole.id, code: "ACH", libelle: "Journal des achats", type: "achat" } });
   const ecriture1 = await db.ecritureComptable.create({
     data: { ecoleId: ecole.id, journalId: journalACH.id, date: new Date("2026-08-05"), numeroPiece: "ACH-2026-001", libelle: "Achat fournitures bureau", statut: "valide", valideParId: dirUtilisateur.id, dateValidation: new Date("2026-08-05") },
   });
   await db.ligneEcriture.createMany({
     data: [
-      { ecritureId: ecriture1.id, compteId: compteAchats.id, libelle: "Fournitures bureau", debit: 150000, credit: 0 },
-      { ecritureId: ecriture1.id, compteId: compteBanque.id, libelle: "Règlement par virement", debit: 0, credit: 150000 },
+      { ecritureId: ecriture1.id, compteId: compteAchats.id, libelle: "Fournitures bureau", debit: 15000000, credit: 0 },
+      { ecritureId: ecriture1.id, compteId: compteBanque.id, libelle: "Règlement par virement", debit: 0, credit: 15000000 },
     ],
   });
 
@@ -1333,26 +1467,26 @@ async function main() {
     data: { ecoleId: ecole.id, nom: "ScolairePro SARL", type: "fournisseur_prestataire", contact: "M. Fall", email: "contact@scolairepro.sn", telephone: "+221 33 860 00 00", adresse: "Médina, Dakar", rib: "SN12 010 010 010123456789 00", siret: "SN123456789", statut: "actif" },
   });
   const commande1 = await db.commandeFournisseur.create({
-    data: { ecoleId: ecole.id, fournisseurId: fournisseur1.id, numero: "CMD-2026-001", dateCommande: new Date("2026-08-01"), dateLivraisonPrevue: new Date("2026-08-15"), montantTotal: 240000, devise: "XOF", statut: "recue_partielle", valideeParId: dirUtilisateur.id },
+    data: { ecoleId: ecole.id, fournisseurId: fournisseur1.id, numero: "CMD-2026-001", dateCommande: new Date("2026-08-01"), dateLivraisonPrevue: new Date("2026-08-15"), montantTotal: 24000000, devise: "XOF", statut: "recue_partielle", valideeParId: dirUtilisateur.id },
   });
   await db.ligneCommande.createMany({
     data: [
-      { commandeId: commande1.id, designation: "Cahiers 200 pages (x100)", quantite: 100, unite: "unite", prixUnitaire: 800, montantLigne: 80000, recu: true },
-      { commandeId: commande1.id, designation: "Stylos bille bleus (x500)", quantite: 500, unite: "unite", prixUnitaire: 100, montantLigne: 50000, recu: true },
-      { commandeId: commande1.id, designation: "Calculatrices scientifiques (x20)", quantite: 20, unite: "unite", prixUnitaire: 5500, montantLigne: 110000, recu: false },
+      { commandeId: commande1.id, designation: "Cahiers 200 pages (x100)", quantite: 100, unite: "unite", prixUnitaire: 80000, montantLigne: 8000000, recu: true },
+      { commandeId: commande1.id, designation: "Stylos bille bleus (x500)", quantite: 500, unite: "unite", prixUnitaire: 10000, montantLigne: 5000000, recu: true },
+      { commandeId: commande1.id, designation: "Calculatrices scientifiques (x20)", quantite: 20, unite: "unite", prixUnitaire: 550000, montantLigne: 11000000, recu: false },
     ],
   });
   await db.receptionCommande.create({ data: { commandeId: commande1.id, dateReception: new Date("2026-08-12"), quantiteRecue: 130, bonLivraisonUrl: "/uploads/bl-001.pdf", controleQualite: true, commentaire: "Cahiers et stylos reçus conformes.", receptionneParId: dirUtilisateur.id } });
 
   // POINT 18 — Factures & paiements fournisseurs
   const factureFourn1 = await db.factureFournisseur.create({
-    data: { ecoleId: ecole.id, fournisseurId: fournisseur1.id, numero: "FAC-F1-2026-008", dateEmission: new Date("2026-08-13"), dateReception: new Date("2026-08-14"), dateEcheance: new Date("2026-09-14"), montantHT: 222000, montantTVA: 18000, montantTTC: 240000, devise: "XOF", statut: "payee", controleeParId: dirUtilisateur.id, dateControle: new Date("2026-08-15"), commandeId: commande1.id },
+    data: { ecoleId: ecole.id, fournisseurId: fournisseur1.id, numero: "FAC-F1-2026-008", dateEmission: new Date("2026-08-13"), dateReception: new Date("2026-08-14"), dateEcheance: new Date("2026-09-14"), montantHT: 22200000, montantTVA: 1800000, montantTTC: 24000000, devise: "XOF", statut: "payee", controleeParId: dirUtilisateur.id, dateControle: new Date("2026-08-15"), commandeId: commande1.id },
   });
-  await db.paiementFournisseur.create({ data: { ecoleId: ecole.id, factureId: factureFourn1.id, datePaiement: new Date("2026-08-20"), montant: 240000, devise: "XOF", mode: "virement", reference: "VIR-2026-042", payeParId: dirUtilisateur.id } });
+  await db.paiementFournisseur.create({ data: { ecoleId: ecole.id, factureId: factureFourn1.id, datePaiement: new Date("2026-08-20"), montant: 24000000, devise: "XOF", mode: "virement", reference: "VIR-2026-042", payeParId: dirUtilisateur.id } });
 
   // POINT 19 — Avoirs école
   await db.avoirEcole.create({
-    data: { ecoleId: ecole.id, numero: "AV-2026-001", dateEmission: new Date("2026-08-25"), montant: 15000, devise: "XOF", motif: "Cahiers défectueux (4 unités)", factureFournisseurId: factureFourn1.id, statut: "emis", emisParId: dirUtilisateur.id },
+    data: { ecoleId: ecole.id, numero: "AV-2026-001", dateEmission: new Date("2026-08-25"), montant: 1500000, devise: "XOF", motif: "Cahiers défectueux (4 unités)", factureFournisseurId: factureFourn1.id, statut: "emis", emisParId: dirUtilisateur.id },
   });
 
   // POINT 20 — Messagerie interne
@@ -1372,12 +1506,11 @@ async function main() {
 
   // POINT 22 — SMS log
   await db.smsLog.create({
-    data: { ecoleId: ecole.id, destinataire: "+221 78 333 44 55", message: "Rappel: réunion parents-profs le 5/9 à 17h. Direction.", provider: "orange_api", providerMessageId: "OMS-2026-123456", statut: "delivre", coutUnitaire: 25, coutTotal: 25, segments: 1, dateEnvoi: new Date("2026-08-25T10:00:00"), dateLivraison: new Date("2026-08-25T10:00:05") },
+    data: { ecoleId: ecole.id, destinataire: "+221 78 333 44 55", message: "Rappel: réunion parents-profs le 5/9 à 17h. Direction.", provider: "orange_api", providerMessageId: "OMS-2026-123456", statut: "delivre", coutUnitaire: 2500, coutTotal: 2500, segments: 1, dateEnvoi: new Date("2026-08-25T10:00:00"), dateLivraison: new Date("2026-08-25T10:00:05") },
   });
 
-  // POINT 23 — Push notifications & devices
-  const device1 = await db.deviceMobile.create({ data: { utilisateurId: dirUtilisateur.id, plateforme: "pwa", deviceToken: "device-token-demo-1", deviceModel: "Pixel 7", osVersion: "Android 14", appVersion: "1.0.0", langue: "fr", actif: true, derniereActivite: new Date() } });
-  const pushToken1 = await db.pushToken.create({ data: { utilisateurId: dirUtilisateur.id, token: "fcm-token-demo-1", provider: "fcm", deviceId: device1.id, actif: true } });
+  // POINT 23 — Push notifications (F20 : un SEUL modèle de token enrichi)
+  const pushToken1 = await db.pushToken.create({ data: { utilisateurId: dirUtilisateur.id, token: "fcm-token-demo-1", provider: "fcm", plateforme: "pwa", deviceModel: "Pixel 7", osVersion: "Android 14", appVersion: "1.0.0", langue: "fr", actif: true, derniereActivite: new Date() } });
   await db.pushNotificationLog.create({ data: { ecoleId: ecole.id, pushTokenId: pushToken1.id, titre: "Bulletins publiés", corps: "Les bulletins T1 sont disponibles sur le portail parent.", statut: "delivre", providerMessageId: "fcm-msg-1", dateEnvoi: new Date("2026-08-25T10:00:00"), dateLivraison: new Date("2026-08-25T10:00:02") } });
 
   // POINT 24 — Sessions actives
@@ -1385,11 +1518,17 @@ async function main() {
     data: { utilisateurId: dirUtilisateur.id, tokenHash: "hash-demo-token-1", fingerprint: "fp-1", adresseIp: "192.168.1.42", userAgent: "Mozilla/5.0 (Macintosh) Chrome/127.0", deviceType: "desktop", localisation: "Dakar, Sénégal", dateDerniereActivite: new Date(), dateExpiration: new Date(Date.now() + 7 * 24 * 3600 * 1000), active: true },
   });
 
-  // POINT 25 — 2FA complet
-  await db.twoFactorMethod.create({ data: { utilisateurId: dirUtilisateur.id, methode: "totp", secret: "JBSWY3DPEHPK3PXP", actif: true, dateActivation: new Date("2026-08-01") } });
+  // POINT 25 — 2FA RÉELLE (F10) : TOTP vérifié à la connexion pour la
+  // direction. Secret de démo FIXE (documenté) + codes de secours réellement
+  // hashés (sha256), affichés une seule fois en fin de seed.
+  const SECRET_TOTP_DEMO = process.env.SG_TOTP_SECRET_DEMO || "JBSWY3DPEHPK3PXP";
+  await db.twoFactorMethod.create({ data: { utilisateurId: dirUtilisateur.id, methode: "totp", secret: SECRET_TOTP_DEMO, actif: true, dateActivation: new Date("2026-08-01") } });
+  const codesSecoursDemo = genererCodesSecours();
   await db.twoFactorBackupCode.createMany({
-    data: Array.from({ length: 10 }).map((_, i) => ({
-      utilisateurId: dirUtilisateur.id, codeHash: `hash-backup-code-${i + 1}`, dateGeneration: new Date(),
+    data: codesSecoursDemo.map((c) => ({
+      utilisateurId: dirUtilisateur.id,
+      codeHash: createHash("sha256").update(c).digest("hex"),
+      dateGeneration: new Date(),
     })),
   });
 
@@ -1397,6 +1536,10 @@ async function main() {
   await db.jetonAuth.create({ data: { email: "editeur@platforme.com", type: "reset_password", tokenHash: "hash-jeton-reset-1", expireLe: new Date(Date.now() + 3600 * 1000), dateCreation: new Date() } }).catch(() => {});
   await db.jetonAuth.create({ data: { email: dirUtilisateur.email, type: "reset_password", tokenHash: "hash-jeton-reset-demo", expireLe: new Date(Date.now() + 3600 * 1000), dateCreation: new Date() } }).catch(() => {});
   await db.jetonAuth.create({ data: { email: dirUtilisateur.email, type: "verify_email", tokenHash: "hash-jeton-verify-demo", expireLe: new Date(Date.now() + 7 * 24 * 3600 * 1000), dateCreation: new Date(), utilise: true, dateUtilisation: new Date() } }).catch(() => {});
+  // C4 — le rôle Comptabilité exige la 2FA : méthode TOTP active seedée
+  // (même secret de démo documenté — npx tsx scripts/totp-code.ts)
+  await db.twoFactorMethod.create({ data: { utilisateurId: comptesMetiers[0].utilisateur.id, methode: "totp", secret: SECRET_TOTP_DEMO, actif: true, dateActivation: new Date() } });
+  await db.utilisateur.update({ where: { id: comptesMetiers[0].utilisateur.id }, data: { twofaActive: true } });
   await db.tentativeConnexion.create({ data: { email: dirUtilisateur.email, adresseIp: "192.168.1.42", userAgent: "Chrome/127", succes: true, date: new Date() } });
   await db.tentativeConnexion.create({ data: { email: "inconnu@example.com", adresseIp: "10.0.0.5", userAgent: "Mozilla", succes: false, motifEchec: "utilisateur_inexistant", date: new Date() } });
 
@@ -1442,7 +1585,7 @@ async function main() {
     data: { ecoleId: ecole.id, domaine: "ecole.vinci.sn", verifie: true, enAttente: false, enregistrementCname: "vinci.platforme.com.", certificatSSL: "letsencrypt", certificatExpireLe: new Date("2026-11-20"), dateAjout: new Date("2026-08-01"), dateVerification: new Date("2026-08-01") },
   });
   await db.themeEcole.create({
-    data: { ecoleId: ecole.id, couleurPrimaire: "#1e3a8a", couleurSecondaire: "#0ea5e9", couleurAccent: "#f59e0b", couleurFond: "#f8fafc", policeFamille: "Inter", nomProduit: "VinciGestion" },
+    data: { ecoleId: ecole.id, couleurPrimaire: "#059669", couleurSecondaire: "#0ea5e9", couleurAccent: "#f59e0b", couleurFond: "#f8fafc", policeFamille: "Inter", nomProduit: "ScolaGestion" },
   });
 
   // POINT 34 — Feature flags, quotas, Stripe webhook events, avoirs SaaS
@@ -1454,10 +1597,10 @@ async function main() {
     { ecoleId: ecole.id, periode: "2026-08", ressource: "storage_go", consommation: 2, limite: 10, pourcentage: 20 },
   ] });
   await db.stripeEvent.create({
-    data: { eventIdStripe: "evt_2026_demo_001", type: "invoice.payment_succeeded", donnees: JSON.stringify({ invoiceId: "in_demo123", amountPaid: 65000 }), traite: true, dateReception: new Date("2026-08-05"), dateTraitement: new Date("2026-08-05") },
+    data: { eventIdStripe: "evt_2026_demo_001", type: "invoice.payment_succeeded", donnees: JSON.stringify({ invoiceId: "in_demo123", amountPaidCentimes: 6500000 }), traite: true, dateReception: new Date("2026-08-05"), dateTraitement: new Date("2026-08-05") },
   });
   await db.avoirSaas.create({
-    data: { ecoleId: ecole.id, numero: "AV-SAAS-2026-001", dateEmission: new Date("2026-08-15"), montant: 5000, devise: "XOF", motif: "Erreur de facturation — prorata jours de suspension", statut: "emis" },
+    data: { ecoleId: ecole.id, numero: "AV-SAAS-2026-001", dateEmission: new Date("2026-08-15"), montant: 500000, devise: "XOF", motif: "Erreur de facturation — prorata jours de suspension", statut: "emis" },
   });
 
   // POINT 35 — Plans PPS / PAP / PAI / PAPSI
@@ -1512,6 +1655,7 @@ async function main() {
     { code: "notes.saisir", libelle: "Saisir les notes", module: "pedagogie" },
     { code: "bulletins.valider", libelle: "Valider les bulletins", module: "pedagogie" },
     { code: "finances.voir", libelle: "Consulter la trésorerie", module: "finances" },
+    { code: "finances.ecrire", libelle: "Opérations financières (encaissements, frais, annulations)", module: "finances" },
     { code: "finances.valider", libelle: "Valider les dépenses", module: "finances" },
     { code: "presences.saisir", libelle: "Faire l'appel", module: "presences" },
     { code: "rh.gerer", libelle: "Gérer le personnel", module: "rh" },
@@ -1524,6 +1668,7 @@ async function main() {
     { code: "edt.gerer", libelle: "Gérer les emplois du temps", module: "edt" },
     { code: "sante.gerer", libelle: "Gérer la santé et l'infirmerie", module: "sante" },
     { code: "salles.gerer", libelle: "Gérer salles et calendrier", module: "salles" },
+    { code: "protection.gerer", libelle: "Gérer les signalements de protection de l'enfance", module: "protection" },
   ];
   const perms = [] as any[];
   for (const p of permsData) {
@@ -1535,6 +1680,7 @@ async function main() {
     { roleId: roleDirection.id, permissionId: byCode("eleves.ecrire") },
     { roleId: roleDirection.id, permissionId: byCode("bulletins.valider") },
     { roleId: roleDirection.id, permissionId: byCode("finances.voir") },
+    { roleId: roleDirection.id, permissionId: byCode("finances.ecrire") },
     { roleId: roleDirection.id, permissionId: byCode("finances.valider") },
     { roleId: roleDirection.id, permissionId: byCode("rh.gerer") },
     { roleId: roleDirection.id, permissionId: byCode("communication.envoyer") },
@@ -1546,12 +1692,14 @@ async function main() {
     { roleId: roleDirection.id, permissionId: byCode("edt.gerer") },
     { roleId: roleDirection.id, permissionId: byCode("sante.gerer") },
     { roleId: roleDirection.id, permissionId: byCode("salles.gerer") },
+    { roleId: roleDirection.id, permissionId: byCode("protection.gerer") },
     { roleId: roleEnseignant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleEnseignant.id, permissionId: byCode("notes.saisir") },
     { roleId: roleEnseignant.id, permissionId: byCode("presences.saisir") },
     { roleId: roleEnseignant.id, permissionId: byCode("vie_scolaire.gerer") },
     { roleId: roleEnseignant.id, permissionId: byCode("edt.gerer") },
     { roleId: roleComptable.id, permissionId: byCode("finances.voir") },
+    { roleId: roleComptable.id, permissionId: byCode("finances.ecrire") },
     { roleId: roleComptable.id, permissionId: byCode("finances.valider") },
     { roleId: roleSurveillant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSurveillant.id, permissionId: byCode("presences.saisir") },
@@ -1566,6 +1714,7 @@ async function main() {
     { roleId: roleCenseur.id, permissionId: byCode("edt.gerer") },
     { roleId: roleCenseur.id, permissionId: byCode("examens.gerer") },
     { roleId: roleCenseur.id, permissionId: byCode("bulletins.valider") },
+    { roleId: roleCenseur.id, permissionId: byCode("protection.gerer") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.ecrire") },
     { roleId: roleSecretariat.id, permissionId: byCode("communication.envoyer") },
@@ -1795,11 +1944,11 @@ async function main() {
   // P) Inscriptions cantine
   await db.cantineInscription.create({ data: {
     ecoleId: ecole.id, eleveId: eleves[0].eleve.id, classeId: classe6A.id, anneeScolaireId: annee.id,
-    joursSemaine: JSON.stringify([1, 3, 5]), tarifJournalier: 1500, actif: true,
+    joursSemaine: JSON.stringify([1, 3, 5]), tarifJournalier: 150000, actif: true,
   } });
   await db.cantineInscription.create({ data: {
     ecoleId: ecole.id, eleveId: eleves[8].eleve.id, classeId: classe5B.id, anneeScolaireId: annee.id,
-    joursSemaine: JSON.stringify([1, 2, 3, 4, 5]), tarifJournalier: 1200, actif: true,
+    joursSemaine: JSON.stringify([1, 2, 3, 4, 5]), tarifJournalier: 120000, actif: true,
   } });
 
   
@@ -1853,6 +2002,146 @@ async function main() {
     { ecoleId: ecole.id, eleveId: eleves[7].eleve.id, vaccin: "ROR", dateVaccination: new Date("2024-06-15"), dateRappel: new Date("2027-06-15"), statut: "rappel_prevu" },
   ] });
 
+  // W — Configuration de paie par défaut (B1)
+  await db.configurationPaie.create({
+    data: { ecoleId: ecole.id, tauxEmployeur: 0.084, tauxSalarie: 0.0524,
+      primesRecurrentes: JSON.stringify([{ libelle: "Prime de transport", montant: 100000 }]) },
+  });
+
+  // W/D5 — École secondaire de démonstration : la direction de Vinci y a un
+  // accès multi-établissement (bascule via le menu du header).
+  const ecole2 = await db.ecole.create({
+    data: { nom: "Cours Secondaire Étoile", slug: "etoile-demo", pays: "SN", devise: "XOF", fuseauHoraire: "Africa/Dakar", statut: "essai" },
+  });
+  const annee2 = await db.anneeScolaire.create({
+    data: { ecoleId: ecole2.id, libelle: "2026-2027", dateDebut: new Date("2026-09-01"), dateFin: new Date("2027-07-15"), active: true },
+  });
+  await db.periode.create({ data: { ecoleId: ecole2.id, anneeScolaireId: annee2.id, code: "T1", libelle: "Trimestre 1", dateDebut: new Date("2026-09-01"), dateFin: new Date("2026-12-15"), typeBulletin: "college_lycee" } });
+  await db.classe.create({ data: { ecoleId: ecole2.id, niveauId: n6.id, anneeScolaireId: annee2.id, code: "6A-ETO", libelle: "Sixième A (Étoile)", capaciteMax: 30 } });
+  await db.utilisateurEcole.create({
+    data: { utilisateurId: dirUtilisateur.id, ecoleId: ecole2.id, roleLibelle: "Directeur partenaire" },
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // VIE QUOTIDIENNE + ACTIVITÉS (complétions — données de démo)
+  // ══════════════════════════════════════════════════════════════════
+
+  // O1 — Cantine : menus des 3 prochains jours + pointage du jour partiel
+  const aujQ = new Date();
+  const jourUTC = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(auj.getTime() + i * 86400000);
+    await db.cantineMenu.create({
+      data: {
+        ecoleId: ecole.id, date: jourUTC(d),
+        platPrincipal: ["Thiéboudienne", "Yassa poulet", "Couscous légumes"][i],
+        accompagnement: i === 0 ? "Riz blanc" : null,
+        dessert: i === 1 ? "Fruit de saison" : null,
+        allergenes: JSON.stringify(i === 0 ? ["poisson"] : i === 1 ? ["oeuf"] : []),
+      },
+    }).catch(() => {});
+  }
+  const elevesCantineJour = await db.cantineInscription.findMany({ where: { ecoleId: ecole.id, actif: true }, take: 3 });
+  for (const ic of elevesCantineJour) {
+    await db.cantinePresence.create({ data: { ecoleId: ecole.id, eleveId: ic.eleveId, date: jourUTC(aujQ), present: true } }).catch(() => {});
+  }
+
+  // O2 — Transport : feuille de route du jour avec un retard (alerte direction)
+  if (ligne) {
+    const feuilleJour = await db.feuilleRoute.create({
+      data: { ecoleId: ecole.id, ligneId: ligne.id, date: jourUTC(aujQ), statut: "en_cours", retardMin: 18 },
+    }).catch(() => null);
+    if (feuilleJour) {
+      const arrêts = await db.transportArret.findMany({ where: { ligneId: ligne.id }, orderBy: { ordre: "asc" } });
+      for (const [idx, a] of arrêts.entries()) {
+        await db.passageArret.create({
+          data: {
+            feuilleId: feuilleJour.id, arretId: a.id, heurePrevue: a.heure,
+            heureReelle: idx === 0 ? "07:02" : null, // 2 min de retard au 1er arrêt
+            montes: JSON.stringify(idx === 0 ? [eleves[3].eleve.id] : []),
+            descendus: JSON.stringify([]),
+          },
+        });
+      }
+    }
+  }
+
+  // O3 — Pointage du personnel : 3 arrivées dont 1 en retard
+  for (const [i, ens] of [enseignants[0], enseignants[1], enseignants[2]].entries()) {
+    await db.pointagePersonnel.create({
+      data: {
+        ecoleId: ecole.id, personnelId: ens.personnel.id, date: jourUTC(aujQ),
+        heureArrivee: new Date(`${aujQ.toISOString().slice(0, 10)}T0${7 + i}:1${i % 2}:00Z`),
+        retardMin: i === 2 ? 25 : 0,
+      },
+    }).catch(() => {});
+  }
+
+  // M8 — Garderie : 2 inscriptions + 1 session facturée du jour
+  await db.garderieInscription.create({ data: { ecoleId: ecole.id, eleveId: eleves[6].eleve.id, tarifHoraire: 150_000, formule: "horaire" } }).catch(() => {});
+  await db.garderieInscription.create({ data: { ecoleId: ecole.id, eleveId: eleves[7].eleve.id, tarifHoraire: 150_000, formule: "horaire" } }).catch(() => {});
+  await db.garderieSession.create({
+    data: {
+      ecoleId: ecole.id, eleveId: eleves[6].eleve.id, date: jourUTC(aujQ),
+      heureArrivee: new Date(`${aujQ.toISOString().slice(0, 10)}T17:00:00Z`),
+      heureDepart: new Date(`${aujQ.toISOString().slice(0, 10)}T18:30:00Z`),
+      minutesFacturees: 90,
+    },
+  }).catch(() => {});
+  await db.garderieSession.create({
+    data: {
+      ecoleId: ecole.id, eleveId: eleves[7].eleve.id, date: jourUTC(aujQ),
+      heureArrivee: new Date(`${aujQ.toISOString().slice(0, 10)}T17:00:00Z`),
+      minutesFacturees: null,
+    },
+  }).catch(() => {});
+
+  // M7 — Activité : sortie scolaire + voyage avec participants et autorisations
+  const sortieLac = await db.activite.create({
+    data: {
+      ecoleId: ecole.id, type: "sortie", titre: "Sortie pédagogique au Lac Rose",
+      description: "Journée découverte —lac de Retba, sel et écologie", destination: "Lac Rose, Retba",
+      dateDebut: new Date(Date.now() + 21 * 86400000), dateFin: new Date(Date.now() + 21 * 86400000),
+      cout: 350_000, capacite: 30, creeParId: dirUtilisateur.id,
+    },
+  });
+  for (const [i, e] of [eleves[0], eleves[1], eleves[2]].entries()) {
+    await db.activiteParticipant.create({
+      data: {
+        activiteId: sortieLac.id, eleveId: e.eleve.id,
+        statut: i === 0 ? "confirme" : "inscrit",
+        autorisation: i === 0 ? "accordee" : "en_attente",
+        dateAutorisation: i === 0 ? new Date() : null,
+        paiementStatut: i < 2 ? "a_payer" : "non_exigible",
+      },
+    }).catch(() => {});
+  }
+  const voyageSine = await db.activite.create({
+    data: {
+      ecoleId: ecole.id, type: "voyage", titre: "Voyage culturel — Sine-Saloum",
+      destination: "Toubacouta", dateDebut: new Date("2027-04-10"), dateFin: new Date("2027-04-13"),
+      cout: 1250_000, capacite: 20, creeParId: dirUtilisateur.id,
+    },
+  });
+  await db.activiteParticipant.create({ data: { activiteId: voyageSine.id, eleveId: eleves[5].eleve.id, paiementStatut: "a_payer" } }).catch(() => {});
+
+  // M10 — Appréciation par matière sur le bulletin publié de l'élève 0
+  const bulletinPublie = await db.bulletin.findFirst({ where: { eleveId: eleves[0].eleve.id, statut: "publie" } });
+  if (bulletinPublie) {
+    for (const ens of [enseignants[0], enseignants[1]]) {
+      await db.bulletinAppreciation.create({
+        data: { bulletinId: bulletinPublie.id, matiereId: ens.matiere.id, appreciation: "Travail sérieux et régulier, continuez ainsi.", enseignantId: ens.utilisateur.id },
+      }).catch(() => {});
+    }
+  }
+
+  // M15 — Rapprochement : 3 lignes de relevé (2 concordant avec des paiements seedés)
+  await db.ligneReleve.createMany({ data: [
+    { ecoleId: ecole.id, date: new Date(Date.now() - 90 * 86400000), montant: 10_000_000, libelle: "Virement scolarité — guichet 1" },
+    { ecoleId: ecole.id, date: new Date(Date.now() - 60 * 86400000), montant: 10_000_000, libelle: "Virement scolarité — guichet 2" },
+    { ecoleId: ecole.id, date: new Date(Date.now() - 5 * 86400000), montant: 45_000_000, libelle: "Subvention fonctionnement T4" },
+  ] }).catch(() => {});
+
   // Tentatives de connexion d'exemple (panneau sécurité)
   await db.tentativeConnexion.createMany({ data: [
     { email: "direction@vinci.sn", succes: true, date: new Date("2026-09-28T07:55:00") },
@@ -1860,7 +2149,36 @@ async function main() {
     { email: "mamadou.fall@vinci.sn", succes: true, date: new Date("2026-09-28T10:30:00") },
   ] });
 
-console.log("✅ Seed terminé (avec 37 failles corrigées) !");
+// W — Tables d'exécution : exemples réels
+  await db.emailLog.create({
+    data: { ecoleId: ecole.id, destinataire: "famille.diop@example.com", sujet: "Relance échéance", message: "Bonjour, l'échéance de scolarité T1 est attendue.", statut: "en_attente" },
+  });
+  const { mkdirSync, writeFileSync } = await import("fs");
+  const { join } = await import("path");
+  const dossierStockage = join(process.cwd(), "stockage", ecole.id);
+  mkdirSync(dossierStockage, { recursive: true });
+  writeFileSync(join(dossierStockage, "bienvenue.txt"), "Dossier de bienveillance - Institut Leonard de Vinci. Stockage reel des documents (A3).");
+  await db.stockageFichier.create({
+    data: { ecoleId: ecole.id, nomFichier: "bienvenue.txt", chemin: ecole.id + "/bienvenue.txt", mimeType: "text/plain", tailleOctets: 130, confidentiel: false, cibleType: "eleve", cibleId: eleves[0].eleve.id, uploadeParId: dirUtilisateur.id },
+  });
+  const { creerSauvegarde } = await import("../src/lib/sauvegarde");
+  const sauvegardeFinale = await creerSauvegarde(db, "manuelle", dirUtilisateur.id);
+  console.log("💾 Sauvegarde de fin de seed : " + (sauvegardeFinale.ok ? sauvegardeFinale.nomFichier : "échec (" + sauvegardeFinale.erreur + ")"));
+
+  console.log("✅ Seed terminé (remédiation des 20 failles + angles morts) !");
+  console.log("");
+  console.log("════════════ COMPTE DE DÉMONSTRATION ════════════");
+  console.log("Mot de passe des comptes démo : " + (process.env.SG_MDP_DEMO ? "(SG_MDP_DEMO définie)" : MOT_DE_PASSE_DEMO + "  ⚠ repli dev — définissez SG_MDP_DEMO"));
+  console.log("Comptes : editeur@platforme.com · direction@vinci.sn · comptable@vinci.sn · rh@vinci.sn");
+  console.log("          censeur@vinci.sn · surveillant@vinci.sn · secretariat@vinci.sn · assistant@vinci.sn");
+  console.log("          infirmiere@vinci.sn · mamadou.fall@vinci.sn · parent.diop@gmail.com · eleve.diop@vinci.sn");
+  console.log("");
+  console.log("════════════ 2FA (direction@vinci.sn et comptable@vinci.sn — rôles exigeant la 2FA) ════════════");
+  console.log("Secret TOTP (appli d'authentification) : " + SECRET_TOTP_DEMO);
+  console.log("Code du moment : npx tsx scripts/totp-code.ts");
+  console.log("Codes de secours (usage unique) :");
+  codesSecoursDemo.forEach((c) => console.log("   " + c));
+  console.log("═════════════════════════════════════════════════");
 }
 
 main().catch((e) => {
