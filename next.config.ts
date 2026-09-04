@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
 // F15 — en-têtes de sécurité appliqués à toutes les réponses.
-// CSP pragmatique : pas de sources externes autorisées pour les scripts
-// (l'app n'en charge aucune), styles inline autorisés (Tailwind/Radix).
 const headersSecurite = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -13,10 +11,15 @@ const headersSecurite = [
   { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
 ];
 
+// Vercel détecte automatiquement Next.js : PAS de standalone (il a son
+// propre runtime). Standalone = auto-hébergement (VPS, Docker, systemd).
+const isVercel = process.env.VERCEL === "1";
+
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Conditional : standalone UNIQUEMENT hors Vercel
+  ...(isVercel ? {} : { output: "standalone" as const }),
   reactStrictMode: true,
-  poweredByHeader: false, // F15 — ne pas révéler la stack
+  poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: headersSecurite }];
   },

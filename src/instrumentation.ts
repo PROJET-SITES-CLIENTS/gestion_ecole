@@ -1,11 +1,17 @@
 // ====================================================================
-// INSTRUMENTATION NEXT — démarrage du processus serveur (A1/D3).
-// - Purge des verrous fichier orphelins (crash précédent)
-// - Sauvegarde automatique au démarrage puis quotidienne (24 h)
+// INSTRUMENTATION NEXT — démarrage du processus serveur.
+// - Sur Vercel (serverless) : PAS de sauvegarde auto (Neon gère les
+//   backups nativement via PITR, et le filesystem est éphémère).
+// - Sur VPS/auto-hébergé : sauvegarde au démarrage puis quotidienne.
 // ====================================================================
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+
+  // Vercel = serverless : pas de processus long-lived, pas de filesystem
+  // persistant → les tâches planifiées ne peuvent pas tourner ici.
+  if (process.env.VERCEL === '1') return;
+
   try {
     const { nettoyerVerrousOrphelins } = await import('@/lib/verrou-fichier');
     nettoyerVerrousOrphelins();
@@ -23,7 +29,6 @@ export async function register() {
     }
   };
 
-  // M12/C6 — tâches quotidiennes : relances d'impayés + rappels de vaccination
   const tachesQuotidiennes = async () => {
     try {
       const { PrismaClient } = await import('@prisma/client');
@@ -33,13 +38,12 @@ export async function register() {
       const relances = await relancerImpayesAutoCore().catch(() => ({ notifiés: 0 }));
       const vaccins = await verifierRappelsVaccinationCore().catch(() => ({ notifiés: 0 }));
       if (relances.notifiés || vaccins.notifiés) {
-        console.log(`📋 Tâches quotidiennes : ${relances.notifiés} relance(s) impayés, ${vaccins.notifiés} rappel(s) vaccin`);
+        console.log(`Tâches quotidiennes : ${relances.notifiés} relance(s), ${vaccins.notifiés} rappel(s) vaccin`);
       }
       await db.$disconnect();
     } catch { /* non bloquant */ }
   };
 
-  // Première sauvegarde 1 min après le démarrage, puis toutes les 24 h
   setTimeout(() => {
     void programmerSauvegarde();
     void tachesQuotidiennes();
