@@ -19,3 +19,4 @@ export * from './quotidien';
 export * from './extrascolaire';
 export * from './completions';
 export * from './comptes';
+export * from './initialisation';

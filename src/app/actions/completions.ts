@@ -26,6 +26,7 @@ import {
   importerEdtCsvCore, genererPvConseilCore, convoquerConseilCore,
   importerReleveCsvCore, rapprocherAutoCore, exportComptableCsvCore, exporterVirementsPaieCore,
   abonnerPushCore, creerCandidaturePubliqueCore,
+  initialiserEcoleCore,
 } from '@/lib/business';
 
 type Ok = { ok: true; [k: string]: unknown };
@@ -544,5 +545,38 @@ export async function listerDemandesCompte(): Promise<ActionResult> {
       take: 50,
     });
     return { ok: true, demandes };
+  } catch (e) { return echec(e); }
+}
+
+// --------------------------------------------------------------------
+// PREMIÈRE INSTALLATION — le directeur crée son école + son compte
+// administrateur ACTIF immédiatement (connecté directement après).
+// --------------------------------------------------------------------
+
+export async function initialiserEcole(formData: FormData): Promise<ActionResult> {
+  try {
+    const d = z.object({
+      nomEcole: strReq, adminNom: strReq, adminPrenom: strReq,
+      email: z.string().email(),
+      motDePasse: z.string().min(8, '8 caractères minimum'),
+      pieger: str, // honeypot anti-bot
+    }).parse(Object.fromEntries(formData));
+    if (d.pieger) return { ok: false, error: 'Rejeté.' };
+    let userAgent: string | undefined;
+    let ip: string | undefined;
+    try {
+      const h = await headers();
+      userAgent = h.get('user-agent') ?? undefined;
+      ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined;
+    } catch { /* hors requête */ }
+    const r = await initialiserEcoleCore({
+      nomEcole: d.nomEcole, adminNom: d.adminNom, adminPrenom: d.adminPrenom,
+      adminEmail: d.email, adminMotDePasse: d.motDePasse,
+    });
+    // ⬅️ Connexion IMMÉDIATE : session créée pour l'administrateur
+    const { creerSession } = await import('@/lib/auth');
+    await creerSession(r.adminId, userAgent, ip);
+    await db.utilisateur.update({ where: { id: r.adminId }, data: { derniereConnexion: new Date() } });
+    return { ok: true, slug: r.slug, ecoleId: r.ecoleId };
   } catch (e) { return echec(e); }
 }

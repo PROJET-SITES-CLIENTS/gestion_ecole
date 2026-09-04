@@ -331,7 +331,7 @@ export default function LoginPage() {
                   Session sécurisée 8 h · verrouillage automatique après 5 tentatives échouées · protection 2FA
               <div className="text-center pt-1">
                 <a href="/inscription" className="text-sm text-emerald-600 hover:underline font-medium">
-                  Pas encore de compte ? Demander un accès →
+                  Pas encore de compte ? S&apos;inscrire / créer votre école →
                 </a>
               </div>
                 </p>
