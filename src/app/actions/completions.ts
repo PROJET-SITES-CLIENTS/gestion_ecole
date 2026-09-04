@@ -477,3 +477,72 @@ export async function envoyerCandidaturePublique(formData: FormData): Promise<Ac
     return { ok: true, candidatureId: r.candidatureId };
   } catch (e) { return echec(e); }
 }
+
+// ====================================================================
+// GESTION DES COMPTES — inscription publique + validation + création
+// ====================================================================
+
+export async function demanderComptePublic(formData: FormData): Promise<ActionResult> {
+  try {
+    const d = z.object({
+      ecoleSlug: strReq, nom: strReq, prenom: strReq, email: z.string().email(),
+      motDePasse: z.string().min(8, '8 caractères minimum'),
+      type: z.enum(['personnel', 'parent', 'eleve']),
+      roleDemande: str, motivation: str, telephone: str, pieger: str,
+    }).parse(Object.fromEntries(formData));
+    if (d.pieger) return { ok: false, error: 'Rejeté.' };
+    let ip: string | undefined;
+    try {
+      const h = await headers();
+      ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined;
+    } catch { /* hors requête */ }
+    const r = await (await import('@/lib/business')).demanderCompteCore({ ...d, ip });
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function traiterDemandeCompte(demandeId: string, decision: 'approuve' | 'refuse', motifRefus?: string, roleADonner?: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await (await import('@/lib/business')).traiterDemandeCompteCore(ctx, demandeId, decision, motifRefus, roleADonner);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function creerCompteEleve(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({ eleveId: idReq, email: z.string().email(), motDePasse: z.string().min(8) }).parse(Object.fromEntries(formData));
+    const r = await (await import('@/lib/business')).creerCompteEleveCore(ctx, d.eleveId, d.email, d.motDePasse);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function creerCompteParent(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({ parentId: idReq, email: z.string().email(), motDePasse: z.string().min(8) }).parse(Object.fromEntries(formData));
+    const r = await (await import('@/lib/business')).creerCompteParentCore(ctx, d.parentId, d.email, d.motDePasse);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function listerDemandesCompte(): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    if (!ctx.permissions.has('securite.gerer') && ctx.type !== 'super_admin') {
+      return { ok: false, error: 'Réservé à la direction.' };
+    }
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const demandes = await db.demandeCompte.findMany({
+      where: { ecoleId, statut: 'en_attente' },
+      include: { utilisateur: { select: { id: true, email: true, nom: true, prenom: true, telephone: true } } },
+      orderBy: { dateDemande: 'desc' },
+      take: 50,
+    });
+    return { ok: true, demandes };
+  } catch (e) { return echec(e); }
+}

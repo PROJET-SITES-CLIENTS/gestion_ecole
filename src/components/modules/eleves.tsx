@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { useState } from 'react';
-import { Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2 } from 'lucide-react';
+import { KeyRound, Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2 } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, InfoRow, EmptyState, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime, initiales } from '@/lib/format';
+import * as ext from '@/app/actions/completions';
 
 export default function ElevesModule({ initialData }: { initialData: any }) {
   const eleves = initialData.eleves ?? [];
@@ -559,7 +560,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   fields={[
                     { name: 'eleveId', type: 'hidden', label: 'Élève', defaultValue: eleve.id },
                     { name: 'motif', label: 'Motif', type: 'select', required: true, options: [
-                      { value: 'droit_effacement', label: 'Droit à l\'effacement (art. 17)' },
+                      { value: 'droit_effacement', label: "Droit à l'effacement (art. 17)" },
                       { value: 'obligation_legale', label: 'Obligation légale' },
                       { value: 'demande_sujet', label: 'Demande du sujet (parent pour mineur)' },
                     ] },
@@ -568,6 +569,21 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   defaultValues={{ eleveId: eleve.id }}
                   action={actions.demanderEffacement}
                 />
+
+              {!eleve.utilisateurId ? (
+                <ModalForm
+                  title={`Créer le compte portail — ${eleve.prenom} ${eleve.nom}`}
+                  trigger={<Button variant="outline" size="sm"><KeyRound className="h-4 w-4 mr-1" /> Créer le compte élève</Button>}
+                  fields={[
+                    { name: 'eleveId', label: 'Élève', type: 'hidden', defaultValue: eleve.id },
+                    { name: 'email', label: "Email de l'élève", type: 'email', required: true },
+                    { name: 'motDePasse', label: 'Mot de passe initial (min 8)', type: 'password', required: true },
+                  ]}
+                  action={ext.creerCompteEleve}
+                />
+              ) : (
+                <span className="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">Compte portail actif</span>
+              )}
               </div>
               <div className="mt-3">{rgpdFb.Message}</div>
             </SectionBlock>

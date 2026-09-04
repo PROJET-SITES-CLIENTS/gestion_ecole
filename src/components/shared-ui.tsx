@@ -151,7 +151,7 @@ export function FormField({ label, children, required, hidden }: { label: string
 type FieldDef = {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'month' | 'select' | 'textarea' | 'checkbox' | 'hidden';
+  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'month' | 'select' | 'textarea' | 'checkbox' | 'hidden' | 'email' | 'password';
   options?: { value: string; label: string }[];
   required?: boolean;
   placeholder?: string;

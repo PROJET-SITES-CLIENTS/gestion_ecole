@@ -126,6 +126,7 @@ model Ecole {
   garderieInscriptions       GarderieInscription[]
   garderieSessions           GarderieSession[]
   lignesReleve               LigneReleve[]
+  demandesCompte             DemandeCompte[]
 }
 
 model PlanTarifaire {
@@ -337,7 +338,8 @@ model Utilisateur {
   mouvementsStockEffectues  MouvementStock[]      @relation("MouvementStockEffectuePar")
   amenagementsValides       Amenagement[]         @relation("AmenagementValidePar")
   depensesCreees            Depense[]             @relation("DepenseCreePar")
-  accesEcoles               UtilisateurEcole[]    @relation("UtilisateurEcoleUser")
+  accesEcoles               UtilisateurEcole[]    @relation("UtilisateurEcoleUser") // D5
+  demandeCompte             DemandeCompte?        @relation("DemandeCompteUser")
 
   @@unique([ecoleId, email])
 }
@@ -3340,4 +3342,28 @@ model LigneReleve {
   paiement   Paiement? @relation(fields: [paiementId], references: [id], onDelete: SetNull)
 
   @@index([ecoleId, date])
+}
+
+// ====================================================================
+// GESTION DES COMPTES — inscription publique + validation direction
+// ====================================================================
+
+// Demande d'inscription (formulaire public → file d'attente direction)
+model DemandeCompte {
+  id            String      @id @default(cuid())
+  ecoleId       String
+  ecole         Ecole       @relation(fields: [ecoleId], references: [id])
+  utilisateurId String      @unique // le compte créé (actif=false en attendant)
+  utilisateur   Utilisateur @relation("DemandeCompteUser", fields: [utilisateurId], references: [id], onDelete: Cascade)
+  type          String // personnel / parent / eleve
+  roleDemande   String? // enseignant / comptable / infirmier… (si personnel)
+  motivation    String? // pourquoi cet accès
+  statut        String      @default("en_attente") // en_attente / approuve / refuse
+  dateDemande   DateTime    @default(now())
+  dateDecision  DateTime?
+  traiteParId   String?
+  motifRefus    String?
+  sourceIp      String? // throttle anti-abus
+
+  @@index([ecoleId, statut])
 }

@@ -18,3 +18,4 @@ export * from './pedagogie2';
 export * from './quotidien';
 export * from './extrascolaire';
 export * from './completions';
+export * from './comptes';

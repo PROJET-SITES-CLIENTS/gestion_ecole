@@ -581,6 +581,15 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   if (portal === 'direction' || portal === 'super_admin') {
     promises.push((async () => {
+      v.demandesCompte = await db.demandeCompte.findMany({
+        where: { ecoleId, statut: 'en_attente' },
+        include: { utilisateur: { select: { id: true, email: true, nom: true, prenom: true, telephone: true, type: true } } },
+        orderBy: { dateDemande: 'desc' }, take: 50,
+      });
+    })());
+  }
+  if (portal === 'direction' || portal === 'super_admin') {
+    promises.push((async () => {
       const { analyticsFinancieresCore, analyticsPedagogiquesCore } = await import('../business/extrascolaire');
       const ctx = { utilisateurId: session.utilisateur.id, ecoleId, type: session.utilisateur.type, permissions: session.permissions };
       try { v.analyticsFinancieres = await analyticsFinancieresCore(ctx as any, ecoleId); } catch { /* permission super_admin */ }
@@ -693,6 +702,7 @@ function vide(): Record<string, unknown> & { totaux: Record<string, number> } {
     garderieInscriptions: [], garderieSessions: [], activites: [],
     pointagesJour: [], lignesReleve: [],
     analyticsFinancieres: null, analyticsPedagogiques: null,
+    demandesCompte: [],
     ecoles: [], plans: [], facturesSaas: [], totalElevesGeres: 0,
     avoirsSaas: [],
   };

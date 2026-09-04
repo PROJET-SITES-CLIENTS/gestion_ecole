@@ -13,6 +13,7 @@
 // ====================================================================
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
+  const router = useRouter();
 import { Shield, UserCheck, LogOut, AlertTriangle, KeyRound, Smartphone, DatabaseBackup, HardDriveDownload, Building2 } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import * as actions from '@/app/actions';
 import * as ext from '@/app/actions/extensions';
 import { formatDate, formatDateTime } from '@/lib/format';
+import { useRouter } from 'next/navigation';
+import * as extC from '@/app/actions/completions';
 
 /** Formate une taille d'octets en Ko/Mo lisible. */
 function formatTaille(octets: number): string {
@@ -459,8 +462,11 @@ function SectionMultiEcoles({ portal, ecoles, utilisateurs, ecoleActiveId }: {
 export default function SecuriteModule({ initialData }: { initialData: any }) {
   const portal: string | undefined = initialData?.session?.portal;
   const directionOuPlus = portal === 'super_admin' || portal === 'direction';
+  const retour = useActionFeedback();
+  const router = useRouter();
 
   const visiteurs = initialData.visiteurs ?? [];
+  const demandesCompte = initialData.demandesCompte ?? [];
   const autorisations = initialData.autorisationsSortie ?? [];
   const sorties = initialData.sortiesAnticipees ?? [];
   const eleves = initialData.eleves ?? [];
@@ -614,6 +620,52 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
         />
       </SectionBlock>
 
+
+            {/* ═══ DEMANDES D'ACCÈS EN ATTENTE ═══ */}
+      <SectionBlock
+        title="Demandes d'accès en attente"
+        description={`${demandesCompte.length} demande(s) — approuvez pour activer le compte, refusez pour la rejeter`}
+      >
+        {demandesCompte.length === 0 ? (
+          <div className="text-center py-6 text-sm text-gray-500 border border-dashed rounded-lg bg-gray-50">
+            Aucune demande en attente — les inscriptions publiques arrivent ici
+          </div>
+        ) : (
+          <DataTable
+            columns={[
+              { key: 'nom', label: 'Demandeur', render: (d: any) => (
+                <div>
+                  <div className="font-medium">{d.utilisateur?.prenom} {d.utilisateur?.nom}</div>
+                  <div className="text-xs text-gray-500">{d.utilisateur?.email}</div>
+                </div>
+              ) },
+              { key: 'type', label: 'Type', render: (d: any) => (
+                <span className={`text-xs px-2 py-1 rounded ${d.type === 'parent' ? 'bg-blue-100 text-blue-700' : d.type === 'eleve' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>
+                  {d.type === 'parent' ? 'Parent' : d.type === 'eleve' ? 'Élève' : 'Personnel'}
+                </span>
+              ) },
+              { key: 'role', label: 'Rôle souhaité', render: (d: any) => d.roleDemande ?? '—' },
+              { key: 'motivation', label: 'Motivation', render: (d: any) => (d.motivation ?? '—').slice(0, 60) },
+              { key: 'date', label: 'Date', render: (d: any) => new Date(d.dateDemande).toLocaleDateString('fr-FR') },
+              { key: 'actions', label: 'Actions', render: (d: any) => (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => { if (confirm(`Approuver ${d.utilisateur?.prenom} ${d.utilisateur?.nom} ?`)) { retour.run(async () => extC.traiterDemandeCompte(d.id, 'approuve'), 'Compte approuvé'); } }}
+                    className="text-xs px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                    disabled={retour.pending}
+                  >✓ Approuver</button>
+                  <button
+                    onClick={() => { const motif = prompt('Motif du refus (optionnel) :') ?? ''; retour.run(async () => extC.traiterDemandeCompte(d.id, 'refuse', motif || undefined), 'Demande refusée'); }}
+                    className="text-xs px-2 py-1 rounded bg-rose-600 text-white hover:bg-rose-700"
+                    disabled={retour.pending}
+                  >✗ Refuser</button>
+                </div>
+              ) },
+            ]}
+            rows={demandesCompte}
+          />
+        )}
+      </SectionBlock>
 
       <SectionBlock
         title="Sessions & journal des connexions"
