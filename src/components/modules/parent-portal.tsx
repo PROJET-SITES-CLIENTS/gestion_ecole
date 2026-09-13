@@ -18,6 +18,11 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
   const mesBulletins: any[] = initialData.mesBulletins ?? [];
   const mesEcheances: any[] = initialData.mesEcheances ?? [];
   const mesRdvs: any[] = initialData.mesRdvs ?? [];
+  const mesPresences: any[] = (initialData.mesPresences ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
+  const mesJustifications: any[] = initialData.mesJustifications ?? [];
+  const cahiersPublies: any[] = initialData.cahiersPublies ?? [];
+  const mesDevoirs: any[] = (initialData.mesDevoirs ?? []).filter((d: any) => !enfant || d.classeId === enfant.classeActuelleId);
+  const mesPaiements: any[] = (initialData.mesPaiements ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
   const creneauxDisponibles: any[] = (initialData.creneauxRdv ?? []).filter((c: any) => c.statut === 'disponible');
   const notifications: any[] = initialData.notifications ?? [];
   const kpi = initialData.kpi ?? {};
@@ -99,6 +104,85 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
                 { key: 'statut', label: 'Statut', render: (e: any) => <StatusBadge statut={e.statut} /> },
               ]}
               rows={enfantEcheances}
+            />
+          </SectionBlock>
+
+          {/* ── AUDIT PARENT : absences & justifications en ligne ── */}
+          <SectionBlock title="Absences et retards" description="Suivi d'assiduité — justifiez en ligne une absence non couverte.">
+            <DataTable
+              columns={[
+                { key: 'date', label: 'Date', render: (p: any) => formatDate(p.dateSaisie) },
+                { key: 'type', label: 'Type', render: (p: any) => <StatusBadge statut={p.statut} label={p.statut === 'absent' ? 'Absent' : 'Retard'} /> },
+                { key: 'matiere', label: 'Matière', render: (p: any) => p.seance?.matiere?.libelle ?? '—' },
+                { key: 'justif', label: 'Justification', render: (p: any) => {
+                  const j = mesJustifications.find((x: any) => x.presenceId === p.id);
+                  if (!j) return (
+                    <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget);
+                      fd.set('eleveId', p.eleveId); fd.set('dateAbsence', new Date(p.dateSaisie).toISOString().slice(0, 10));
+                      fd.set('motif', 'maladie'); run(() => actions.justifierAbsence(fd), 'Justification envoyée'); }}>
+                      <input name="description" placeholder="Motif" className="h-7 w-28 text-xs border rounded px-1" />
+                      <button className="text-xs text-emerald-700 font-semibold">Justifier</button>
+                    </form>
+                  );
+                  return <StatusBadge statut={j.statut ?? 'en_attente'} label={j.statut === 'acceptee' ? '✓ Acceptée' : j.statut === 'refusee' ? '✗ Refusée' : 'En attente'} />;
+                } },
+              ]}
+              rows={mesPresences.slice(0, 20)}
+              emptyLabel="Aucune absence ni retard — félicitations !"
+            />
+          </SectionBlock>
+
+          {/* ── AUDIT PARENT : cahier de textes publié aux familles ── */}
+          <SectionBlock title="Cahier de textes" description="Contenu des cours et travail à faire, publiés par les enseignants.">
+            <div className="space-y-2">
+              {cahiersPublies.slice(0, 12).map((c: any) => {
+                let entrees: any[] = [];
+                try { entrees = JSON.parse(c.entrees || '[]'); } catch { /* vide */ }
+                const derniere = entrees[entrees.length - 1];
+                return (
+                  <div key={c.id} className="border rounded-lg p-3">
+                    <div className="flex flex-wrap justify-between gap-2 text-sm">
+                      <b>{c.classe?.libelle ?? ''} — {c.matiere?.libelle ?? 'Général'}</b>
+                      <span className="text-xs text-gray-500">{derniere?.dateCours ? formatDate(derniere.dateCours) : formatDate(c.dateCreation)}</span>
+                    </div>
+                    {derniere?.contenu && <p className="text-sm text-gray-700 mt-1">{derniere.contenu}</p>}
+                    {derniere?.travailAFaire && (
+                      <p className="text-sm mt-1.5 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        <b>Travail à faire :</b> {derniere.travailAFaire}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              {cahiersPublies.length === 0 && <p className="text-sm text-gray-500">Aucune publication pour le moment.</p>}
+            </div>
+          </SectionBlock>
+
+          {/* ── AUDIT PARENT : devoirs à venir ── */}
+          <SectionBlock title="Devoirs et travail à la maison" description="Échéances à venir par matière.">
+            <DataTable
+              columns={[
+                { key: 'intitule', label: 'Devoir' },
+                { key: 'matiere', label: 'Matière', render: (d: any) => d.matiere?.libelle ?? '—' },
+                { key: 'date', label: 'À rendre le', render: (d: any) => formatDate(d.dateRendu) },
+                { key: 'type', label: 'Type', render: (d: any) => ({ devoir: 'Devoir', dm: 'Devoir maison', projet: 'Projet', expose: 'Exposé' }[d.type as string] ?? d.type) },
+              ]}
+              rows={mesDevoirs}
+              emptyLabel="Aucun devoir à venir"
+            />
+          </SectionBlock>
+
+          {/* ── AUDIT PARENT : historique des paiements ── */}
+          <SectionBlock title="Historique des paiements" description="Vos règlements et leurs références.">
+            <DataTable
+              columns={[
+                { key: 'date', label: 'Date', render: (p: any) => formatDate(p.datePaiement) },
+                { key: 'montant', label: 'Montant', render: (p: any) => formatXOF(p.montant) },
+                { key: 'mode', label: 'Mode' },
+                { key: 'ref', label: 'Référence', render: (p: any) => p.referenceTransaction ?? '—' },
+              ]}
+              rows={mesPaiements}
+              emptyLabel="Aucun paiement enregistré"
             />
           </SectionBlock>
 

@@ -264,6 +264,39 @@ async function chargerPortailParent(session: SessionInfo): Promise<DonneesPortai
   const classes = classesIds.length ? await db.classe.findMany({ where: { id: { in: classesIds } } }) : [];
   const classeParId = new Map(classes.map((c) => [c.id, c]));
 
+  // ── AUDIT PARENT : absences/retards de SES enfants, justifications,
+  // cahiers de textes PUBLIÉS aux familles, devoirs actifs, reçus ──
+  const classesEnfants = classes.map((c) => c.id);
+  const [presencesEnfants, justifs, cahiersPublies, devoirsActifs, paiementsFamille] = enfantsIds.length ? await Promise.all([
+    db.presence.findMany({
+      where: { eleveId: { in: enfantsIds }, statut: { in: ['absent', 'retard'] } },
+      orderBy: { dateSaisie: 'desc' }, take: 60,
+      include: { seance: { select: { matiere: { select: { libelle: true } }, date: true } } },
+    }),
+    db.justificationAbsence.findMany({
+      where: { presence: { eleveId: { in: enfantsIds } } },
+      orderBy: { dateAbsence: 'desc' }, take: 40, include: { presence: true },
+    }),
+    classesEnfants.length
+      ? db.cahierTexte.findMany({
+          where: { classeId: { in: classesEnfants }, statut: 'publie' },
+          orderBy: { dateCreation: 'desc' }, take: 40,
+          include: { matiere: { select: { libelle: true } }, classe: { select: { libelle: true } } },
+        })
+      : Promise.resolve([]),
+    classesEnfants.length
+      ? db.devoir.findMany({
+          where: { classeId: { in: classesEnfants }, statut: { in: ['assigne', 'ramasse'] } },
+          orderBy: { dateRendu: 'asc' }, take: 30,
+          include: { matiere: { select: { libelle: true } }, classe: { select: { libelle: true } } },
+        })
+      : Promise.resolve([]),
+    db.paiement.findMany({
+      where: { eleveId: { in: enfantsIds }, annule: false },
+      orderBy: { datePaiement: 'desc' }, take: 30,
+    }),
+  ]) : [[], [], [], [], []];
+
   // Créneaux réservables (futurs, disponibles) — pour l'action reserverRdv
   const creneauxRdv = await db.creneauRdv.findMany({
     where: { statut: 'disponible', date: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }, personnel: { ecoleId: parent.ecoleId } },
@@ -280,6 +313,11 @@ async function chargerPortailParent(session: SessionInfo): Promise<DonneesPortai
     mesBulletins: bulletins,
     mesEcheances: echeances,
     mesRdvs: rdvs,
+    mesPresences: presencesEnfants,
+    mesJustifications: justifs,
+    cahiersPublies,
+    mesDevoirs: devoirsActifs,
+    mesPaiements: paiementsFamille,
     creneauxRdv,
     kpi: {
       totalDu: (kpiEcheances._sum.montant ?? 0) - (kpiEcheances._sum.remise ?? 0) - (kpiEcheances._sum.montantPaye ?? 0),
