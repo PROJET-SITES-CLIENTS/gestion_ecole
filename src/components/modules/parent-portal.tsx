@@ -18,11 +18,8 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
   const mesBulletins: any[] = initialData.mesBulletins ?? [];
   const mesEcheances: any[] = initialData.mesEcheances ?? [];
   const mesRdvs: any[] = initialData.mesRdvs ?? [];
-  const mesPresences: any[] = (initialData.mesPresences ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
   const mesJustifications: any[] = initialData.mesJustifications ?? [];
   const cahiersPublies: any[] = initialData.cahiersPublies ?? [];
-  const mesDevoirs: any[] = (initialData.mesDevoirs ?? []).filter((d: any) => !enfant || d.classeId === enfant.classeActuelleId);
-  const mesPaiements: any[] = (initialData.mesPaiements ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
   const creneauxDisponibles: any[] = (initialData.creneauxRdv ?? []).filter((c: any) => c.statut === 'disponible');
   const notifications: any[] = initialData.notifications ?? [];
   const kpi = initialData.kpi ?? {};
@@ -30,6 +27,9 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
   const [enfantActifId, setEnfantActifId] = useState<string | null>(null);
   const { run, Message, pending } = useActionFeedback();
   const enfant = mesEnfants.find((e: any) => e.id === enfantActifId) ?? mesEnfants[0] ?? null;
+  const mesPresences: any[] = (initialData.mesPresences ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
+  const mesDevoirs: any[] = (initialData.mesDevoirs ?? []).filter((d: any) => !enfant || d.classeId === enfant.classeActuelleId);
+  const mesPaiements: any[] = (initialData.mesPaiements ?? []).filter((p: any) => !enfant || p.eleveId === enfant.id);
   const enfantBulletins = enfant ? mesBulletins.filter((b: any) => b.eleveId === enfant.id) : [];
   const enfantEcheances = enfant ? mesEcheances.filter((e: any) => e.eleveId === enfant.id) : [];
   const enfantRdvs = enfant ? mesRdvs.filter((r: any) => r.eleveId === enfant.id) : [];
