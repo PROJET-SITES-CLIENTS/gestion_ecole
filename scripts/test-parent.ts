@@ -27,7 +27,7 @@ async function main() {
   const enfantsIds = new Set((data.mesEnfants ?? []).map((e: any) => e.id));
   check('mesEnfants chargés et STRICTEMENT ses enfants', (data.mesEnfants ?? []).length === (parent!.parent!.eleves ?? []).length
     && (data.mesEnfants ?? []).every((e: any) => enfantsIds.has(e.id)));
-  const autresEleves = await avecRetryBdd(() => db.eleve.findMany({ where: { ecoleId: vinci!.id, id: { notIn: [...enfantsIds] } }, take: 3, select: { matricule: true } }), 3, 400);
+  const autresEleves = await avecRetryBdd(() => db.eleve.findMany({ where: { ecoleId: vinci!.id, id: { notIn: [...enfantsIds] as string[] } }, take: 3, select: { matricule: true } }), 3, 400);
   check('AUCUN matricule d\'autres élèves dans le payload', autresEleves.every((o) => !o.matricule || !payload.includes(o.matricule)));
 
   // Nouveaux datasets de l'audit
