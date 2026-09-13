@@ -103,6 +103,7 @@ function matieresDuBulletin(bulletin: any, matieres: any[]): Array<{ id: string;
 
 export default function PedagogiqueModule({ initialData }: { initialData: any }) {
   const classes = initialData.classes ?? [];
+  const niveaux = initialData.niveaux ?? [];
   const matieres = initialData.matieres ?? [];
   const enseignants = initialData.personnels ?? [];
   const periodes = initialData.periodes ?? [];
@@ -127,6 +128,9 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   const retourDevoirs = useActionFeedback();
   const retourCahier = useActionFeedback();
   const retourDispenses = useActionFeedback();
+  const retourProgrammes = useActionFeedback();
+  const [pendingCorrection, startCorrection] = useTransition();
+  const tousRendus = (devoirs ?? []).flatMap((d: any) => (d.rendus ?? []).map((r: any) => ({ ...r, devoirId: d.id })));
 
   const evalSelectionnee = evaluations.find((e: any) => e.id === selectedEvalId);
   const elevesDeLaClasse = evalSelectionnee ? eleves.filter((e: any) => e.classeActuelleId === evalSelectionnee.classeId) : [];
@@ -337,6 +341,39 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             emptyLabel="Aucun devoir assigné — utilisez le bouton « Nouveau devoir »."
           />
         </SectionBlock>
+        <SectionBlock title="Rendus à corriger" description="Devoirs, DM et projets rendus par les élèves — notez et commentez chaque rendu.">
+          {tousRendus.filter((r: any) => r.statut !== 'corrige').length === 0 && (
+            <EmptyState title="Aucun rendu en attente" description="Les rendus des élèves apparaîtront ici dès leur soumission sur le portail élève." />
+          )}
+          {tousRendus.filter((r: any) => r.statut !== 'corrige').map((r: any) => (
+            <form key={r.id} className="flex flex-wrap items-center gap-2 border rounded-lg px-3 py-2 mb-2"
+              onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget);
+                retourDevoirs.run(() => actionsExt.noterRendu(r.id, Number(fd.get('note')), String(fd.get('appreciation') || '') || undefined), 'Rendu corrigé'); }}>
+              <div className="flex-1 min-w-[180px]">
+                <div className="text-sm font-medium">{r.eleve?.prenom} {r.eleve?.nom}</div>
+                <div className="text-xs text-gray-500">{devoirs.find((d: any) => d.id === r.devoirId)?.intitule ?? 'Devoir'} · rendu le {formatDate(r.dateRendu)} · barème {devoirs.find((d: any) => d.id === r.devoirId)?.sur ?? 20}</div>
+                {r.commentaireEleve && <div className="text-xs text-gray-400 italic mt-0.5">« {r.commentaireEleve} »</div>}
+              </div>
+              <input name="note" type="number" step="0.25" min={0} max={devoirs.find((d: any) => d.id === r.devoirId)?.sur ?? 20} required
+                placeholder="Note" className="w-20 h-8 text-sm border rounded px-2" />
+              <input name="appreciation" placeholder="Appréciation (facultatif)" className="flex-1 min-w-[160px] h-8 text-sm border rounded px-2" />
+              <button type="submit" disabled={retourDevoirs.pending} className="text-xs font-semibold text-emerald-700 hover:underline">Corriger ✓</button>
+            </form>
+          ))}
+          {tousRendus.some((r: any) => r.statut === 'corrige') && (
+            <details className="mt-3">
+              <summary className="text-sm text-gray-500 cursor-pointer">Rendus déjà corrigés ({tousRendus.filter((r: any) => r.statut === 'corrige').length})</summary>
+              <div className="mt-2 space-y-1">
+                {tousRendus.filter((r: any) => r.statut === 'corrige').map((r: any) => (
+                  <div key={r.id} className="flex justify-between text-xs border-b py-1">
+                    <span>{r.eleve?.prenom} {r.eleve?.nom} — {devoirs.find((d: any) => d.id === r.devoirId)?.intitule ?? ''}</span>
+                    <span className="font-semibold">{r.note}/{devoirs.find((d: any) => d.id === r.devoirId)?.sur ?? 20}{r.appreciation ? ` · ${r.appreciation}` : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </SectionBlock>
       </div>
     );
   }
@@ -511,14 +548,52 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
 
   // Programmes + avancement
   function renderProgrammes() {
+    const chapitres = (programmes ?? []).flatMap((p: any) => (p.chapitres ?? []).map((c: any) => ({ ...c, programmeTitre: p.titre })));
     return (
       <div className="space-y-4">
+        {retourProgrammes.Message}
+        <div className="flex flex-wrap gap-2">
+          <ModalForm
+            trigger={<CreateButton label="Nouveau programme" />}
+            title="Créer un programme"
+            fields={[
+              { name: 'matiereId', label: 'Matière', type: 'select', options: matieres.map((m: any) => ({ value: m.id, label: m.libelle })), required: true },
+              { name: 'niveauId', label: 'Niveau', type: 'select', options: niveaux.map((n: any) => ({ value: n.id, label: n.libelle })), required: true },
+              { name: 'intitule', label: 'Intitulé', required: true, placeholder: 'Programme de mathématiques' },
+              { name: 'description', label: 'Objectifs', type: 'textarea' },
+            ]}
+            action={actionsExt.creerProgramme}
+          />
+          <ModalForm
+            trigger={<CreateButton label="Nouveau chapitre" />}
+            title="Ajouter un chapitre"
+            fields={[
+              { name: 'programmeId', label: 'Programme', type: 'select', options: programmes.map((p: any) => ({ value: p.id, label: `${p.titre} (${p.matiere?.libelle ?? ''})` })), required: true },
+              { name: 'titre', label: 'Intitulé du chapitre', required: true, placeholder: 'Chapitre 3 : Les fractions' },
+              { name: 'ordre', label: 'Ordre', type: 'number', defaultValue: '1', required: true },
+              { name: 'objectifs', label: 'Objectifs', type: 'textarea' },
+            ]}
+            action={actionsExt.ajouterChapitre}
+          />
+          <ModalForm
+            trigger={<CreateButton label="Déclarer un avancement" />}
+            title="Mettre à jour l'avancement d'un chapitre"
+            fields={[
+              { name: 'chapitreId', label: 'Chapitre', type: 'select', options: chapitres.map((c: any) => ({ value: c.id, label: `${c.programmeTitre} — ${c.titre ?? c.intitule ?? ''}` })), required: true },
+              { name: 'classeId', label: 'Classe', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })), required: true },
+              { name: 'pourcentage', label: 'Avancement (%)', type: 'number', defaultValue: '100', required: true },
+              { name: 'commentaire', label: 'Commentaire', type: 'textarea' },
+            ]}
+            action={actionsExt.majAvancement}
+          />
+        </div>
         <SectionBlock title="Programmes pédagogiques" description="Programmes par matière et niveau">
           <DataTable
             columns={[
               { key: 'titre', label: 'Titre' },
               { key: 'matiere', label: 'Matière', render: (p) => matieres.find((m: any) => m.id === p.matiereId)?.libelle ?? '—' },
               { key: 'niveau', label: 'Niveau', render: (p) => p.niveauId },
+              { key: 'chapitres', label: 'Chapitres', render: (p) => `${(p.chapitres ?? []).length} chapitre(s)` },
               { key: 'publie', label: 'Statut', render: (p) => p.publie ? <StatusBadge statut="publie" /> : <StatusBadge statut="planifie" /> },
             ]}
             rows={programmes}
@@ -529,7 +604,19 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
           <DataTable
             columns={[
               { key: 'classe', label: 'Classe', render: (a) => classes.find((c: any) => c.id === a.classeId)?.libelle ?? '—' },
-              { key: 'chapitre', label: 'Chapitre', render: (a) => programmes.find((p: any) => p.id === a.chapitreId)?.titre ?? `Chapitre ${a.chapitreId.slice(-4)}` },
+              { key: 'chapitre', label: 'Chapitre', render: (a) => a.chapitre?.titre ?? a.chapitre?.intitule ?? programmes.find((p: any) => p.id === a.chapitreId)?.titre ?? `Chapitre ${String(a.chapitreId).slice(-4)}` },
+              { key: 'maj', label: 'Déclarer', render: (a) => (
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-emerald-700">Mettre à jour</summary>
+                  <form className="mt-1 flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget);
+                    retourProgrammes.run(() => actionsExt.majAvancement(fd as never), 'Avancement mis à jour'); }}>
+                    <input type="hidden" name="chapitreId" value={a.chapitreId} />
+                    <input type="hidden" name="classeId" value={a.classeId} />
+                    <input name="pourcentage" type="number" min={0} max={100} defaultValue={a.pourcentage} className="w-14 h-7 border rounded px-1" />
+                    <button className="text-emerald-700 font-semibold">OK</button>
+                  </form>
+                </details>
+              ) },
               { key: 'pourcentage', label: 'Progression', render: (a) => (
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-gray-200 rounded">

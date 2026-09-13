@@ -34,7 +34,8 @@ import {
   creerWebhookCore, supprimerWebhookCore, creerApiTokenCore, revoquerApiTokenCore,
   majThemeEcoleCore, ajouterDomaineCore, verifierDomaineCore, majFeatureFlagEcoleCore,
   // pédagogie 2 (B10, B11, C7, C8)
-  creerDevoirCore, publierEntreeCahierCore, creerEntreeCahierCore,
+  creerDevoirCore, publierEntreeCahierCore, creerEntreeCahierCore, noterRenduCore,
+  creerProgrammeCore, ajouterChapitreCore, mettreAJourAvancementCore,
   saisirEvaluationsCompetenceCore, creerConseilCore, creerDeliberationCore, voterDeliberationCore, marquerPresenceConseilCore,
   creerDispenseCore, traiterDispenseCore,
   genererConvocationImprimableCore, marquerBulletinImprimableCore,
@@ -715,6 +716,59 @@ export async function creerDevoir(formData: FormData): Promise<ActionResult> {
     await creerDevoirCore(ctx, { classeId: d.classeId, matiereId: d.matiereId || undefined, intitule: d.intitule, description: d.description || undefined, dateRendu: d.dateRendu, sur: d.sur, type: d.type });
     revalidatePath('/');
     return { ok: true };
+  } catch (e) { return echec(e); }
+}
+
+// --------------------------------------------------------------------
+// AUDIT ENSEIGNANT — corriger les devoirs rendus + programmes/avancement
+// --------------------------------------------------------------------
+
+export async function noterRendu(renduId: string, note: number, appreciation?: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await noterRenduCore(ctx, renduId, { note, appreciation });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function creerProgramme(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      matiereId: z.string().min(1), niveauId: z.string().min(1),
+      intitule: z.string().min(3), description: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const ecoleId = await ecoleIdDuCtx(ctx);
+    const r = await creerProgrammeCore(ctx, ecoleId, d);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function ajouterChapitre(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      programmeId: z.string().min(1), titre: z.string().min(2),
+      ordre: z.coerce.number().int().min(1), objectifs: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await ajouterChapitreCore(ctx, d.programmeId, { intitule: d.titre, ordre: d.ordre, description: d.objectifs } as never);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function majAvancement(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      chapitreId: z.string().min(1), classeId: z.string().min(1),
+      pourcentage: z.coerce.number().int().min(0).max(100), commentaire: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await mettreAJourAvancementCore(ctx, d.chapitreId, { classeId: d.classeId, pourcentage: d.pourcentage, commentaire: d.commentaire });
+    revalidatePath('/');
+    return { ok: true, ...r };
   } catch (e) { return echec(e); }
 }
 

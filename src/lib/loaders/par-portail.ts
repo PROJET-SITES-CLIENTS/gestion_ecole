@@ -374,7 +374,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   if (pedagogie) {
     promises.push((async () => {
-      const [periodes, programmes, avancements, evaluations, notes, bulletins, competences, evalsCompetence] = await Promise.all([
+      const [periodes, programmes, avancements, evaluations, notes, bulletins, competences, evalsCompetence, devoirsPeda, cahiersPeda] = await Promise.all([
         db.periode.findMany({ where: { ecoleId, ...(idAnnee ? { anneeScolaireId: idAnnee } : {}) }, orderBy: { dateDebut: 'asc' } }),
         db.programme.findMany({ where: { ecoleId }, include: { matiere: true, niveau: true, chapitres: true } }),
         db.avancementProgramme.findMany({ include: { chapitre: { include: { programme: { include: { matiere: true } } } }, classe: true } }),
@@ -383,17 +383,23 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.bulletin.findMany({ orderBy: { dateCreation: 'desc' }, take: CAP.bulletin, include: { periode: true, eleve: true } }),
         db.competence.findMany({ where: { ecoleId }, include: { matiere: true } }),
         db.evaluationCompetence.findMany({ take: 500, include: { competence: true, periode: true } }),
+        // AUDIT ENSEIGNANT : devoirs (rendus inclus) + cahiers de textes
+        // chargés pour TOUS les portails pédagogiques — plus seulement
+        // la direction (v4) : l'enseignant VOIT ses devoirs et son cahier.
+        db.devoir.findMany({ where: { ecoleId }, orderBy: { dateRendu: 'desc' }, take: 150, include: { classe: true, matiere: true, rendus: { include: { eleve: { select: { id: true, prenom: true, nom: true } } } } } }),
+        db.cahierTexte.findMany({ where: { ecoleId }, orderBy: { dateCreation: 'desc' }, take: 100, include: { classe: true, matiere: true } }),
       ]);
       v.periodes = periodes; v.programmes = programmes; v.avancements = avancements;
       v.evaluations = evaluations; v.notes = notes; v.bulletins = bulletins;
       v.competences = competences; v.evalsCompetence = evalsCompetence;
+      v.devoirs = devoirsPeda; v.cahiersTexte = cahiersPeda;
     })());
   }
 
   if (vieScolaire) {
     promises.push((async () => {
       const [seances, presences, incidents, sanctions, justificationsAbsence] = await Promise.all([
-        db.seance.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'desc' }, take: 300, include: { matiere: true, classe: true, enseignant: true } }),
+        db.seance.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'desc' }, take: 300, include: { matiere: true, classe: true, enseignant: { select: { id: true, prenom: true, nom: true, matricule: true, email: true } } } }),
         db.presence.findMany({ take: CAP.presences, include: { seance: { include: { matiere: true, classe: true } } } }),
         db.incident.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateHeure: 'desc' }, take: CAP.incidents }),
         db.sanction.findMany({ where: { incident: { eleve: { ecoleId } } }, take: CAP.sanctions, include: { incident: true } }),
@@ -466,7 +472,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.salle.findMany({ where: { ecoleId }, include: { batiment: true, etage: true } }),
         db.reservationSalle.findMany({ where: { salle: { ecoleId } }, include: { salle: true } }),
         db.calendrierScolaire.findMany({ where: { ecoleId }, orderBy: { dateDebut: 'asc' } }),
-        db.emploiTemps.findMany({ where: { ecoleId }, include: { classe: true, matiere: true, enseignant: true, salle: true } }),
+        db.emploiTemps.findMany({ where: { ecoleId }, include: { classe: true, matiere: true, enseignant: { select: { id: true, prenom: true, nom: true, matricule: true } }, salle: true } }),
         db.batiment.findMany({ where: { ecoleId }, include: { etages: true, salles: true } }),
       ]);
       v.salles = sallesListe; v.reservations = reservations; v.calendrier = calendrier;
@@ -517,8 +523,8 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
   if (portal === 'secretariat' || portal === 'direction' || portal === 'super_admin' || portal === 'vie_scolaire') {
     promises.push((async () => {
       const [creneauxRdv, rdvs, reunionsCollectives, candidaturesAdmission] = await Promise.all([
-        db.creneauRdv.findMany({ where: { personnel: { ecoleId } }, orderBy: { date: 'asc' }, take: 200, include: { personnel: true } }),
-        db.rdv.findMany({ where: { parent: { ecoleId } }, orderBy: { createdAt: 'desc' }, take: CAP.rdvs, include: { parent: true, eleve: true, creneauRdv: { include: { personnel: true } } } }),
+        db.creneauRdv.findMany({ where: { personnel: { ecoleId } }, orderBy: { date: 'asc' }, take: 200, include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } }),
+        db.rdv.findMany({ where: { parent: { ecoleId } }, orderBy: { createdAt: 'desc' }, take: CAP.rdvs, include: { parent: true, eleve: true, creneauRdv: { include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } } } }),
         db.reunionCollective.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'asc' }, include: { classe: true } }),
         db.candidatureAdmission.findMany({ where: { ecoleId }, orderBy: { dateSoumission: 'desc' }, include: { niveau: true } }),
       ]);
