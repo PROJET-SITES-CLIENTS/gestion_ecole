@@ -1067,6 +1067,7 @@ model Sanction {
 // ====================================================================
 
 model Frais {
+  sectionComptableId String?
   id              String        @id @default(cuid())
   ecoleId         String
   ecole           Ecole         @relation(fields: [ecoleId], references: [id])
@@ -1125,6 +1126,7 @@ model AvoirScolarite {
 }
 
 model Paiement {
+  sectionComptableId String?
   id                   String       @id @default(cuid())
   ecoleId              String
   ecole                Ecole        @relation(fields: [ecoleId], references: [id])
@@ -1166,6 +1168,7 @@ model PaiementEcheance {
 }
 
 model Depense {
+  sectionComptableId String?
   id              String       @id @default(cuid())
   ecoleId         String
   ecole           Ecole        @relation(fields: [ecoleId], references: [id])
@@ -2231,6 +2234,7 @@ model JustificationAbsence {
 // --------------------------------------------------------------------
 
 model Budget {
+  sectionComptableId String?
   id              String        @id @default(cuid())
   ecoleId         String
   ecole           Ecole         @relation(fields: [ecoleId], references: [id])
@@ -2288,9 +2292,11 @@ model JournalComptable {
   type    String // achat/vente/banque/operations_diverses
 
   ecritures EcritureComptable[]
+  @@unique([ecoleId, code])
 }
 
 model EcritureComptable {
+  sectionComptableId String?
   id                    String           @id @default(cuid())
   ecoleId               String
   ecole                 Ecole            @relation(fields: [ecoleId], references: [id])
@@ -2342,6 +2348,7 @@ model Fournisseur {
 }
 
 model CommandeFournisseur {
+  sectionComptableId String?
   id                     String      @id @default(cuid())
   ecoleId                String
   ecole                  Ecole       @relation(fields: [ecoleId], references: [id])
@@ -2376,6 +2383,7 @@ model LigneCommande {
 }
 
 model ReceptionCommande {
+  ligneId String?
   id               String              @id @default(cuid())
   commandeId       String
   commande         CommandeFournisseur @relation(fields: [commandeId], references: [id])
@@ -3724,4 +3732,50 @@ model OccupationSport {
   statut         String   @default("confirmee")
   createdAt      DateTime @default(now())
   @@index([ecoleId, date])
+}
+
+// ====================================================================
+// COMPTABILITÉ COMPLÈTE — sections comptables (primaire/secondaire
+// séparées ou uniques + consolidation) et CAISSE (sessions, écarts)
+// ====================================================================
+
+model SectionComptable {
+  id        String  @id @default(cuid())
+  ecoleId   String
+  code      String // PRIMAIRE / SECONDAIRE / GLOBAL
+  libelle   String
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@unique([ecoleId, code])
+}
+
+model CaisseSession {
+  id                String    @id @default(cuid())
+  ecoleId           String
+  sectionComptableId String?
+  caissierId        String
+  dateOuverture     DateTime
+  dateFermeture     DateTime?
+  fondCaisse        Int // centimes
+  soldeTheorique    Int @default(0)
+  soldeCompte       Int?
+  ecart             Int?
+  statut            String @default("ouverte") // ouverte/fermee
+  operations        OperationCaisse[]
+  @@index([ecoleId, statut])
+}
+
+model OperationCaisse {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  sessionCaisseId String
+  session         CaisseSession @relation(fields: [sessionCaisseId], references: [id])
+  type            String // entree/sortie
+  montant         Int // centimes
+  motif           String
+  reference       String?
+  paiementId      String?
+  dateOperation   DateTime
+  saisieParId     String?
+  @@index([sessionCaisseId])
 }
