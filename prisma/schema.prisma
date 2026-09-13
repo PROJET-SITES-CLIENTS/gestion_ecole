@@ -1933,6 +1933,7 @@ model SoldeConge {
   derniereMaj       DateTime  @default(now())
 
   @@unique([personnelId, annee])
+  creditedThrough Int @default(0) // dernier mois crédité (idempotence)
 }
 
 // --------------------------------------------------------------------
@@ -3778,4 +3779,40 @@ model OperationCaisse {
   dateOperation   DateTime
   saisieParId     String?
   @@index([sessionCaisseId])
+}
+
+// ====================================================================
+// RH — compléments : formations, sanctions disciplinaires, acquisition
+// automatique des soldes de congés
+// ====================================================================
+
+model FormationPersonnel {
+  id           String    @id @default(cuid())
+  ecoleId      String
+  personnelId  String
+  intitule     String
+  organisme    String?
+  dateDebut    DateTime
+  dateFin      DateTime?
+  statut       String    @default("planifiee") // planifiee/en_cours/terminee/annulee
+  cout         Int? // centimes
+  certificatObtenu Boolean @default(false)
+  commentaire  String?
+  createdAt    DateTime  @default(now())
+  @@index([ecoleId, personnelId])
+}
+
+model SanctionPersonnel {
+  id          String   @id @default(cuid())
+  ecoleId     String
+  personnelId String
+  dateFaits   DateTime
+  faute       String
+  typeSanction String // avertissement/oral/blame/mise_a_demeure/licenciement
+  motivated    Boolean @default(true)
+  description String
+  decideParId String?
+  notificationEcrite Boolean @default(true)
+  createdAt   DateTime @default(now())
+  @@index([ecoleId, personnelId])
 }

@@ -13,6 +13,7 @@ const DocumentsModule = dynamic(() => import('./modules/documents'), { ssr: fals
 const ParametresEtablissement = dynamic(() => import('./modules/parametres'), { ssr: false });
 const InfrastructuresModule = dynamic(() => import('./modules/infrastructures'), { ssr: false });
 const ComptaModule = dynamic(() => import('./modules/compta'), { ssr: false });
+const RhPlusModule = dynamic(() => import('./modules/rh-plus'), { ssr: false });
 const DirectionModule = dynamic(() => import('./modules/direction'), { ssr: false });
 const ElevesModule = dynamic(() => import('./modules/eleves'), { ssr: false });
 const PersonnelModule = dynamic(() => import('./modules/personnel'), { ssr: false });
@@ -74,7 +75,7 @@ export type Portal =
   | 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant';
 
 export type ModuleId =
-  | 'dashboard' | 'documents' | 'etablissement' | 'infrastructures' | 'compta' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
+  | 'dashboard' | 'documents' | 'etablissement' | 'infrastructures' | 'compta' | 'rh_plus' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
   | 'rdv' | 'securite' | 'communication' | 'integrations' | 'audit' | 'sante' | 'parent_portal' | 'eleve_portal' | 'v4_modules' | 'conseils'
   | 'admissions' | 'protection';
@@ -88,6 +89,7 @@ type ModuleDef = {
 
 const MODULES: ModuleDef[] = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, portals: ['super_admin', 'direction', 'enseignant', 'parent', 'eleve', 'comptabilite', 'rh', 'vie_scolaire', 'secretariat', 'sante', 'assistant'] },
+  { id: 'rh_plus', label: 'RH — Formations & Congés', icon: GraduationCap, portals: ['super_admin', 'direction', 'rh'] },
   { id: 'compta', label: 'Comptabilité', icon: Calculator, portals: ['super_admin', 'direction', 'comptabilite'] },
   { id: 'infrastructures', label: 'Infrastructures', icon: Building, portals: ['super_admin', 'direction'] },
   { id: 'documents', label: 'Documents', icon: FileText, portals: ['super_admin', 'direction', 'secretariat', 'comptabilite', 'rh', 'sante', 'enseignant', 'vie_scolaire', 'assistant'] },
@@ -345,6 +347,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
           return <PortailMetiers {...props} portal={portal as 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant'} />;
         }
         return <DirectionModule {...props} mode="dashboard" portalLabel={portal === 'enseignant' ? 'Enseignant' : 'Direction'} />;
+      case 'rh_plus': return <RhPlusModule {...props} />;
       case 'compta': return <ComptaModule {...props} />;
       case 'infrastructures': return <InfrastructuresModule {...props} />;
       case 'documents': return <DocumentsModule />;

@@ -22,3 +22,4 @@ export * from './comptes';
 export * from './initialisation';
 export * from './infrastructures';
 export * from './comptabilite';
+export * from './rh-complements';
