@@ -30,6 +30,7 @@ model Ecole {
   dateCreation  DateTime  @default(now())
   statut        String    @default("essai") // essai/actif/suspendu/resilie
   deletedAt     DateTime?
+  versionData   Int       @default(1) // Incrémenté à chaque mutation métier — remplace les COUNT SSE
 
   abonnements                Abonnement[]
   facturesSaas               FactureSaas[]
@@ -127,6 +128,9 @@ model Ecole {
   garderieSessions           GarderieSession[]
   lignesReleve               LigneReleve[]
   demandesCompte             DemandeCompte[]
+  familles                   Famille[]
+  groupes                    Groupe[]
+  avoirScolarites            AvoirScolarite[]
 }
 
 model PlanTarifaire {
@@ -178,6 +182,8 @@ model FactureSaas {
 
   // F19 — idempotence de la facturation mensuelle
   @@unique([ecoleId, abonnementId, periode])
+  @@index([dateEmission]) // F18 — recherche par date
+  @@index([statut]) // F18 — filtrage par statut
 }
 
 // ====================================================================
@@ -340,6 +346,7 @@ model Utilisateur {
   depensesCreees            Depense[]             @relation("DepenseCreePar")
   accesEcoles               UtilisateurEcole[]    @relation("UtilisateurEcoleUser") // D5
   demandeCompte             DemandeCompte?        @relation("DemandeCompteUser")
+  avoirScolarites           AvoirScolarite[]
 
   @@unique([ecoleId, email])
 }
@@ -457,9 +464,25 @@ model Eleve {
   garderieInscription        GarderieInscription? // M8
   garderieSessions           GarderieSession[] // M8
   activiteParticipations     ActiviteParticipant[] // M7
+  famille                    Famille?                    @relation(fields: [familleId], references: [id])
+  familleId                  String?
+  eleveGroupes               EleveGroupe[]
 
   @@unique([ecoleId, matricule])
   @@index([ecoleId, nom]) // F18
+}
+
+model Famille {
+  id                String   @id @default(cuid())
+  ecoleId           String
+  ecole             Ecole    @relation(fields: [ecoleId], references: [id])
+  nom               String
+  tauxRemiseFratrie Int      @default(0) // pourcentage
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  eleves  Eleve[]
+  parents ParentTuteur[]
 }
 
 model ParentTuteur {
@@ -478,6 +501,8 @@ model ParentTuteur {
   eleves    EleveParent[]
   paiements Paiement[]
   rdvs      Rdv[]
+  famille   Famille?      @relation(fields: [familleId], references: [id])
+  familleId String?
 }
 
 model EleveParent {
@@ -494,8 +519,10 @@ model EleveHistoriqueClasse {
   id         String    @id @default(cuid())
   eleveId    String
   eleve      Eleve     @relation(fields: [eleveId], references: [id])
-  classeId   String
-  classe     Classe    @relation(fields: [classeId], references: [id])
+  classeId   String?
+  classe     Classe?   @relation(fields: [classeId], references: [id])
+  groupeId   String?
+  groupe     Groupe?   @relation(fields: [groupeId], references: [id])
   dateEntree DateTime
   dateSortie DateTime?
   motif      String?
@@ -544,12 +571,27 @@ model Amenagement {
 // PARTIE B — PERSONNEL & RH
 // ====================================================================
 
+model ContratPersonnel {
+  id          String    @id @default(cuid())
+  personnelId String
+  personnel   Personnel @relation(fields: [personnelId], references: [id])
+  typeContrat String
+  salaireBrut Int // centimes
+  dateDebut   DateTime
+  dateFin     DateTime?
+  actif       Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([personnelId, actif])
+}
+
 model Personnel {
-  id                    String       @id @default(cuid())
+  id                    String             @id @default(cuid())
   ecoleId               String
-  ecole                 Ecole        @relation(fields: [ecoleId], references: [id])
-  utilisateurId         String?      @unique
-  utilisateur           Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  ecole                 Ecole              @relation(fields: [ecoleId], references: [id])
+  utilisateurId         String?            @unique
+  utilisateur           Utilisateur?       @relation(fields: [utilisateurId], references: [id])
   matricule             String?
   nom                   String
   prenom                String
@@ -562,16 +604,17 @@ model Personnel {
   dateEmbauche          DateTime
   dateSortie            DateTime?
   motifSortie           String?
-  statut                String       @default("actif")
-  typeContrat           String? // CDI/CDD/vacataire/stagiaire
-  salaireBrut           Int? // centimes (F16)
+  statut                String             @default("actif")
+  typeContrat           String? // CDI/CDD/vacataire/stagiaire (champ historique conservé)
+  salaireBrut           Int? // centimes — contrat courant (l'historique vit dans ContratPersonnel)
+  contrats              ContratPersonnel[]
   cvUrl                 String?
   diplomePrincipal      String?
   numeroSecuriteSociale String?
   rib                   String? // M16 — RIB/IBAN pour l'export des virements de paie
   contactUrgence        String? // JSON
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
   deletedAt             DateTime?
 
   roles                    PersonnelRole[]
@@ -659,6 +702,34 @@ model EvaluationPersonnel {
 // PARTIE B — PÉDAGOGIQUE (le cœur)
 // ====================================================================
 
+model Groupe {
+  id        String   @id @default(cuid())
+  ecoleId   String
+  ecole     Ecole    @relation(fields: [ecoleId], references: [id])
+  matiereId String
+  matiere   Matiere  @relation(fields: [matiereId], references: [id])
+  libelle   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eleves                 EleveGroupe[]
+  seances                Seance[]
+  evaluations            Evaluation[]
+  eleveHistoriqueClasses EleveHistoriqueClasse[]
+  avancementProgrammes   AvancementProgramme[]
+}
+
+model EleveGroupe {
+  id        String   @id @default(cuid())
+  eleveId   String
+  eleve     Eleve    @relation(fields: [eleveId], references: [id])
+  groupeId  String
+  groupe    Groupe   @relation(fields: [groupeId], references: [id])
+  dateAjout DateTime @default(now())
+
+  @@unique([eleveId, groupeId])
+}
+
 model Matiere {
   id          String  @id @default(cuid())
   ecoleId     String
@@ -679,6 +750,7 @@ model Matiere {
   emploiTemps           EmploiTemps[] // F17
   creneauHebdos         CreneauHebdo[] // F17
   personnelRoles        PersonnelRole[] // F17
+  groupes               Groupe[]
 
   @@unique([ecoleId, code])
 }
@@ -719,8 +791,10 @@ model AvancementProgramme {
   id           String    @id @default(cuid())
   chapitreId   String
   chapitre     Chapitre  @relation(fields: [chapitreId], references: [id])
-  classeId     String
-  classe       Classe    @relation(fields: [classeId], references: [id])
+  classeId     String?
+  classe       Classe?   @relation(fields: [classeId], references: [id])
+  groupeId     String?
+  groupe       Groupe?   @relation(fields: [groupeId], references: [id])
   enseignantId String
   enseignant   Personnel @relation(fields: [enseignantId], references: [id])
   pourcentage  Float     @default(0)
@@ -753,6 +827,8 @@ model Seance {
 
   presences        Presence[]
   reservationSalle ReservationSalle?
+  groupe           Groupe?           @relation(fields: [groupeId], references: [id])
+  groupeId         String?
 
   @@index([classeId, date]) // F18
   @@index([enseignantId, date]) // F18
@@ -803,7 +879,9 @@ model Evaluation {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt // F18
 
-  notes Note[]
+  notes    Note[]
+  groupe   Groupe? @relation(fields: [groupeId], references: [id])
+  groupeId String?
 
   @@index([classeId, periodeId]) // F18
 }
@@ -1013,6 +1091,7 @@ model EcheanceFrais {
   updatedAt    DateTime @updatedAt // F18
 
   paiements PaiementEcheance[]
+  avoirs    AvoirScolarite[]
 
   // Idempotence de la génération d'échéances (audit T1) :
   // un même élève ne peut avoir qu'une échéance par (frais, date).
@@ -1021,32 +1100,46 @@ model EcheanceFrais {
   @@index([dateEcheance]) // F18
 }
 
+model AvoirScolarite {
+  id              String        @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole         @relation(fields: [ecoleId], references: [id])
+  echeanceFraisId String
+  echeance        EcheanceFrais @relation(fields: [echeanceFraisId], references: [id])
+  montant         Int // centimes
+  motif           String
+  dateCreation    DateTime      @default(now())
+  creeParId       String?
+  creePar         Utilisateur?  @relation(fields: [creeParId], references: [id], onDelete: SetNull)
+}
+
 model Paiement {
-  id                   String        @id @default(cuid())
+  id                   String       @id @default(cuid())
   ecoleId              String
-  ecole                Ecole         @relation(fields: [ecoleId], references: [id])
+  ecole                Ecole        @relation(fields: [ecoleId], references: [id])
   eleveId              String?
-  eleve                Eleve?        @relation(fields: [eleveId], references: [id])
+  eleve                Eleve?       @relation(fields: [eleveId], references: [id])
   parentId             String?
-  parent               ParentTuteur? @relation(fields: [parentId], references: [id])
   montant              Int // centimes (F16)
   devise               String
   modePaiement         String // espece/cheque/virement/carte/mobile_money
-  referenceTransaction String?       @unique // F19 — idempotence des encaissements
-  datePaiement         DateTime      @default(now())
+  referenceTransaction String?      @unique // F19 — idempotence des encaissements
+  datePaiement         DateTime     @default(now())
   encaisseParId        String?
-  encaissePar          Utilisateur?  @relation("PaiementEncaissePar", fields: [encaisseParId], references: [id], onDelete: SetNull) // F17
+  encaissePar          Utilisateur? @relation("PaiementEncaissePar", fields: [encaisseParId], references: [id], onDelete: SetNull) // F17
   recuUrl              String?
   // F19 — annulation traçable (jamais de delete : trace comptable)
-  annule               Boolean       @default(false)
+  annule               Boolean      @default(false)
   dateAnnulation       DateTime?
   motifAnnulation      String?
   annuleParId          String?
-  annulePar            Utilisateur?  @relation("PaiementAnnulePar", fields: [annuleParId], references: [id], onDelete: SetNull)
+  annulePar            Utilisateur? @relation("PaiementAnnulePar", fields: [annuleParId], references: [id], onDelete: SetNull)
 
-  echeances    PaiementEcheance[]
-  avoirs       AvoirEcole[] // F17
-  lignesReleve LigneReleve[] // M15
+  echeances      PaiementEcheance[]
+  avoirs         AvoirEcole[] // F17
+  lignesReleve   LigneReleve[] // M15
+  parentTuteur   ParentTuteur?      @relation(fields: [parentTuteurId], references: [id])
+  parentTuteurId String?
 
   @@index([ecoleId, datePaiement]) // F18
 }
@@ -1464,6 +1557,7 @@ model Notification {
   dateCreation     DateTime       @default(now())
   dateEnvoi        DateTime?
   dateLecture      DateTime?
+  ipLecture        String?
 
   @@index([destinataireId, statut]) // F18
   @@index([destinataireId, dateCreation]) // F18

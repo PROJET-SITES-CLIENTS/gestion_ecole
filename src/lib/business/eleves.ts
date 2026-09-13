@@ -93,6 +93,15 @@ export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: Inscri
       });
       if (dejaLa) return { eleveId: dejaLa.id, matricule: dejaLa.matricule!, dejaCree: true };
       const résultat = await db.$transaction(async (tx) => {
+        
+        if (input.classeId) {
+          const _classe = await tx.classe.findUnique({ where: { id: input.classeId } });
+          const nbEleves = await tx.eleve.count({ where: { classeActuelleId: input.classeId, statut: 'actif', deletedAt: null } });
+          if (_classe && _classe.capaciteMax && nbEleves >= _classe.capaciteMax) {
+             throw new ActionError(`Capacité maximale atteinte pour cette classe (${_classe.capaciteMax} élèves).`, 'CAPACITE_MAX');
+          }
+        }
+
         const matricule = await prochainMatricule(tx, ecoleId);
         const eleve = await tx.eleve.create({
           data: {
@@ -244,6 +253,11 @@ export async function transfererClasseCore(ctx: Ctx, eleveId: string, nouvelleCl
   const classe = await db.classe.findUnique({ where: { id: nouvelleClasseId } });
   if (!classe) throw new ActionError('Classe destination introuvable.', 'INTROUVABLE');
   assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  
+  const nbEleves = await db.eleve.count({ where: { classeActuelleId: nouvelleClasseId, statut: 'actif', deletedAt: null } });
+  if (classe.capaciteMax && nbEleves >= classe.capaciteMax) {
+     throw new ActionError(`Capacité maximale atteinte pour la classe de destination (${classe.capaciteMax} élèves).`, 'CAPACITE_MAX');
+  }
   if (eleve.classeActuelleId === nouvelleClasseId) {
     throw new ActionError('L\'élève est déjà dans cette classe.', 'DEJA_TRAITE');
   }

@@ -357,3 +357,29 @@ Work Log:
 Stage Summary:
 - VALIDATIONS : tsc 0 erreur · build production OK · 181/181 tables remplies · 0 violation FK · **3 suites : 25/25 + 17/17 + 7/7 = 49/49 PASS** · smoke HTTP production : /api /login /admission 200
 - TOUS les angles morts listés sont fermés (le paiement en ligne reste différé par décision utilisateur)
+
+## 2026-09-12 — AUDIT ULTRA-COMPLET + résolution des crashes de création d'école
+
+Tâche : « analyse ultra complète de tout l'outil — est-ce que ça fonctionne maintenant ? »
+
+### Méthode (aucun test en navigateur, tout vérifié dans le code + scripts)
+1. Intégrité base (check-db-full porté PostgreSQL : contraintes FK validées, orphelins 0)
+2. Suite régression T1-T24 · suite angles morts · suite vague 3 · E2E cycle de vie complet
+3. Rendu serveur des composants (renderToString) avec données réelles et vides
+
+### BUGS DÉCOUVERTS ET CORRIGÉS
+- **StatCard icon={} vs composant** : parent-portal/eleve-portal passaient des ÉLÉMENTS → crash « Element type is invalid » des portails parent/élève → StatCard tolère les 2 formes
+- **scrypt N=65536 sans maxmem** (travail non commité) : ERR_CRYPTO_INVALID_SCRYPT_PARAMS — TOUTE création de compte cassée → maxmem 256 Mo explicite (hash + verify)
+- **Schéma non migré** : versionData + Famille/Groupe/AvoirScolarite/ContratPersonnel présents dans schema.prisma mais JAMAIS poussés à Neon (client auto-régénéré → lectures Ecole en erreur) → prisma db push + champs historiques Personnel (typeContrat/salaireBrut) rétablis + valeurs seed restaurées + 13 ContratPersonnel alimentés (paie lit désormais les contrats)
+- **seed.ts supprimé par erreur** → restauré (git checkout)
+
+### OUTILS DE TEST DURCIS
+- _helper-test.ts : client Prisma durci (connect_timeout 30 s) partagé + exécuteur retry
+- attendu() : retente les erreurs transitoires (sinon un crash de connexion déguisé en « rejet métier » faussait les verdicts — racine des échecs fantômes de T41)
+- preCleanup angles-morts : retry global + sensible à la casse + paie 2030-01/écritures auto (soldes relevés)/frais services/contrats enfants
+- T36 autonome (la 2FA démo est volontairement désactivée), T9 fratries multi-enfants, clôture avec repartitionAutomatique explicite
+
+### VALIDATIONS FINALES
+- tsc 0 erreur · next build OK · 187 tables, 0 violation FK
+- **4 suites : 25/25 + 17/17 + 7/7 + 25/25 = 74/74 PASS** ( rejouées plusieurs fois )
+- E2E : création école → admin actif → session → 9 portails chargés ET rendus (direction 383 Ko … élève 6 Ko, isolation vérifiée) → inscription parent → refus connexion « en attente » → validation admin → parent activé/notifié → refus neutralisé → anti-énumération

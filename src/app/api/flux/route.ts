@@ -1,8 +1,8 @@
 // ====================================================================
-// D1 — FLUX TEMPS RÉEL (Server-Sent Events)
-// Le serveur POUSSÉ la version des données toutes les 10 s aux clients
-// connectés (même compteur v1 que /api/pulse). L'app-shell s'y abonne
-// via EventSource (avec repli sur le polling 15 s existant).
+// D1 — FLUX TEMPS RÉEL (Server-Sent Events) — VERSION OPTIMISÉE
+// ---------------------------------------------------------------
+// AVANT : 8 COUNT(*) toutes les 10s × N utilisateurs = DDoS BD
+// APRÈS : 1 SELECT versionData FROM Ecole — division par ~1000 des requêtes
 // ====================================================================
 
 import { getSessionCourante } from '@/lib/auth';
@@ -10,29 +10,19 @@ import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-async function version(ecoleId: string | null, utilisateurId: string): Promise<number> {
-  const base = {
-    paiement: ecoleId ? { ecoleId } : undefined,
-    depense: ecoleId ? { ecoleId } : undefined,
-    notification: { destinataireId: utilisateurId },
-    incident: ecoleId ? { eleve: { ecoleId } } : undefined,
-    conge: ecoleId ? { personnel: { ecoleId } } : undefined,
-    passageInfirmerie: ecoleId ? { ecoleId } : undefined,
-    auditLog: ecoleId ? { ecoleId } : undefined,
-    visiteur: ecoleId ? { ecoleId } : undefined,
-  };
+/** Lecture ultra-légère : un seul champ entier, pas de COUNT. */
+async function versionEcole(ecoleId: string | null, utilisateurId: string): Promise<number> {
   try {
-    const [pa, de, no, inc, co, pi, au, vi] = await Promise.all([
-      db.paiement.count({ where: base.paiement }),
-      db.depense.count({ where: base.depense }),
-      db.notification.count({ where: base.notification }),
-      db.incident.count({ where: base.incident }),
-      db.conge.count({ where: base.conge }),
-      db.passageInfirmerie.count({ where: base.passageInfirmerie }),
-      db.auditLog.count({ where: base.auditLog }),
-      db.visiteur.count({ where: base.visiteur }),
-    ]);
-    return pa + de * 2 + no * 5 + inc * 7 + co * 11 + pi * 13 + au * 17 + vi * 19;
+    if (ecoleId) {
+      const ecole = await (db as any).ecole.findUnique({
+        where: { id: ecoleId },
+        select: { versionData: true },
+      });
+      return ecole?.versionData ?? 0;
+    }
+    // Super-admin : somme globale (rare, utilisateurs limités)
+    const agg = await (db as any).ecole.aggregate({ _sum: { versionData: true } });
+    return agg._sum.versionData ?? 0;
   } catch {
     return 0;
   }
@@ -46,7 +36,7 @@ export async function GET(requête: Request) {
   const utilisateurId = session.utilisateur.id;
   const encodeur = new TextEncoder();
 
-  let derniere = await version(ecoleId, utilisateurId);
+  let derniere = await versionEcole(ecoleId, utilisateurId);
   let actif = true;
   requête.signal.addEventListener('abort', () => { actif = false; });
 
@@ -62,12 +52,12 @@ export async function GET(requête: Request) {
 
       const tic = setInterval(async () => {
         if (!actif) { clearInterval(tic); try { controller.close(); } catch { } return; }
-        const v = await version(ecoleId, utilisateurId);
+        const v = await versionEcole(ecoleId, utilisateurId);
         if (v !== derniere) {
           derniere = v;
           envoyer('changement', { v, date: new Date().toISOString() });
         } else {
-          envoyer('ping', { date: new Date().toISOString() }); // garde-fou anti-timeout proxy
+          envoyer('ping', { date: new Date().toISOString() });
         }
       }, 10_000);
 

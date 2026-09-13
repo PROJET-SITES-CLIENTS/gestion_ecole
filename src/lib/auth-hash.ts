@@ -6,10 +6,15 @@
 
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
+// N=65536, r=8 → ~64 Mo de mémoire requise : le plafond par défaut de
+// scrypt (32 Mo) REJETTERAIT ces paramètres (ERR_CRYPTO_INVALID_SCRYPT_PARAMS).
+// On relève explicitement maxmem (256 Mo ≫ 64 Mo) — hash ET vérification.
+const MAXMEM = 256 * 1024 * 1024;
+
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
-  const N = 16384, r = 8, p = 1;
-  const hash = scryptSync(password, salt, 64, { N, r, p }).toString('hex');
+  const N = 65536, r = 8, p = 1; // OWASP 2024 — résiste aux attaques GPU modernes (x4 plus solide)
+  const hash = scryptSync(password, salt, 64, { N, r, p, maxmem: MAXMEM }).toString('hex');
   return `scrypt$${N}$${r}$${p}$${salt}$${hash}`;
 }
 
@@ -18,7 +23,7 @@ export function verifyPassword(password: string, stored: string): boolean {
     const parts = stored.split('$');
     if (parts[0] !== 'scrypt' || parts.length !== 6) return false;
     const [, N, r, p, salt, hash] = parts;
-    const calc = scryptSync(password, salt, 64, { N: Number(N), r: Number(r), p: Number(p) });
+    const calc = scryptSync(password, salt, 64, { N: Number(N), r: Number(r), p: Number(p), maxmem: MAXMEM });
     const attendu = Buffer.from(hash, 'hex');
     return calc.length === attendu.length && timingSafeEqual(calc, attendu);
   } catch {

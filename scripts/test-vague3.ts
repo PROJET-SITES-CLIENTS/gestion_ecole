@@ -18,13 +18,26 @@ import {
   creerMatiereCore,
 } from '../src/lib/business';
 
-const db = new PrismaClient();
+import { dbTest, executerAvecRetry } from './_helper-test';
+const db = dbTest;
 const MARK = 'Vague3';
 const results: Array<{ test: string; verdict: string; detail: string }> = [];
 
 type Attente = { rejete: boolean; erreur?: string; valeur?: unknown };
 async function attendu(fn: () => Promise<unknown>): Promise<Attente> {
-  return fn().then((v): Attente => ({ rejete: false, valeur: v }), (e): Attente => ({ rejete: true, erreur: e instanceof ActionError ? e.message : String(e) }));
+  // Transitoire (Neon qui s'endort) → on RETENTE : un refus métier doit
+  // être VRAI, pas un crash de connexion déguisé en « rejeté ».
+  for (let essai = 1; essai <= 3; essai++) {
+    try { const v = await fn(); return { rejete: false, valeur: v } as Attente; }
+    catch (e) {
+      const transitoire = typeof (e as any)?.code === 'string'
+        ? ['P1001','P1006','P1008','P1010','P1017','P2024'].includes((e as any).code)
+        : /can't reach database|connection terminated|connection reset|timed out/i.test(String((e as Error)?.message ?? ''));
+      if (!transitoire || essai === 3) return { rejete: true, erreur: e instanceof ActionError ? e.message : String(e) } as Attente;
+      await new Promise((r) => setTimeout(r, 800 * essai));
+    }
+  }
+  return { rejete: true, erreur: 'inatteignable' } as Attente;
 }
 const jourUTC = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
@@ -158,7 +171,15 @@ async function main() {
       update: {},
     });
     const rem = await appliquerRemisesFamillesCore(ctx, ecole.id, 10);
-    // Relances auto
+    // Rejouable : retirer le lien fratrie créé sur des élèves du SEED
+    // (sinon le parent démo garde un 2e enfant et casse T9 de l'autre suite)
+    await db.eleveParent.deleteMany({ where: { eleveId: frere.id, parentId: parent1.id } }).catch(() => {});
+    // Relances auto — rejouable : on crée SA propre échéance en retard
+    // (≥ 7 jours) ; les relances des exécutions précédentes existent déjà.
+    const eleveRetard = (await db.eleve.findMany({ where: { ecoleId: ecole.id, statut: 'actif' } }))[0];
+    const anneeActive = await db.anneeScolaire.findFirst({ where: { ecoleId: ecole.id, active: true } });
+    const fraisRetard = await db.frais.create({ data: { ecoleId: ecole.id, libelle: 'TestVague3 Relance', type: 'scolarite', montant: 5000000, devise: 'XOF', periodicite: 'annuel', anneeScolaireId: anneeActive!.id } });
+    const echeanceRetard = await db.echeanceFrais.create({ data: { eleveId: eleveRetard.id, fraisId: fraisRetard.id, montant: 5000000, devise: 'XOF', dateEcheance: new Date(Date.now() - 12 * 86400000), statut: 'impayee', source: 'TestVague3 relance' } });
     const rel = await relancerImpayesAutoCore(ecole.id);
     const relBis = await relancerImpayesAutoCore(ecole.id);
     // Rapprochement
@@ -197,6 +218,11 @@ async function preCleanup() {
   try {
     const j = jourUTC();
     await db.echeanceFrais.deleteMany({ where: { source: { startsWith: 'activite-' } } });
+    // T48 — échéancier personnalisé (dates fixes → idempotence bloquante)
+    await db.echeanceFrais.deleteMany({ where: { source: 'échéancier personnalisé' } }).catch(() => {});
+    // T48 — résidus relances TestVague3 (frais + échéance + notifications)
+    await db.echeanceFrais.deleteMany({ where: { source: 'TestVague3 relance' } }).catch(() => {});
+    await db.frais.deleteMany({ where: { libelle: 'TestVague3 Relance' } }).catch(() => {});
     await db.frais.deleteMany({ where: { libelle: { startsWith: 'Activité —' } } });
     await db.activiteParticipant.deleteMany({ where: { activite: { titre: { contains: MARK } } } });
     await db.activite.deleteMany({ where: { titre: { contains: MARK } } });
@@ -229,6 +255,6 @@ async function preCleanup() {
   }
 }
 
-main()
+executerAvecRetry('VAGUE3', main)
   .catch(async (e) => { console.error('ERREUR SCRIPT:', e); await preCleanup(); process.exit(1); })
   .finally(() => db.$disconnect());

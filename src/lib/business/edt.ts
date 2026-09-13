@@ -150,6 +150,18 @@ export async function modifierCreneauEdtCore(ctx: Ctx, emploiTempsId: string, in
     },
   });
   await logAction(db, et.ecoleId, ctx.utilisateurId, 'edt.creneau_modification', 'emploi_temps', emploiTempsId, { jour: input.jour });
+    // Mettre à jour les séances futures planifiées
+  await db.seance.updateMany({
+    where: { emploiTempsId, statut: 'planifiee', date: { gte: new Date() } },
+    data: {
+      classeId: input.classeId,
+      matiereId: input.matiereId,
+      enseignantId: input.enseignantId,
+      salleId: input.salleId,
+      heureDebut: input.heureDebut,
+      heureFin: input.heureFin
+    }
+  });
   return { emploiTempsId };
 }
 
@@ -230,9 +242,7 @@ export async function genererSeancesDepuisEdtCore(ctx: Ctx, emploiTempsId: strin
 // Transition d'année scolaire (F9 — réparée)
 // --------------------------------------------------------------------
 
-export type ClotureAnneeInput = {
-  redoublerIds?: string[]; // élèves maintenus dans le même niveau
-};
+export type ClotureAnneeInput = { redoublerIds?: string[]; repartitionAutomatique?: boolean; };
 
 export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input: ClotureAnneeInput = {}) {
   assertPermission(ctx, 'admin.saas');
@@ -251,6 +261,7 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
   if (existe) throw new ActionError(`L'année ${libelleSuivant} existe déjà.`, 'DEJA_EXISTANT');
 
   const redoubler = new Set(input.redoublerIds ?? []);
+  const repartitionAuto = input.repartitionAutomatique ?? false;
 
   // Tous les niveaux de l'école (pour détecter le niveau suivant et la fin de cycle)
   const niveauxEcole = await db.niveau.findMany({
@@ -379,13 +390,19 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
         continue;
       }
       // Répartition : on équilibre entre les classes du niveau suivant
-      classesNiveauSuivant.sort((a, b) => (remplissage.get(a) ?? 0) - (remplissage.get(b) ?? 0));
-      const cible = classesNiveauSuivant[0];
-      remplissage.set(cible, (remplissage.get(cible) ?? 0) + 1);
+      let cible: string | null = null;
+      if (repartitionAuto) {
+        classesNiveauSuivant.sort((a, b) => (remplissage.get(a) ?? 0) - (remplissage.get(b) ?? 0));
+        cible = classesNiveauSuivant[0];
+        remplissage.set(cible, (remplissage.get(cible) ?? 0) + 1);
+      }
+      
       await tx.eleve.update({ where: { id: e.id }, data: { classeActuelleId: cible } });
-      await tx.eleveHistoriqueClasse.create({
-        data: { eleveId: e.id, classeId: cible, dateEntree: nouvelle.dateDebut, motif: `Promotion — année ${libelleSuivant}` },
-      });
+      if (cible) {
+        await tx.eleveHistoriqueClasse.create({
+          data: { eleveId: e.id, classeId: cible, dateEntree: nouvelle.dateDebut, motif: `Promotion — année ${libelleSuivant}` },
+        });
+      }
       promus++;
     }
 

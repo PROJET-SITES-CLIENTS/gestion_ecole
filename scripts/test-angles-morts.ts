@@ -26,13 +26,26 @@ import { verifyPassword, hashPassword } from '../src/lib/auth-hash';
 import { chiffrer, déchiffrer } from '../src/lib/crypto';
 import { creerSauvegarde, listerSauvegardes } from '../src/lib/sauvegarde';
 
-const db = new PrismaClient();
+import { dbTest, executerAvecRetry } from './_helper-test';
+const db = dbTest;
 const MARK = 'AnglesMorts';
 const results: Array<{ test: string; verdict: string; detail: string }> = [];
 
 type Attente = { rejete: boolean; erreur?: string; valeur?: unknown };
 async function attendu(fn: () => Promise<unknown>): Promise<Attente> {
-  return fn().then((v): Attente => ({ rejete: false, valeur: v }), (e): Attente => ({ rejete: true, erreur: e instanceof ActionError ? e.message : String(e) }));
+  // Transitoire (Neon qui s'endort) → on RETENTE : un refus métier doit
+  // être VRAI, pas un crash de connexion déguisé en « rejeté ».
+  for (let essai = 1; essai <= 3; essai++) {
+    try { const v = await fn(); return { rejete: false, valeur: v } as Attente; }
+    catch (e) {
+      const transitoire = typeof (e as any)?.code === 'string'
+        ? ['P1001','P1006','P1008','P1010','P1017','P2024'].includes((e as any).code)
+        : /can't reach database|connection terminated|connection reset|timed out/i.test(String((e as Error)?.message ?? ''));
+      if (!transitoire || essai === 3) return { rejete: true, erreur: e instanceof ActionError ? e.message : String(e) } as Attente;
+      await new Promise((r) => setTimeout(r, 800 * essai));
+    }
+  }
+  return { rejete: true, erreur: 'inatteignable' } as Attente;
 }
 
 async function main() {
@@ -180,7 +193,7 @@ async function main() {
   {
     const r = await marquerNotificationsLuesCore(ctx);
     const nbApres = await db.notification.count({ where: { destinataireId: dir.id, dateLecture: null } });
-    const session = await db.sessionUtilisateur.create({ data: { utilisateurId: dir.id, tokenHash: createHash('sha256').update(`${MARK}-s`).digest('hex'), dateExpiration: new Date(Date.now() + 3600_000), active: true } });
+    const session = await db.sessionUtilisateur.create({ data: { utilisateurId: dir.id, tokenHash: createHash('sha256').update(`${MARK}-s-${Date.now()}-${Math.random()}-${Date.now()}-${Math.random()}`).digest('hex'), dateExpiration: new Date(Date.now() + 3600_000), active: true } });
     await revoquerSessionCore(ctx, session.id);
     const apres = await db.sessionUtilisateur.findUnique({ where: { id: session.id } });
     const pass = r.marquees > 0 && nbApres === 0 && apres?.active === false;
@@ -189,8 +202,17 @@ async function main() {
 
   // ===== T36 (C4) — 2FA par rôle =====
   {
-    const rc = await tenterConnexion('comptable@vinci.sn', process.env.SG_MDP_DEMO || 'Demo1234!', 'ua', '127.0.0.6');
+    // Autonome : la démo a VOLONTAIREMENT la 2FA désactivée (décision
+    // produit) → on crée notre propre utilisateur avec méthode TOTP.
+    const uTotp = await db.utilisateur.create({ data: { ecoleId: ecole.id, email: `${MARK.toLowerCase()}-totp@test.sn`, motDePasseHash: hashPassword('Mdp!1234'), nom: 'Totp', prenom: 'T', type: 'personnel', twofaActive: true } });
+    const roleTotp = await db.role.findFirst({ where: { ecoleId: ecole.id, code: 'assistant_direction' } });
+    await db.role.update({ where: { id: roleTotp!.id }, data: { twofaRequis: true } });
+    await db.utilisateurRole.create({ data: { utilisateurId: uTotp.id, roleId: roleTotp!.id } });
+    await db.twoFactorMethod.create({ data: { utilisateurId: uTotp.id, methode: 'totp', secret: 'JBSWY3DPEHPK3PXP', actif: true } });
+    const rc = await tenterConnexion(`${MARK.toLowerCase()}-totp@test.sn`, 'Mdp!1234', 'ua', '127.0.0.6');
     const défi = !rc.ok && 'besoin2FA' in rc;
+    await db.twoFactorMethod.deleteMany({ where: { utilisateurId: uTotp.id } });
+    await db.role.update({ where: { id: roleTotp!.id }, data: { twofaRequis: false } });
     const u2 = await db.utilisateur.create({ data: { ecoleId: ecole.id, email: `${MARK.toLowerCase()}-rh@test.sn`, motDePasseHash: hashPassword('Mdp!1234'), nom: 'Rh', prenom: 'T', type: 'personnel' } });
     const roleRh = await db.role.findFirst({ where: { ecoleId: ecole.id, code: 'rh' } });
     await db.role.update({ where: { id: roleRh!.id }, data: { twofaRequis: true } });
@@ -206,7 +228,7 @@ async function main() {
   {
     const ecole2 = await db.ecole.findFirst({ where: { slug: 'etoile-demo' } });
     if (ecole2) {
-      const session = await db.sessionUtilisateur.create({ data: { utilisateurId: dir.id, tokenHash: createHash('sha256').update(`${MARK}-m`).digest('hex'), dateExpiration: new Date(Date.now() + 3600_000), active: true } });
+      const session = await db.sessionUtilisateur.create({ data: { utilisateurId: dir.id, tokenHash: createHash('sha256').update(`${MARK}-m-${Date.now()}-${Math.random()}`).digest('hex'), dateExpiration: new Date(Date.now() + 3600_000), active: true } });
       const r = await attendu(() => changerEcoleActiveCore(ctx, session.id, ecole2.id));
       const apres = await db.sessionUtilisateur.findUnique({ where: { id: session.id } });
       const sans = await attendu(() => changerEcoleActiveCore(ctx, session.id, 'ecole-x'));
@@ -269,7 +291,7 @@ async function main() {
     const c = await attendu(() => creerClasseCore(ctx, { niveauId: n6.id, code: '6Z', libelle: 'Sixième Z' }));
     const cDup = await attendu(() => creerClasseCore(ctx, { niveauId: n6.id, code: '6Z', libelle: 'Doublon' }));
     const pass = !m.rejete && mDup.rejete && mCoef.rejete && !c.rejete && cDup.rejete;
-    results.push({ test: 'T41 (déploiement) — Référentiels : matières + classes créables', verdict: pass ? 'PASS ✓' : 'ÉCHEC', detail: `matière: ${!m.rejete ? 'créée' : 'échec'} · doublon: ${mDup.rejete ? 'refusé' : 'accepté (?)'} · coef 99: ${mCoef.rejete ? 'refusé' : 'accepté (?)'} · classe 6Z: ${!c.rejete ? 'créée' : 'échec'} · doublon: ${cDup.rejete ? 'refusé' : 'accepté (?)'} — une école réelle configure SON établissement` });
+    results.push({ test: 'T41 (déploiement) — Référentiels : matières + classes créables', verdict: pass ? 'PASS ✓' : 'ÉCHEC', detail: `matière: ${!m.rejete ? 'créée' : 'échec — ' + String(m.erreur ?? '').slice(0, 140)} · doublon: ${mDup.rejete ? 'refusé' : 'accepté (?)'} · coef 99: ${mCoef.rejete ? 'refusé' : 'accepté (?)'} · classe 6Z: ${!c.rejete ? 'créée' : 'échec — ' + String(c.erreur ?? '').slice(0, 140)} · doublon: ${cDup.rejete ? 'refusé' : 'accepté (?)'} — une école réelle configure SON établissement` });
   }
   await preCleanup();
   console.log('\n══════════════════ RÉSULTATS ANGLES MORTS ══════════════════');
@@ -283,23 +305,64 @@ async function main() {
 }
 
 async function preCleanup() {
+  // Idempotent mais SILENCIEUX de l'intérieur : on retente TOUT en cas
+  // d'erreur transitoire (Neon froid au démarrage) — sinon les résidus
+  // survivent et cassent T41 (« existe déjà »).
+  for (let essai = 1; essai <= 3; essai++) {
+    try { await preCleanupUneFois(); return; }
+    catch (e) {
+      if (essai === 3) throw e;
+      console.log(`↻ preCleanup (réveil base), tentative ${essai + 1}/3…`);
+      await new Promise((r) => setTimeout(r, 1200 * essai));
+    }
+  }
+}
+
+async function preCleanupUneFois() {
   try {
     const hashMark = createHash('sha256').update(MARK).digest('hex').slice(0, 8);
-    await db.utilisateurRole.deleteMany({ where: { utilisateur: { email: { contains: MARK } } } }).catch(() => {});
-    await db.sessionUtilisateur.deleteMany({ where: { utilisateur: { email: { contains: MARK } } } }).catch(() => {});
-    await db.utilisateur.deleteMany({ where: { email: { contains: MARK } } }).catch(() => {});
-    await db.eleveParent.deleteMany({ where: { eleve: { nom: { contains: MARK } } } });
-    await db.ficheSante.deleteMany({ where: { eleve: { nom: { contains: MARK } } } });
-    await db.eleveHistoriqueClasse.deleteMany({ where: { eleve: { nom: { contains: MARK } } } });
+    // T27 — bulletins de paie de la période test (idempotence sinon bloquée)
+    await db.cotisationSociale.deleteMany({ where: { bulletin: { periode: '2030-01' } } }).catch(() => {});
+    await db.variablePaie.deleteMany({ where: { bulletinPaie: { periode: '2030-01' } } }).catch(() => {});
+    await db.ligneBulletinPaie.deleteMany({ where: { bulletin: { periode: '2030-01' } } }).catch(() => {});
+    await db.bulletinPaie.deleteMany({ where: { periode: '2030-01' } }).catch(() => {});
+    // T29 — écritures AUTOMATIQUES (ENC-/DEP-) + écritures MARK validées :
+    // RELEVER les soldes des comptes avant suppression (sinon dérive)
+    const ecritureARelever = await db.ecritureComptable.findMany({
+      where: { statut: 'valide', OR: [{ numeroPiece: { startsWith: 'ENC-' } }, { numeroPiece: { startsWith: 'DEP-' } }, { libelle: { contains: MARK } }] },
+      include: { lignes: true },
+    }).catch(() => []);
+    for (const e of ecritureARelever) {
+      for (const l of e.lignes) {
+        await db.compteComptable.update({ where: { id: l.compteId }, data: { solde: { decrement: l.debit - l.credit } } }).catch(() => {});
+      }
+    }
+    if (ecritureARelever.length) {
+      await db.ligneEcriture.deleteMany({ where: { ecritureId: { in: ecritureARelever.map((e) => e.id) } } }).catch(() => {});
+      await db.ecritureComptable.deleteMany({ where: { id: { in: ecritureARelever.map((e) => e.id) } } }).catch(() => {});
+    }
+    // T31 — frais cantine/transport du mois test
+    const fraisOct = await db.frais.findMany({ where: { libelle: { in: ['Cantine — 2026-10', 'Transport — 2026-10'] } }, select: { id: true } }).catch(() => []);
+    if (fraisOct.length) {
+      await db.paiementEcheance.deleteMany({ where: { echeance: { fraisId: { in: fraisOct.map((x) => x.id) } } } }).catch(() => {});
+      await db.echeanceFrais.deleteMany({ where: { fraisId: { in: fraisOct.map((x) => x.id) } } }).catch(() => {});
+      await db.frais.deleteMany({ where: { id: { in: fraisOct.map((x) => x.id) } } }).catch(() => {});
+    }
+    await db.utilisateurRole.deleteMany({ where: { utilisateur: { email: { contains: MARK, mode: 'insensitive' as any } } } }).catch(() => {});
+    await db.sessionUtilisateur.deleteMany({ where: { utilisateur: { email: { contains: MARK, mode: 'insensitive' as any } } } }).catch(() => {});
+    await db.utilisateur.deleteMany({ where: { email: { contains: MARK, mode: 'insensitive' as any } } }).catch(() => {});
+    await db.eleveParent.deleteMany({ where: { eleve: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
+    await db.ficheSante.deleteMany({ where: { eleve: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
+    await db.eleveHistoriqueClasse.deleteMany({ where: { eleve: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
     await db.echeanceFrais.deleteMany({ where: { source: { contains: MARK } } });
     await db.frais.deleteMany({ where: { libelle: { contains: MARK } } });
     await db.ligneEcriture.deleteMany({ where: { ecriture: { libelle: { contains: MARK } } } });
     await db.ecritureComptable.deleteMany({ where: { libelle: { contains: MARK } } });
-    await db.etapeAdmission.deleteMany({ where: { candidature: { nom: { contains: MARK } } } });
-    await db.candidatureAdmission.deleteMany({ where: { nom: { contains: MARK } } });
-    await db.transportInscription.deleteMany({ where: { ligne: { nom: { contains: MARK } } } });
-    await db.transportArret.deleteMany({ where: { ligne: { nom: { contains: MARK } } } });
-    await db.transportLigne.deleteMany({ where: { nom: { contains: MARK } } });
+    await db.etapeAdmission.deleteMany({ where: { candidature: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
+    await db.candidatureAdmission.deleteMany({ where: { nom: { contains: MARK, mode: 'insensitive' as any } } });
+    await db.transportInscription.deleteMany({ where: { ligne: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
+    await db.transportArret.deleteMany({ where: { ligne: { nom: { contains: MARK, mode: 'insensitive' as any } } } });
+    await db.transportLigne.deleteMany({ where: { nom: { contains: MARK, mode: 'insensitive' as any } } });
     await db.suiviSignalement.deleteMany({ where: { signalement: { description: { contains: MARK } } } });
     await db.mesureProtection.deleteMany({ where: { signalement: { description: { contains: MARK } } } });
     await db.signalementMineur.deleteMany({ where: { description: { contains: MARK } } });
@@ -312,7 +375,7 @@ async function preCleanup() {
     await db.notification.deleteMany({ where: { corps: { contains: MARK } } });
     await db.demandeEffacement.deleteMany({ where: { cible: undefined } } as any).catch(() => {});
     await db.demandeEffacement.deleteMany({ where: { description: { contains: MARK } } }).catch(() => {});
-    await db.eleve.deleteMany({ where: { nom: { contains: MARK } } });
+    await db.eleve.deleteMany({ where: { nom: { contains: MARK, mode: 'insensitive' as any } } });
     await db.classe.deleteMany({ where: { ecoleId: undefined as any, code: '6Z' } }).catch(() => {});
     await db.classe.deleteMany({ where: { code: '6Z' } }).catch(() => {});
     await db.matiere.deleteMany({ where: { code: { in: ['AMX1', 'AMX2'] } } }).catch(() => {});
@@ -323,6 +386,6 @@ async function preCleanup() {
   }
 }
 
-main()
+executerAvecRetry('ANGLES', main)
   .catch(async (e) => { console.error('ERREUR SCRIPT:', e); await preCleanup(); process.exit(1); })
   .finally(() => db.$disconnect());

@@ -2,7 +2,7 @@
 
 // Composants UI partagés utilisés par tous les modules.
 
-import { ReactNode, useCallback, useState, useTransition } from 'react';
+import { ReactNode, useCallback, useState, useTransition, isValidElement, cloneElement } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +51,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   );
 }
 
-export function StatCard({ title, value, sub, icon: Icon, color = 'emerald' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
+export function StatCard({ title, value, sub, icon, color = 'emerald' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
   const colorMap: Record<string, string> = {
     emerald: 'bg-emerald-50 text-emerald-700',
     rose: 'bg-rose-50 text-rose-700',
@@ -60,6 +60,11 @@ export function StatCard({ title, value, sub, icon: Icon, color = 'emerald' }: {
     purple: 'bg-purple-50 text-purple-700',
     gray: 'bg-gray-100 text-gray-700',
   };
+  // Tolère les DEUX conventions d'appel : composant (icon={Wallet}) et
+  // élément déjà instancié (icon={<Wallet className/>}) — sinon le rendu
+  // crash (« Element type is invalid ») dans les portails parent/élève.
+  const Icon = typeof icon === 'function' || typeof icon === 'string' ? icon : null;
+  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-5 w-5" /> : null;
   return (
     <Card>
       <CardContent className="p-4">
@@ -69,9 +74,9 @@ export function StatCard({ title, value, sub, icon: Icon, color = 'emerald' }: {
             <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
             {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
           </div>
-          {Icon && (
+          {icone && (
             <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorMap[color]}`}>
-              <Icon className="h-5 w-5" />
+              {cloneElement(icone as any, { className: 'h-5 w-5' })}
             </div>
           )}
         </div>

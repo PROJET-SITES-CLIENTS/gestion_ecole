@@ -25,7 +25,7 @@ export async function creerDevoirCore(ctx: Ctx, input: { classeId: string; matie
     data: {
       ecoleId: classe.ecoleId, classeId: input.classeId, matiereId: input.matiereId ?? null,
       enseignantId: enseignant.id,
-      intitule: input.intitule.trim(), description: input.description?.trim() || null,
+      intitule: input.intitule.trim(),
       dateRendu: input.dateRendu, sur: input.sur ?? 20, coefficient: input.coefficient ?? 1,
       type: input.type ?? 'devoir', statut: 'assigne',
     },
@@ -207,7 +207,7 @@ export async function creerDispenseCore(ctx: Ctx, input: { eleveId: string; mati
   const d = await db.dispense.create({
     data: {
       ecoleId: eleve.ecoleId, eleveId: input.eleveId, matiereId: input.matiereId ?? null,
-      motif: input.motif, description: input.description.trim(), dateDebut: input.dateDebut, dateFin: input.dateFin ?? null,
+      motif: input.motif.trim(), description: input.description.trim(), dateDebut: input.dateDebut, dateFin: input.dateFin ?? null,
       statut: 'demandee',
     },
   });
@@ -271,4 +271,84 @@ export async function marquerBulletinImprimableCore(ctx: Ctx, bulletinId: string
     },
     pdfUrl: url,
   };
+}
+
+
+// --------------------------------------------------------------------
+// B13 - PROGRAMMES SCOLAIRES
+// --------------------------------------------------------------------
+
+export async function creerProgrammeCore(ctx: Ctx, ecoleId: string, input: { matiereId: string; niveauId: string; intitule: string; description?: string }) {
+  assertPermission(ctx, 'notes.saisir'); // ou une autre permission pédagogique
+  const matiere = await db.matiere.findUnique({ where: { id: input.matiereId } });
+  if (!matiere || matiere.ecoleId !== ecoleId) throw new ActionError('Matière invalide.', 'INTROUVABLE');
+  const niveau = await db.niveau.findUnique({ where: { id: input.niveauId }, include: { section: { include: { cycle: true } } } });
+  if (!niveau || niveau.section.cycle.ecoleId !== ecoleId) throw new ActionError('Niveau invalide.', 'INTROUVABLE');
+
+  const p = await db.programme.create({
+    data: {
+      ecoleId,
+      matiereId: input.matiereId,
+      niveauId: input.niveauId,
+      titre: input.intitule,
+      anneeScolaireId: (await db.anneeScolaire.findFirst({where:{ecoleId, active: true}}))!.id,
+      publie: true
+    }
+  });
+  return { programmeId: p.id };
+}
+
+export async function ajouterChapitreCore(ctx: Ctx, programmeId: string, input: { intitule: string; description?: string; ordre: number; volumeHorairePrevu?: number }) {
+  assertPermission(ctx, 'notes.saisir');
+  const p = await db.programme.findUnique({ where: { id: programmeId } });
+  if (!p) throw new ActionError('Programme introuvable.', 'INTROUVABLE');
+  assertTenant(p.ecoleId, ctx, 'Ce programme');
+
+  const c = await db.chapitre.create({
+    data: {
+      programmeId,
+      titre: input.intitule,
+      ordre: input.ordre,
+      volumeHorairePrevu: input.volumeHorairePrevu
+    }
+  });
+  return { chapitreId: c.id };
+}
+
+export async function mettreAJourAvancementCore(ctx: Ctx, chapitreId: string, input: { classeId?: string; groupeId?: string; commentaire?: string; pourcentage?: number }) {
+  assertPermission(ctx, 'notes.saisir');
+  const c = await db.chapitre.findUnique({ where: { id: chapitreId }, include: { programme: true } });
+  if (!c) throw new ActionError('Chapitre introuvable.', 'INTROUVABLE');
+  assertTenant(c.programme.ecoleId, ctx, 'Ce chapitre');
+
+  if (!input.classeId && !input.groupeId) {
+    throw new ActionError('Veuillez spécifier une classe ou un groupe pour cet avancement.', 'CHAMP_MANQUANT');
+  }
+
+  if (input.classeId) {
+    const a = await db.avancementProgramme.upsert({
+      where: { chapitreId_classeId: { chapitreId, classeId: input.classeId } },
+      update: { commentaire: input.commentaire, dateMaj: new Date(), pourcentage: input.pourcentage ?? 100 },
+      create: { chapitreId, classeId: input.classeId, commentaire: input.commentaire, enseignantId: (await db.personnel.findFirst({where:{utilisateurId:ctx.utilisateurId}}))!.id, pourcentage: input.pourcentage ?? 100 }
+    });
+    return { avancementId: a.id };
+  } else {
+    // Note: If AvancementProgramme lacks @@unique([chapitreId, groupeId]), upsert is not possible by unique compound.
+    // Let's use findFirst then create/update.
+    const a = await db.avancementProgramme.findFirst({
+      where: { chapitreId, groupeId: input.groupeId }
+    });
+    if (a) {
+      await db.avancementProgramme.update({
+        where: { id: a.id },
+        data: { commentaire: input.commentaire, dateMaj: new Date(), pourcentage: input.pourcentage ?? 100 }
+      });
+      return { avancementId: a.id };
+    } else {
+      const created = await db.avancementProgramme.create({
+        data: { chapitreId, groupeId: input.groupeId, commentaire: input.commentaire, enseignantId: (await db.personnel.findFirst({where:{utilisateurId:ctx.utilisateurId}}))!.id, pourcentage: input.pourcentage ?? 100 }
+      });
+      return { avancementId: created.id };
+    }
+  }
 }

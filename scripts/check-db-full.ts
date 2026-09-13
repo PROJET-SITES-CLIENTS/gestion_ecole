@@ -6,6 +6,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
+import { estErreurTransitoire } from "../src/lib/retry-bdd";
 
 const prisma = new PrismaClient();
 
@@ -41,12 +42,15 @@ async function main() {
   if (empty.length) console.log(`❌ Tables VIDES (${empty.length}) : ${empty.join(", ")}`);
   else console.log("✅ Aucune table vide");
 
-  // 4. Intégrité référentielle SQLite
-  const fk = await prisma.$queryRawUnsafe<{ fk_errors: number }[]>(
-    "PRAGMA foreign_key_check"
+  // 4. Intégrité référentielle PostgreSQL : contraintes FK validées ?
+  //    (SQLite n'avait pas de FK réelles → PRAGMA ; PostgreSQL les applique
+  //     structurellement : une contrainte NOT VALID serait la seule faille)
+  const fkNonValidees = await prisma.$queryRawUnsafe<{ table: string; conname: string }[]>(
+    `SELECT conrelid::regclass::text AS table, conname
+     FROM pg_constraint WHERE contype = 'f' AND NOT convalidated`
   );
-  if (fk.length === 0) console.log("✅ Intégrité référentielle : 0 violation");
-  else console.log(`❌ Violations FK : ${fk.length}`);
+  if (fkNonValidees.length === 0) console.log("✅ Intégrité référentielle : toutes les contraintes FK sont validées (0 violation possible)");
+  else console.log(`❌ Contraintes FK NON validées (${fkNonValidees.length}) : ${fkNonValidees.map((f) => `${f.table}.${f.conname}`).join(', ')}`);
 
   // 5. Quelques contrôles métier clés
   const ecoles = await prisma.ecole.count();
@@ -55,14 +59,14 @@ async function main() {
   const annees = await prisma.anneeScolaire.count();
   console.log(`\nDonnées clés : ${ecoles} écoles, ${eleves} élèves, ${utilisateurs} utilisateurs, ${annees} années scolaires`);
 
-  // Orphelins courants (échantillon de contrôles)
+  // Orphelins courants (échantillon de contrôles) — noms quotés (casse PG)
   const orphEleves = await prisma.$queryRawUnsafe<{ n: number }[]>(
-    "SELECT COUNT(*) as n FROM Eleve WHERE classeActuelleId IS NOT NULL AND classeActuelleId NOT IN (SELECT id FROM Classe)"
+    'SELECT COUNT(*) as n FROM "Eleve" WHERE "classeActuelleId" IS NOT NULL AND "classeActuelleId" NOT IN (SELECT id FROM "Classe")'
   );
   console.log(`Orphelins Eleve→Classe : ${Number(orphEleves[0].n)}`);
 
   const orphUsers = await prisma.$queryRawUnsafe<{ n: number }[]>(
-    "SELECT COUNT(*) as n FROM Utilisateur WHERE ecoleId IS NOT NULL AND ecoleId NOT IN (SELECT id FROM Ecole)"
+    'SELECT COUNT(*) as n FROM "Utilisateur" WHERE "ecoleId" IS NOT NULL AND "ecoleId" NOT IN (SELECT id FROM "Ecole")'
   );
   console.log(`Orphelins Utilisateur→Ecole : ${Number(orphUsers[0].n)}`);
 
@@ -72,7 +76,20 @@ async function main() {
   filled.slice(0, 15).forEach((f) => console.log(`  ${f.name}: ${f.n}`));
 }
 
-main()
+async function executer() {
+  // Neon s'endort : on réessaie tout l'audit en cas d'erreur transitoire
+  for (let essai = 1; essai <= 4; essai++) {
+    try {
+      return await main();
+    } catch (e) {
+      if (essai === 4 || !estErreurTransitoire(e)) throw e;
+      console.log(`↻ base en cours de réveil, tentative ${essai + 1}/4…`);
+      await new Promise((r) => setTimeout(r, 1500 * essai));
+    }
+  }
+}
+
+executer()
   .catch((e) => {
     console.error("ERREUR:", e.message);
     process.exit(1);

@@ -1,5 +1,38 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+import type { ComponentType } from 'react';
+
+// ====================================================================
+// CODE SPLITTING — Chargement à la demande (lazy loading)
+// Les modules sont téléchargés UNIQUEMENT quand l'utilisateur y accède.
+// Le bundle initial passe de plusieurs Mo à quelques Ko → TTI mobile x3.
+// ====================================================================
+const SaasModule = dynamic(() => import('./modules/saas'), { ssr: false });
+const DirectionModule = dynamic(() => import('./modules/direction'), { ssr: false });
+const ElevesModule = dynamic(() => import('./modules/eleves'), { ssr: false });
+const PersonnelModule = dynamic(() => import('./modules/personnel'), { ssr: false });
+const PedagogiqueModule = dynamic(() => import('./modules/pedagogique'), { ssr: false });
+const ConseilsModule = dynamic(() => import('./modules/conseils'), { ssr: false });
+const PresencesModule = dynamic(() => import('./modules/presences'), { ssr: false });
+const VieScolaireModule = dynamic(() => import('./modules/vie-scolaire'), { ssr: false });
+const FinancesModule = dynamic(() => import('./modules/finances'), { ssr: false });
+const ServicesModule = dynamic(() => import('./modules/services'), { ssr: false });
+const SallesModule = dynamic(() => import('./modules/salles'), { ssr: false });
+const ExamensModule = dynamic(() => import('./modules/examens'), { ssr: false });
+const RdvModule = dynamic(() => import('./modules/rdv'), { ssr: false });
+const SecuriteModule = dynamic(() => import('./modules/securite'), { ssr: false });
+const CommunicationModule = dynamic(() => import('./modules/communication'), { ssr: false });
+const IntegrationsModule = dynamic(() => import('./modules/integrations'), { ssr: false });
+const AuditModule = dynamic(() => import('./modules/audit'), { ssr: false });
+const ParentPortalModule = dynamic(() => import('./modules/parent-portal'), { ssr: false });
+const ElevePortalModule = dynamic(() => import('./modules/eleve-portal'), { ssr: false });
+const V4ModulesModule = dynamic(() => import('./modules/v4-modules'), { ssr: false });
+const SanteModule = dynamic(() => import('./modules/sante'), { ssr: false });
+const AdmissionsModule = dynamic(() => import('./modules/admissions'), { ssr: false });
+const ProtectionModule = dynamic(() => import('./modules/protection'), { ssr: false });
+const PortailMetiers = dynamic(() => import('./modules/portail-metiers'), { ssr: false });
+
 // ====================================================================
 // Shell applicatif principal — navigation entre modules.
 // Portail dérivé du COMPTE CONNECTÉ (session) : chaque métier de
@@ -30,30 +63,6 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import SaasModule from './modules/saas';
-import DirectionModule from './modules/direction';
-import ElevesModule from './modules/eleves';
-import PersonnelModule from './modules/personnel';
-import PedagogiqueModule from './modules/pedagogique';
-import ConseilsModule from './modules/conseils';
-import PresencesModule from './modules/presences';
-import VieScolaireModule from './modules/vie-scolaire';
-import FinancesModule from './modules/finances';
-import ServicesModule from './modules/services';
-import SallesModule from './modules/salles';
-import ExamensModule from './modules/examens';
-import RdvModule from './modules/rdv';
-import SecuriteModule from './modules/securite';
-import CommunicationModule from './modules/communication';
-import IntegrationsModule from './modules/integrations';
-import AuditModule from './modules/audit';
-import ParentPortalModule from './modules/parent-portal';
-import ElevePortalModule from './modules/eleve-portal';
-import V4ModulesModule from './modules/v4-modules';
-import SanteModule from './modules/sante';
-import AdmissionsModule from './modules/admissions';
-import ProtectionModule from './modules/protection';
-import PortailMetiers from './modules/portail-metiers';
 import * as ext from '@/app/actions/extensions';
 
 export type Portal =

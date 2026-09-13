@@ -40,7 +40,7 @@ export async function genererBulletinsPaieCore(ctx: Ctx, ecoleId: string, period
   const primesRécurrentes: Array<{ libelle: string; montant: number }> = JSON.parse(config?.primesRecurrentes || '[]');
   const devise = (await db.ecole.findUnique({ where: { id: ecoleId } }))?.devise ?? 'XOF';
 
-  const personnels = await db.personnel.findMany({ where: { ecoleId, statut: 'actif', deletedAt: null, salaireBrut: { not: null } } });
+  const personnels = await db.personnel.findMany({ where: { ecoleId, statut: 'actif', deletedAt: null, contrats: { some: { actif: true } } }, include: { contrats: { where: { actif: true } } } });
   let bulletins = 0, sautes = 0, totalNet = 0;
 
   await avecVerrou('paie:gen', () => db.$transaction(async (tx) => {
@@ -48,7 +48,7 @@ export async function genererBulletinsPaieCore(ctx: Ctx, ecoleId: string, period
       const existant = await tx.bulletinPaie.findUnique({ where: { personnelId_periode: { personnelId: p.id, periode } } });
       if (existant) { sautes++; continue; }
 
-      const base = p.salaireBrut!;
+      const base = p.contrats[0]?.salaireBrut || 0;
       const variables = await tx.variablePaie.findMany({ where: { ecoleId, personnelId: p.id, periode, bulletinPaieId: null } });
       const lignes: Array<{ type: string; libelle: string; montant: number; sens: string; quantite?: number; taux?: number }> = [
         { type: 'salaire_base', libelle: `Salaire de base`, montant: base, sens: 'plus' },

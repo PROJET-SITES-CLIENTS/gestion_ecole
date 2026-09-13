@@ -174,7 +174,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
         ecoleId: ecole.id, utilisateurId: admin.id,
         matricule: 'PER-0001',
         nom: input.adminNom.trim(), prenom: input.adminPrenom.trim(),
-        email, dateEmbauche: new Date(), typeContrat: 'CDI', statut: 'actif',
+        email, dateEmbauche: new Date(), statut: 'actif',
       },
     });
 

@@ -229,7 +229,6 @@ export async function creerEcoleClientCore(ctx: Ctx, input: EcoleClientInput) {
           prenom: input.nom.trim(),
           email: emailDirection,
           dateEmbauche: new Date(),
-          typeContrat: 'CDI',
           statut: 'actif',
         },
       });

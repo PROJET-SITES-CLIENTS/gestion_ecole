@@ -114,6 +114,7 @@ export async function encaisserPaiementCore(ctx: Ctx, input: EncaissementInput) 
         modePaiement: input.modePaiement,
         referenceTransaction: reference,
         encaisseParId: ctx.utilisateurId,
+      parentId: (input as any).parentId,
       },
     });
 
@@ -256,7 +257,16 @@ export async function annulerEcheanceCore(ctx: Ctx, echeanceId: string, motif: s
     throw new ActionError('Impossible d\'annuler une échéance déjà partiellement payée. Annulez d\'abord les paiements concernés.', 'ECHEANCE_PAYEE');
   }
   if (e.statut === 'annulee') throw new ActionError('Échéance déjà annulée.', 'DEJA_TRAITE');
-  await db.echeanceFrais.update({ where: { id: echeanceId }, data: { statut: 'annulee', source: motif.trim() } });
+  await db.echeanceFrais.update({ where: { id: echeanceId }, data: { statut: 'annulee' } });
+  await db.avoirScolarite.create({
+    data: {
+      ecoleId: (await db.echeanceFrais.findUnique({ where: { id: echeanceId }, include: { eleve: true } }))!.eleve.ecoleId,
+      echeanceFraisId: echeanceId,
+      montant: (await db.echeanceFrais.findUnique({ where: { id: echeanceId } }))!.montant,
+      motif: "Annulation d'échéance",
+      creeParId: ctx.utilisateurId
+    }
+  });
   await logAction(db, e.eleve.ecoleId, ctx.utilisateurId, 'echeance.annulation', 'echeance_frais', echeanceId, { motif: motif.trim() });
   return { echeanceId };
 }

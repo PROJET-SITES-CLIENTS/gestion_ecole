@@ -1,0 +1,312 @@
+{
+  "_meta": [
+    {
+      "généréLe": "2026-09-06T13:56:57.287Z",
+      "type": "manuelle"
+    }
+  ],
+  "ecole": [
+    {
+      "id": "cmtmh278b0004uhmc9ijeasvj",
+      "nom": "Institut Léonard de Vinci",
+      "slug": "vinci",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-04T04:46:49.880Z",
+      "statut": "actif",
+      "deletedAt": null,
+      "planCourantId": "cmtmh26qr0001uhmcd4zri6kz"
+    },
+    {
+      "id": "cmtmh6qdx00lkuhmchendtvn1",
+      "nom": "Cours Secondaire Étoile",
+      "slug": "etoile-demo",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-04T04:50:21.333Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtnebu1g0000l704ty18jg4n",
+      "nom": "Écoles Martis",
+      "slug": "ecoles-martis",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-04T20:18:06.676Z",
+      "statut": "actif",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtnfcyel0000kw045oa97bhl",
+      "nom": "601",
+      "slug": "601",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-04T20:46:58.605Z",
+      "statut": "actif",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpt4jje003xuhrovckola8o",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpt4j6n",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T12:47:53.066Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpthz0v0041uhp8mgmbzrxv",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpthygs",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T12:58:19.663Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtptuels003zuhas1fcuzhxm",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtptue1i",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T13:07:59.727Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpu6nak0041uhdw9a2m83nx",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpu6mya",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T13:17:30.860Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpug5k0003xuh28gy15jkaq",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpug57k",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T13:24:54.432Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpuox59003zuh9gbtcj5jt9",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpuowsi",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T13:31:43.437Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    },
+    {
+      "id": "cmtpvau73003zuhvst5w93j0n",
+      "nom": "RegressionV2 École C",
+      "slug": "regression-q-mtpvatrj",
+      "pays": "SN",
+      "devise": "XOF",
+      "fuseauHoraire": "Africa/Dakar",
+      "logoUrl": null,
+      "dateCreation": "2026-09-06T13:48:46.047Z",
+      "statut": "essai",
+      "deletedAt": null,
+      "planCourantId": null
+    }
+  ],
+  "planTarifaire": [
+    {
+      "id": "cmtmh263x0000uhmcnitv00c8",
+      "nom": "Essentiel",
+      "prixMensuel": 2500000,
+      "prixAnnuel": 27000000,
+      "devise": "XOF",
+      "limiteEleves": null,
+      "modulesInclus": "[\"eleves\",\"personnel\",\"pedagogique\",\"presences\",\"finances_basic\"]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-04T04:46:48.425Z",
+      "updatedAt": "2026-09-04T04:46:48.425Z"
+    },
+    {
+      "id": "cmtmh26qr0001uhmcd4zri6kz",
+      "nom": "Pro",
+      "prixMensuel": 6500000,
+      "prixAnnuel": 70000000,
+      "devise": "XOF",
+      "limiteEleves": 100,
+      "modulesInclus": "[\"eleves\",\"personnel\",\"pedagogique\",\"presences\",\"finances_full\",\"vie_scolaire\",\"rh\",\"services\",\"salles\",\"rdv\"]",
+      "dureeEssaiJours": 30,
+      "actif": true,
+      "createdAt": "2026-09-04T04:46:49.053Z",
+      "updatedAt": "2026-09-04T04:46:49.053Z"
+    },
+    {
+      "id": "cmtmh271y0002uhmcfj6jdw1g",
+      "nom": "Illimité",
+      "prixMensuel": 12000000,
+      "prixAnnuel": 130000000,
+      "devise": "XOF",
+      "limiteEleves": 0,
+      "modulesInclus": "[\"*\"]",
+      "dureeEssaiJours": 30,
+      "actif": true,
+      "createdAt": "2026-09-04T04:46:49.655Z",
+      "updatedAt": "2026-09-04T04:46:49.655Z"
+    },
+    {
+      "id": "cmtpt4ihk003wuhrod6dht3vp",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T12:47:51.704Z",
+      "updatedAt": "2026-09-06T12:47:51.704Z"
+    },
+    {
+      "id": "cmtpthy580040uhp8rd8b8fxn",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T12:58:18.524Z",
+      "updatedAt": "2026-09-06T12:58:18.524Z"
+    },
+    {
+      "id": "cmtptudpd003yuhasu6bwizhq",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T13:07:58.559Z",
+      "updatedAt": "2026-09-06T13:07:58.559Z"
+    },
+    {
+      "id": "cmtpu6mn00040uhdwqpumnrzj",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T13:17:30.011Z",
+      "updatedAt": "2026-09-06T13:17:30.011Z"
+    },
+    {
+      "id": "cmtpug4wd003wuh28aio56in8",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T13:24:53.580Z",
+      "updatedAt": "2026-09-06T13:24:53.580Z"
+    },
+    {
+      "id": "cmtpuowfk003yuh9gyp8mi82w",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T13:31:42.510Z",
+      "updatedAt": "2026-09-06T13:31:42.510Z"
+    },
+    {
+      "id": "cmtpvatg1003yuhvs4whhdndw",
+      "nom": "RegressionV2 Plan Quota 1",
+      "prixMensuel": 1000000,
+      "prixAnnuel": 10000000,
+      "devise": "XOF",
+      "limiteEleves": 1,
+      "modulesInclus": "[]",
+      "dureeEssaiJours": 14,
+      "actif": true,
+      "createdAt": "2026-09-06T13:48:45.071Z",
+      "updatedAt": "2026-09-06T13:48:45.071Z"
+    }
+  ],
+  "abonnement": [
+    {
+      "id": "cmtmh27jm0006uhmcwu6s7rxd",
+      "ecoleId": "cmtmh278b0004uhmc9ijeasvj",
+      "planId": "cmtmh26qr0001uhmcd4zri6kz",
+      "dateDebut": "2026-08-01T00:00:00.000Z",
+      "dateFin": null,
+      "statut": "actif",
+      "modeFacturation": "mensuel",
+      "createdAt": "2026-09-04T04:46:50.291Z",
+      "updatedAt": "2026-09-04T04:46:50.291Z"
+    }
+  ],
+  "factureSaas": [
+    {
+      "id": "cmtmh27ut0008uhmckxver8a2",
+      "ecoleId": "cmtmh278b0004uhmc9ijeasvj",
+      "abonnementId": "cmtmh27jm0006uhmcwu6s7rxd",
+      "periode": "2026-08",
+      "montant": 6500000,
+      "devise": "XOF",
+      "statut": "payee",
+      "modePaiement": "virement",
+      "dateEmission": "2026-09-04T04:46:50.693Z",
+      "datePaiement": "2026-08-05T00:00:00.000Z"
+    }
+  ]
+}

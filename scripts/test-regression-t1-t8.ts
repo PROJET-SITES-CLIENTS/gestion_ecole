@@ -36,7 +36,8 @@ import { tenterConnexion, validerDefi2FA, verifierCodeTotp } from '../src/lib/au
 import { verifyPassword } from '../src/lib/auth-hash';
 import type { SessionInfo } from '../src/lib/auth';
 
-const db = new PrismaClient();
+import { dbTest, executerAvecRetry } from './_helper-test';
+const db = dbTest;
 const MARK = 'RegressionV2';
 const results: Array<{ test: string; verdict: string; detail: string }> = [];
 
@@ -263,7 +264,12 @@ async function main() {
       sessionId: 'test',
     };
     const dParent = await chargerDonneesPortail('parent', sessionParent);
-    const enfantsOk = ((dParent as any).mesEnfants ?? []).length === 1 && (dParent as any).mesEnfants[0]?.id === parentLien!.eleveId;
+    // Un parent peut avoir PLUSIEURS enfants légitimes (fratries, tests T48) :
+    // on vérifie que le payload correspond EXACTEMENT aux liens réels.
+    const liensReels = await db.eleveParent.findMany({ where: { parentId: parentLien!.parentId }, select: { eleveId: true } });
+    const idsAttendus = new Set(liensReels.map((l) => l.eleveId));
+    const recus = ((dParent as any).mesEnfants ?? []) as Array<{ id: string }>;
+    const enfantsOk = recus.length === idsAttendus.size && recus.every((e) => idsAttendus.has(e.id));
     const echeancesOk = ((dParent as any).mesEcheances ?? []).every((e: any) => e.eleveId === parentLien!.eleveId);
     const payloadParent = JSON.stringify(dParent);
     const fuiteParent = autres.some((a) => a.id !== parentLien!.eleveId && payloadParent.includes(a.matricule ?? '__inexistant__'));
@@ -421,7 +427,7 @@ async function main() {
     const elevesAvant = await db.eleve.findMany({ where: { ecoleId: ecole.id, statut: 'actif' }, select: { id: true, classeActuelleId: true } });
     const classesAvant = await db.classe.findMany({ where: { anneeScolaireId: annee!.id }, select: { id: true, niveauId: true } });
     const { cloturerAnneeScolaireCore } = await import('../src/lib/business');
-    const r = await cloturerAnneeScolaireCore(ctx, annee!.id);
+    const r = await cloturerAnneeScolaireCore(ctx, annee!.id, { repartitionAutomatique: true });
     const nouvelle = await db.anneeScolaire.findUnique({ where: { id: r.nouvelleAnneeId } });
     const classesNouvelle = await db.classe.findMany({ where: { anneeScolaireId: r.nouvelleAnneeId }, include: { niveau: true } });
     const periodesNouvelle = await db.periode.count({ where: { anneeScolaireId: r.nouvelleAnneeId } });
@@ -475,7 +481,10 @@ async function main() {
       }
       if (tries.some((b) => b.rang === null)) pass = false;
       // Nettoyage : versions créées par le test + restauration des rangs seed
-      await db.bulletin.deleteMany({ where: { eleveId: { in: cibles.map((c) => c.id) }, periodeId, version: { gt: 1 } } });
+      // Les cibles n'avaient AUCUN bulletin seed → supprimer TOUTES leurs
+      // versions (y compris v1) pour ne pas épuiser le vivier des exécutions
+      // suivantes (sinon T18 finit par échouer faute de 2 élèves sans bulletin).
+      await db.bulletin.deleteMany({ where: { eleveId: { in: cibles.map((c) => c.id) }, periodeId } });
       for (const [id, rang] of rangsSeed) {
         await db.bulletin.update({ where: { id }, data: { rang: rang } });
       }
@@ -692,7 +701,7 @@ async function preCleanup() {
   }
 }
 
-main()
+executerAvecRetry('T1-T8', main)
   .catch(async (e) => {
     console.error('ERREUR SCRIPT:', e);
     await preCleanup();
