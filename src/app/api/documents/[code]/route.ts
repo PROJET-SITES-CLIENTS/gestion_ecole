@@ -55,6 +55,7 @@ export async function GET(requête: Request, { params }: { params: Promise<{ cod
       corps: r.corps,
       pied: piedDePage(identite, { ref, confidentiel: modele.confidential, page: true }),
       autoImprimer: url.searchParams.get('auto') === '1',
+      filigrane: modele.filigrane,
     });
 
     // Journaliser la production (DocumentGenere, sans fichier disque : HTML

@@ -5,7 +5,7 @@
 import { db } from '@/lib/db';
 import { ActionError } from '@/lib/business/commun';
 import { formatXOF } from '@/lib/format';
-import { echapper, dateFr, dateCourte, montantEnLettres, blocEleve, zoneSignature, doubleSignature } from './charte';
+import { echapper, dateFr, dateCourte, montantEnLettres, blocEleve, zoneSignature, doubleSignature, cadreDiplome } from './charte';
 import { trameAttestation, trameConvocation, trameAutorisation, trameNotification, tramePieceFinanciere } from './corps';
 import { ParamDoc, CtxDoc, ModeleDoc } from './registre-types';
 
@@ -429,7 +429,7 @@ const docsAdmissions: ModeleDoc[] = [
   {
     code: 'convocation_examen', libelle: 'Convocation aux examens officiels', domaine: 'Admissions & examens',
     description: 'Convocation officielle : n° table, salle, règlement.',
-    entete: 'majeur', permission: 'examens.gerer',
+    entete: 'majeur', permission: 'examens.gerer', filigrane: 'Original',
     parametres: [P.eleve(), P.texte('examen', 'Examen (ex : BFEM 2027 session normale)'), P.texte('numTable', 'Numéro de table'), P.texte('salle', 'Salle / centre'), P.date('debut', 'Date de début'), P.texte('horaires', 'Horaires des épreuves'), P.texte('materiel', 'Matériel obligatoire', '', false)],
     generer: async (c) => {
       const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
@@ -457,16 +457,19 @@ const docsAdmissions: ModeleDoc[] = [
       const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
       return {
         titre: 'Certificat de réussite',
-        corps: `
-        <div style="text-align:center;margin:24px 0">
-          <div style="font-family:Georgia,serif;font-size:12.5pt;text-transform:uppercase;letter-spacing:2px">L'établissement ${echapper(c.identite.nom)}</div>
-          <div style="font-size:10pt;color:#555;margin:6px 0 20px">certifie que</div>
-          <div style="font-family:Georgia,serif;font-size:20pt;font-weight:700">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
-          <div style="font-size:10.6pt;margin:14px 0">né(e) le ${dateFr(el.dateNaissance)}, a réussi l'examen : <b>${echapper(c.p.examen)}</b></div>
-          <div style="margin:16px 0;font-size:12.5pt">avec la mention : <b>${echapper(c.p.note)}</b></div>
-          ${c.p.jury ? `<div style="font-size:9.6pt;color:#555">Jury : ${echapper(c.p.jury)}</div>` : ''}
-        </div>
-        ${doubleSignature(c.identite, { qui: 'Le Président du jury' }, { qui: 'Le Chef d\'Établissement' })}`,
+        corps: cadreDiplome(c.identite, `
+          <div style="text-align:center">
+            <div style="font-family:Georgia,serif;font-size:12pt;text-transform:uppercase;letter-spacing:3.5px;color:#374151">L'établissement</div>
+            <div style="font-family:Georgia,serif;font-size:15pt;font-weight:800;text-transform:uppercase;color:${c.identite.couleur}">${echapper(c.identite.nom)}</div>
+            <div style="font-size:9.8pt;color:#565f6b;margin:10px 0 20px;font-style:italic">certifie que</div>
+            <div style="font-family:'Playfair Display',Georgia,serif;font-size:21pt;font-weight:800;color:#111418">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
+            <div style="width:180px;margin:10px auto 14px;border-top:1.4px solid ${c.identite.couleur}"></div>
+            <div style="font-size:10.6pt">né(e) le ${dateFr(el.dateNaissance)}, a réussi l'examen : <b>${echapper(c.p.examen)}</b></div>
+            <div style="margin:16px 0;font-size:12.5pt">avec la mention : <b style="letter-spacing:1px">${echapper(c.p.note)}</b></div>
+            ${c.p.jury ? `<div style="font-size:9.4pt;color:#565f6b">Jury : ${echapper(c.p.jury)}</div>` : ''}
+          </div>`)
+          + doubleSignature(c.identite, { qui: 'Le Président du jury' }, { qui: 'Le Chef d\'Établissement' }),
+      
       };
     },
   },

@@ -9,7 +9,7 @@
 import { db } from '@/lib/db';
 import { ActionError, Ctx } from '@/lib/business/commun';
 import { formatXOF } from '@/lib/format';
-import { Identite, echapper, dateFr, dateCourte, blocEleve, zoneSignature, doubleSignature } from './charte';
+import { Identite, echapper, dateFr, dateCourte, blocEleve, zoneSignature, doubleSignature, cadreDiplome, bandeauStats } from './charte';
 import { trameAttestation, trameConvocation } from './corps';
 
 import { ParamDoc, CtxDoc, ModeleDoc } from './registre-types';
@@ -119,11 +119,12 @@ async function corpsBulletin(c: CtxDoc, variante: 'college' | 'primaire' | 'mate
     corps: `
     ${blocEleve({ prenom: el.prenom, nom: el.nom, matricule: el.matricule, dateNaissance: el.dateNaissance, lieuNaissance: el.lieuNaissance, classe: { libelle: el.classeActuelle.libelle }, lignes: [['Professeur principal', c.p.pp || '—'], ['Effectif de la classe', String(effectif)]] })}
     ${tableNotes}
-    <div class="total-encadre" style="margin-top:12px">
-      <span>Moyenne générale : <b>${bulletin.moyenneGenerale != null ? bulletin.moyenneGenerale.toFixed(2) : '—'}/20</b></span>
-      <span>Rang : <b>${bulletin.rang ?? '—'}${effectif ? 'ᵉ / ' + effectif : ''}</b></span>
-      <span>Mention : <b>${mention(bulletin.moyenneGenerale ?? null)}</b></span>
-    </div>
+    ${bandeauStats(c.identite, [
+      { libelle: 'Moyenne générale', valeur: `${bulletin.moyenneGenerale != null ? bulletin.moyenneGenerale.toFixed(2) : '—'}<span style="font-size:9pt;color:#77808b">/20</span>`, accent: true },
+      { libelle: 'Rang', valeur: `${bulletin.rang ?? '—'}<span style="font-size:9pt;color:#77808b">${effectif ? ' / ' + effectif : ''}</span>` },
+      { libelle: 'Moyenne de classe', valeur: moyClasse != null ? moyClasse.toFixed(2) : '—' },
+      { libelle: 'Mention', valeur: mention(bulletin.moyenneGenerale ?? null) },
+    ])}
     ${moyClasse != null ? `<p style="font-size:9.5pt;color:#555;text-align:right">Moyenne de la classe : ${moyClasse.toFixed(2)}/20</p>` : ''}
     ${appreciations.length ? `<div class="section-titre">Appréciations par matière</div>
       <table class="data">${appreciations.map((a: any) => `<tr><td style="width:26%;font-weight:600">${echapper(a.matiere || '')}</td><td style="font-style:italic">${echapper(a.appreciation || '')}</td></tr>`).join('')}</table>` : ''}
@@ -197,7 +198,7 @@ const docsPedagogie: ModeleDoc[] = [
   {
     code: 'attestation_scolarite', libelle: 'Attestation de scolarité', domaine: 'Scolarité & pédagogie',
     description: 'Document officiel le plus demandé : preuve d\'inscription régulière.',
-    entete: 'majeur', permission: 'eleves.lire',
+    entete: 'majeur', permission: 'eleves.lire', filigrane: 'Original',
     parametres: [P.eleve(), P.texte('motif', 'Motif (banque, organisme…)', 'Ex : inscription sportive', false)],
     generer: async (c) => {
       const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
@@ -219,22 +220,25 @@ const docsPedagogie: ModeleDoc[] = [
   {
     code: 'certificat_fin_etudes', libelle: 'Certificat de fin d\'études', domaine: 'Scolarité & pédagogie',
     description: 'Certificat de fin de cycle avec mention.',
-    entete: 'majeur', permission: 'bulletins.valider',
+    entete: 'majeur', permission: 'bulletins.valider', filigrane: 'Original',
     parametres: [P.eleve(), P.texte('cycle', 'Cycle', 'Ex : Collège — Brevet de fin d\'études'), selectMention],
     generer: async (c) => {
       const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
       return {
         titre: 'Certificat de fin d\'études',
-        corps: `
-        <div style="text-align:center;margin:26px 0">
-          <div style="font-family:Georgia,serif;font-size:13pt;text-transform:uppercase;letter-spacing:3px">L'établissement ${echapper(c.identite.nom)}</div>
-          <div style="font-size:10pt;color:#555;margin:6px 0 22px">vu les résultats du conseil de classe et conformément au règlement de l'établissement,</div>
-          <div style="font-size:11pt">délivre le présent certificat de fin d'études à</div>
-          <div style="font-family:Georgia,serif;font-size:22pt;font-weight:700;margin:18px 0;color:${c.identite.couleur}">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
-          <div style="font-size:10.6pt">né(e) le ${dateFr(el.dateNaissance)} à ${echapper(el.lieuNaissance || '—')}<br/>pour avoir accompli avec succès le cycle : <b>${echapper(c.p.cycle || el.classeActuelle?.niveau?.libelle || '—')}</b></div>
-          <div style="margin:20px 0;font-size:13pt">Mention : <b>${echapper(c.p.mention || '—')}</b></div>
-        </div>
-        ${doubleSignature(c.identite, { qui: 'Le Président du conseil de classe' }, { qui: 'Le Chef d\'Établissement' })}`,
+        corps: cadreDiplome(c.identite, `
+          <div style="text-align:center">
+            <div style="font-family:Georgia,serif;font-size:12pt;text-transform:uppercase;letter-spacing:3.5px;color:#374151">L'établissement</div>
+            <div style="font-family:Georgia,serif;font-size:15pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:${c.identite.couleur}">${echapper(c.identite.nom)}</div>
+            <div style="font-size:9.8pt;color:#565f6b;margin:10px 0 20px;font-style:italic">vu les résultats du conseil de classe et conformément au règlement de l'établissement,</div>
+            <div style="font-size:10.8pt">délivre le présent certificat de fin d'études à</div>
+            <div style="font-family:'Playfair Display',Georgia,serif;font-size:23pt;font-weight:800;margin:16px 0;color:#111418">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
+            <div style="width:180px;margin:0 auto 14px;border-top:1.4px solid ${c.identite.couleur}"></div>
+            <div style="font-size:10.6pt">né(e) le ${dateFr(el.dateNaissance)} à ${echapper(el.lieuNaissance || '—')}<br/>pour avoir accompli avec succès le cycle : <b>${echapper(c.p.cycle || el.classeActuelle?.niveau?.libelle || '—')}</b></div>
+            <div style="margin:18px 0;font-size:13pt">Mention : <b style="letter-spacing:1px">${echapper(c.p.mention || '—')}</b></div>
+          </div>`)
+          + doubleSignature(c.identite, { qui: 'Le Président du conseil de classe' }, { qui: 'Le Chef d\'Établissement' }),
+      
       };
     },
   },
