@@ -670,6 +670,21 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
     alertes.push({ label: `Budget consommé à ${budgetPct}%`, detail: `Au-delà du seuil de ${seuils.budget}% paramétré — ${formatXOF(budgetRealise, devise)} réalisés sur ${formatXOF(budgetPrevu, devise)} prévus`, severite: 'rouge' });
   if (nonAffectes > 0)
     alertes.push({ label: `${nonAffectes} élève(s) actif(s) sans classe`, detail: 'Aucune classe actuelle renseignée', severite: 'rouge' });
+  // ── AUDIT DIRECTION : demandes de compte, stock bas, dettes fournisseurs ──
+  const demandesEnAttente = (initialData.demandesCompte ?? []).filter((d: any) => d.statut === 'en_attente');
+  if (demandesEnAttente.length > 0)
+    alertes.push({ label: `${demandesEnAttente.length} demande(s) de compte à valider`, detail: `${demandesEnAttente.map((d: any) => d.utilisateur?.email ?? d.type).slice(0, 3).join(', ')}${demandesEnAttente.length > 3 ? '…' : ''} — module Sécurité site`, severite: 'rouge' });
+  const stocksBas = (initialData.articlesStock ?? []).filter((a: any) => a.quantite <= (a.seuilAlerte ?? 0));
+  if (stocksBas.length > 0 && vueComplete)
+    alertes.push({ label: `${stocksBas.length} article(s) sous le seuil de stock`, detail: `${stocksBas.slice(0, 3).map((a: any) => a.nom).join(', ')}${stocksBas.length > 3 ? '…' : ''} — réapprovisionnez (Magasin)`, severite: 'ambre' });
+  const facturesDues = (initialData.facturesFournisseur ?? []).filter((f: any) => f.statut === 'a_payer' || f.statut === 'partiellement_payee');
+  if (facturesDues.length > 0 && vueComplete) {
+    const totalDus = facturesDues.reduce((sum: number, f: any) => sum + f.montantTTC - (f.paiements ?? []).reduce((s2: number, p: any) => s2 + p.montant, 0), 0);
+    alertes.push({ label: `${facturesDues.length} facture(s) fournisseur à régler`, detail: `Dettes cumulées : ${formatXOF(totalDus, devise)} — module Comptabilité`, severite: 'ambre' });
+  }
+  const permissionsInternat = (initialData.permissions ?? []).filter((p: any) => p.statut === 'demande');
+  if (permissionsInternat.length > 0)
+    alertes.push({ label: `${permissionsInternat.length} permission(s) d'internat à approuver`, detail: 'Demandes de sortie de week-end en attente — module Infrastructures', severite: 'ambre' });
 
   // ================================ RENDU ================================
   return (
