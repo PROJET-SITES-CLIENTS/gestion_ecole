@@ -4,7 +4,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
-import { ActionError, Ctx, assertPermission, assertTenant, logAction, avecVerrou } from './commun';
+import { ActionError, Ctx, assertPermission, assertPermissionParmi, assertTenant, logAction, avecVerrou } from './commun';
 import { hashPassword } from '@/lib/auth-hash';
 
 // --------------------------------------------------------------------
@@ -185,7 +185,7 @@ export async function traiterDemandeCompteCore(ctx: Ctx, demandeId: string, deci
 
 /** Crée le compte portail pour un ÉLÈVE déjà inscrit. */
 export async function creerCompteEleveCore(ctx: Ctx, eleveId: string, email: string, motDePasse: string) {
-  assertPermission(ctx, 'eleves.ecrire');
+  assertPermissionParmi(ctx, ['eleves.ecrire']);
   const eleve = await db.eleve.findUnique({ where: { id: eleveId }, include: { ecole: true } });
   if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
   assertTenant(eleve.ecoleId, ctx, 'Cet élève');
@@ -216,7 +216,7 @@ export async function creerCompteEleveCore(ctx: Ctx, eleveId: string, email: str
 
 /** Crée le compte portail pour un PARENT déjà rattaché à un élève. */
 export async function creerCompteParentCore(ctx: Ctx, parentId: string, email: string, motDePasse: string) {
-  assertPermission(ctx, 'eleves.ecrire');
+  assertPermissionParmi(ctx, ['eleves.ecrire']);
   const parent = await db.parentTuteur.findUnique({ where: { id: parentId }, include: { eleves: { include: { eleve: true } } } });
   if (!parent) throw new ActionError('Parent introuvable.', 'INTROUVABLE');
   assertTenant(parent.ecoleId, ctx, 'Ce parent');

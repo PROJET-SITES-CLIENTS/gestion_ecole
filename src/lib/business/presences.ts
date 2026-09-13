@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
-import { ActionError, Ctx, assertPermission, assertTenant, logAction, notifierParentsEtDirection } from './commun';
+import { ActionError, Ctx, assertPermission, assertPermissionParmi, assertTenant, logAction, notifierParentsEtDirection } from './commun';
 import { MOTIFS_JUSTIFICATION, STATUTS_PRESENCE } from '@/lib/constants';
 
 export type SaisieAppelInput = {
@@ -145,7 +145,7 @@ export async function justifierAbsenceCore(ctx: Ctx, input: JustificationInput) 
 
 /** Validation / rejet d'une justification (back-office). */
 export async function traiterJustificationCore(ctx: Ctx, justificationId: string, decision: 'valide' | 'rejete', commentaire?: string) {
-  assertPermission(ctx, 'vie_scolaire.gerer');
+  assertPermissionParmi(ctx, ['presences.saisir', 'eleves.ecrire']);
   const j = await db.justificationAbsence.findUnique({ where: { id: justificationId } });
   if (!j) throw new ActionError('Justification introuvable.', 'INTROUVABLE');
   if (j.ecoleId) assertTenant(j.ecoleId, ctx, 'Cette justification');

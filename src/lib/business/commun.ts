@@ -31,6 +31,14 @@ export function assertPermission(ctx: Ctx, code: string) {
   }
 }
 
+/** Échec si le contexte possède AU MOINS UNE des permissions listées. */
+export function assertPermissionParmi(ctx: Ctx, codes: string[]) {
+  if (ctx.type === 'super_admin') return;
+  if (!codes.some((c) => ctx.permissions.has(c))) {
+    throw new ActionError(`Permission refusée : « ${codes.join('» ou «')} » est requis pour cette opération.`, 'PERMISSION_REFUSEE');
+  }
+}
+
 /** Échec si une entité n'appartient pas à l'école du contexte (multi-tenant). */
 export function assertTenant(ecoleIdEntite: string | null | undefined, ctx: Ctx, nomEntite: string) {
   if (ctx.type === 'super_admin') return; // vue cross-tenant de l'éditeur

@@ -33,6 +33,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const consentementsImage = initialData.consentementsImage ?? [];
   const portal = initialData.session?.portal;
   const accesRgpd = portal === 'direction' || portal === 'secretariat';
+  const peutEcrire = ['direction', 'secretariat', 'super_admin', 'assistant'].includes(portal ?? '');
   const [selectedEleveId, setSelectedEleveId] = useState<string | null>(eleves[0]?.id ?? null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const consentementFb = useActionFeedback();
@@ -61,6 +62,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         title="Élèves"
         subtitle={`${eleves.length} élèves · ${classes.length} classes`}
         actions={
+          peutEcrire ? (
           <ModalForm
             trigger={<CreateButton label="Inscrire un élève" />}
             title="Inscrire un nouvel élève"
@@ -74,6 +76,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
             ]}
             action={actions.inscrireEleve}
           />
+          ) : undefined
         }
       />
 

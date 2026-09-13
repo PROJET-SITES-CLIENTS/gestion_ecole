@@ -22,14 +22,26 @@ export default function RhPlusModule({ initialData }: { initialData?: any }) {
   const ret = useActionFeedback();
   const personnels = (initialData?.personnels ?? []).map((p: any) => ({ valeur: p.id, libelle: `${p.nom} ${p.prenom}${p.matricule ? ' — ' + p.matricule : ''}` }));
 
-  function charger() { ext.lireRhComplements().then((r: any) => { if (r?.ok) setData(r); }); }
+  const [erreur, setErreur] = useState<string | null>(null);
+  function charger() {
+    setErreur(null);
+    ext.lireRhComplements().then((r: any) => {
+      if (r?.ok) setData(r);
+      else setErreur(r?.error ?? 'Impossible de charger les données RH.');
+    }).catch(() => setErreur('Connexion interrompue — cliquez pour réessayer.'));
+  }
   useEffect(charger, []);
 
   function run(nom: string, fn: () => Promise<any>) {
     ret.run(async () => { const r = await fn(); if (r && r.ok === false) throw new Error(r.error); charger(); return { ok: true }; }, nom);
   }
 
-  if (!data) return <div className="p-6 text-sm text-gray-500">Chargement RH…</div>;
+  if (!data) return erreur ? (
+    <div className="p-6 text-center">
+      <p className="text-sm text-rose-600 mb-3">{erreur}</p>
+      <button onClick={charger} className="text-sm text-emerald-600 hover:underline font-medium">Réessayer</button>
+    </div>
+  ) : <div className="p-6 text-sm text-gray-500">Chargement RH…</div>;
   const formations = data.formations ?? [], sanctions = data.sanctions ?? [], soldes = data.soldes ?? [];
 
   return (

@@ -7,7 +7,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
-import { ActionError, Ctx, assertPermission, assertTenant, eleveDuTenant, logAction, notifierParentsEtDirection } from './commun';
+import { ActionError, Ctx, assertPermission, assertPermissionParmi, assertTenant, eleveDuTenant, logAction, notifierParentsEtDirection } from './commun';
 import type { AutorisationSortie } from '@prisma/client';
 
 // --------------------------------------------------------------------
@@ -129,7 +129,7 @@ export type SortieInput = {
 };
 
 export async function sortieEleveCore(ctx: Ctx, input: SortieInput) {
-  assertPermission(ctx, 'securite.gerer');
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
   const eleve = await eleveDuTenant(input.eleveId, ctx);
   if (isNaN(input.date?.getTime())) throw new ActionError('Date de sortie invalide.', 'DATE_INVALIDE');
   if (!/^\d{2}:\d{2}$/.test(input.heure ?? '')) throw new ActionError('Heure de sortie invalide (format HH:MM).', 'CHAMP_INVALIDE');
@@ -215,7 +215,7 @@ export type VisiteurInput = {
 };
 
 export async function enregistrerVisiteurCore(ctx: Ctx, ecoleId: string, input: VisiteurInput) {
-  assertPermission(ctx, 'securite.gerer');
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
   if (!input.nom?.trim()) throw new ActionError('Le nom du visiteur est obligatoire.', 'CHAMP_MANQUANT');
   if (!input.motifVisite?.trim()) throw new ActionError('Le motif de visite est obligatoire.', 'CHAMP_MANQUANT');
   if (!input.pieceVerifiee) {
@@ -240,7 +240,7 @@ export async function enregistrerVisiteurCore(ctx: Ctx, ecoleId: string, input: 
 
 /** F3 — sortie d'un visiteur (le registre des présents devient fiable). */
 export async function sortieVisiteurCore(ctx: Ctx, visiteurId: string) {
-  assertPermission(ctx, 'securite.gerer');
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
   const v = await db.visiteur.findUnique({ where: { id: visiteurId } });
   if (!v) throw new ActionError('Visiteur introuvable.', 'INTROUVABLE');
   assertTenant(v.ecoleId, ctx, 'Ce visiteur');
