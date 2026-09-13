@@ -39,8 +39,8 @@ async function main() {
     const data: any = await avecRetryBdd(() => chargerDonneesPortail(portail, session as never, null), 3, 600);
     const json = JSON.stringify(data);
     const Composant: any = portail === 'sante' ? SanteModule : PortailMetiers;
-    const props = portail === 'sante' ? { initialData: data } : { initialData: data, portal: portail };
-    const html = renderToString(React.createElement(Composant, props));
+    const props: any = portail === 'sante' ? { initialData: data } : { initialData: data, portal: portail };
+    const html = renderToString(React.createElement(Composant as any, props));
     check(`${portail} : données ${Math.round(json.length / 1024)} Ko + rendu ${Math.round(html.length / 1024)} Ko`, json.length > 500 && html.length > 1000);
 
     // Isolation par métier
