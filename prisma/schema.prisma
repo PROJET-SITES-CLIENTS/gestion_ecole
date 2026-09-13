@@ -3472,3 +3472,256 @@ model DemandeCompte {
 
   @@index([ecoleId, statut])
 }
+
+// ====================================================================
+// INFRASTRUCTURES OPTIONNELLES — activables par établissement (flags)
+// INTERNAT · LABORATOIRE · BOUTIQUE · PARC INFO · SPORT
+// (liens par ids scalaires : ajout 100 % non destructif)
+// ====================================================================
+
+model ChambreInternat {
+  id             String   @id @default(cuid())
+  ecoleId        String
+  lits           LitInternat[]
+  nom            String // « Dortoir A — Chambre 12 »
+  genre          String // M / F / mixte
+  capacite       Int @default(4)
+  etage          String?
+  surveillantId  String? // Personnel
+  notes          String?
+  actif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  @@index([ecoleId])
+}
+
+model LitInternat {
+  id            String  @id @default(cuid())
+  chambreId     String
+  chambre       ChambreInternat @relation(fields: [chambreId], references: [id], onDelete: Cascade)
+  numero        Int
+  statut        String  @default("libre") // libre/occupe/maintenance
+  inscriptionId String? @unique
+  @@unique([chambreId, numero])
+}
+
+model InscriptionInternat {
+  id             String    @id @default(cuid())
+  ecoleId        String
+  eleveId        String
+  anneeScolaireId String
+  regime         String // interne / demi_pensionnaire
+  litId          String?  @unique
+  dateEntree     DateTime
+  dateSortie     DateTime?
+  statut         String    @default("actif")
+  tarifMensuel   Int // centimes
+  @@index([ecoleId, statut])
+}
+
+model PermissionInternat {
+  id                  String    @id @default(cuid())
+  ecoleId             String
+  eleveId             String
+  dateDepart          DateTime
+  dateRetourPrevue    DateTime
+  dateRetourEffective DateTime?
+  motif               String
+  destination         String?
+  statut              String    @default("demande") // demande/approuvee/refusee/cloturee
+  traiteParId         String?
+  createdAt           DateTime  @default(now())
+  @@index([ecoleId, statut])
+}
+
+model IncidentInternat {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  eleveId      String?
+  chambreId    String?
+  dateHeure    DateTime
+  gravite      String // leger/moyen/grave
+  description  String
+  suites       String?
+  declareParId String?
+  createdAt    DateTime @default(now())
+  @@index([ecoleId, dateHeure])
+}
+
+model BuanderieDepot {
+  id              String    @id @default(cuid())
+  ecoleId         String
+  eleveId         String?
+  chambreId       String?
+  dateDepot       DateTime
+  articles        String // JSON [{type, quantite}]
+  statut          String    @default("depose") // depose/lave/distribue
+  dateDistribution DateTime?
+  @@index([ecoleId, statut])
+}
+
+model ProductionRepas {
+  id            String   @id @default(cuid())
+  ecoleId       String
+  date          DateTime
+  service       String // petit_dejeuner/dejeuner/diner/collation
+  effectifPrevu Int      @default(0)
+  effectifServi Int      @default(0)
+  notes         String?
+  @@index([ecoleId, date])
+}
+
+model ControleHaccp {
+  id            String   @id @default(cuid())
+  ecoleId       String
+  date          DateTime
+  pointControle String // chambre froide, congelateur, hotte…
+  valeur        String? // « +3 °C »
+  conforme      Boolean  @default(true)
+  observation   String?
+  prisParId     String?
+  createdAt     DateTime @default(now())
+  @@index([ecoleId, date])
+}
+
+model Laboratoire {
+  id            String  @id @default(cuid())
+  ecoleId       String
+  equipements   EquipementLabo[]
+  consommables  ConsommableLabo[]
+  nom           String
+  type          String // sciences/chimie/biologie
+  responsableId String? // Personnel
+  capacite      Int?
+  actif         Boolean @default(true)
+  createdAt     DateTime @default(now())
+  @@index([ecoleId])
+}
+
+model EquipementLabo {
+  id                  String    @id @default(cuid())
+  laboratoireId       String
+  laboratoire         Laboratoire @relation(fields: [laboratoireId], references: [id], onDelete: Cascade)
+  nom                 String
+  reference           String?
+  quantite            Int       @default(1)
+  etat                String    @default("bon") // bon/moyen/hs
+  dateDernierControle DateTime?
+  @@index([laboratoireId])
+}
+
+model ConsommableLabo {
+  id           String @id @default(cuid())
+  laboratoireId String
+  laboratoire  Laboratoire @relation(fields: [laboratoireId], references: [id], onDelete: Cascade)
+  nom          String
+  unite        String // boîte, litre…
+  quantite     Int @default(0)
+  seuilAlerte  Int @default(5)
+  @@index([laboratoireId])
+}
+
+model ReservationLabo {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  laboratoireId String
+  date         DateTime
+  heureDebut   String
+  heureFin     String
+  classeId     String?
+  enseignantId String?
+  matiere      String?
+  experience   String
+  statut       String   @default("confirmee")
+  createdAt    DateTime @default(now())
+  @@index([ecoleId, date])
+}
+
+model BoutiqueProduit {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  categorie    String // uniforme/fourniture/autre
+  nom          String
+  taille       String?
+  couleur      String?
+  prixUnitaire Int // centimes
+  stock        Int @default(0)
+  seuilAlerte  Int @default(3)
+  actif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  @@index([ecoleId, categorie])
+}
+
+model BoutiqueVente {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  produitId    String
+  eleveId      String?
+  quantite     Int
+  montantTotal Int // centimes
+  modePaiement String
+  paiementId   String?
+  encaisseParId String?
+  dateVente    DateTime
+  @@index([ecoleId, dateVente])
+}
+
+model EquipementInfo {
+  id           String    @id @default(cuid())
+  ecoleId      String
+  prets        PretInfo[]
+  categorie    String // ordinateur/tablette/videoprojecteur/imprimante/autre
+  nom          String
+  marque       String?
+  modele       String?
+  numeroSerie  String?
+  etat         String    @default("operationnel") // operationnel/panne/maintenance/reforme
+  salleId      String?
+  dateAchat    DateTime?
+  valeur       Int? // centimes — amortissement
+  notes        String?
+  createdAt    DateTime  @default(now())
+  @@index([ecoleId, etat])
+}
+
+model PretInfo {
+  id              String    @id @default(cuid())
+  ecoleId         String
+  equipementId    String
+  equipement      EquipementInfo @relation(fields: [equipementId], references: [id])
+  emprunteParId   String // Personnel
+  datePret        DateTime
+  retourPrevu     DateTime
+  retourEffectif  DateTime?
+  etatRetour      String?
+  notes           String?
+  @@index([ecoleId, retourEffectif])
+}
+
+model InstallationSportive {
+  id        String  @id @default(cuid())
+  ecoleId   String
+  nom       String
+  type      String // terrain/gymnase/piscine/terrain_ext/multisport
+  surface   String?
+  capacite  Int?
+  eclairage Boolean @default(false)
+  etat      String  @default("bon")
+  actif     Boolean @default(true)
+  @@index([ecoleId])
+}
+
+model OccupationSport {
+  id             String   @id @default(cuid())
+  ecoleId        String
+  installationId String
+  date           DateTime
+  heureDebut     String
+  heureFin       String
+  titre          String // « EPS 6A », « Entraînement football »
+  parQui         String   @default("classe") // classe/niveau/activite/libre
+  classeId       String?
+  encadrantId    String?
+  statut         String   @default("confirmee")
+  createdAt      DateTime @default(now())
+  @@index([ecoleId, date])
+}

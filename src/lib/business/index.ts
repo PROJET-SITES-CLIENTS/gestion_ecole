@@ -20,3 +20,4 @@ export * from './extrascolaire';
 export * from './completions';
 export * from './comptes';
 export * from './initialisation';
+export * from './infrastructures';
