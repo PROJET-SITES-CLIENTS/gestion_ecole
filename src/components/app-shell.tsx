@@ -9,6 +9,8 @@ import type { ComponentType } from 'react';
 // Le bundle initial passe de plusieurs Mo à quelques Ko → TTI mobile x3.
 // ====================================================================
 const SaasModule = dynamic(() => import('./modules/saas'), { ssr: false });
+const DocumentsModule = dynamic(() => import('./modules/documents'), { ssr: false });
+const ParametresEtablissement = dynamic(() => import('./modules/parametres'), { ssr: false });
 const DirectionModule = dynamic(() => import('./modules/direction'), { ssr: false });
 const ElevesModule = dynamic(() => import('./modules/eleves'), { ssr: false });
 const PersonnelModule = dynamic(() => import('./modules/personnel'), { ssr: false });
@@ -53,7 +55,7 @@ import {
   BookOpen, Bus, BookMarked, Calendar, FileCheck, MessageSquare, Shield,
   ScrollText, Wallet, School, ChevronDown, Bell, Menu, X,
   CheckCircle2, HeartPulse, LogOut, Search, Activity, Gavel, Plug, CheckCheck,
-  UserPlus, ShieldAlert,
+  UserPlus, ShieldAlert, FileText, Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +72,7 @@ export type Portal =
   | 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant';
 
 export type ModuleId =
-  | 'dashboard' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
+  | 'dashboard' | 'documents' | 'etablissement' | 'saas' | 'eleves' | 'personnel' | 'pedagogique' | 'presences'
   | 'vie_scolaire' | 'finances' | 'services' | 'salles' | 'examens'
   | 'rdv' | 'securite' | 'communication' | 'integrations' | 'audit' | 'sante' | 'parent_portal' | 'eleve_portal' | 'v4_modules' | 'conseils'
   | 'admissions' | 'protection';
@@ -84,6 +86,8 @@ type ModuleDef = {
 
 const MODULES: ModuleDef[] = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, portals: ['super_admin', 'direction', 'enseignant', 'parent', 'eleve', 'comptabilite', 'rh', 'vie_scolaire', 'secretariat', 'sante', 'assistant'] },
+  { id: 'documents', label: 'Documents', icon: FileText, portals: ['super_admin', 'direction', 'secretariat', 'comptabilite', 'rh', 'sante', 'enseignant', 'vie_scolaire', 'assistant'] },
+  { id: 'etablissement', label: 'Paramètres', icon: Settings2, portals: ['super_admin', 'direction'] },
   { id: 'saas', label: 'Couche SaaS', icon: Building2, portals: ['super_admin'] },
   { id: 'eleves', label: 'Élèves', icon: Users, portals: ['super_admin', 'direction', 'enseignant', 'secretariat', 'assistant'] },
   { id: 'personnel', label: 'Personnel', icon: GraduationCap, portals: ['super_admin', 'direction', 'rh'] },
@@ -337,6 +341,8 @@ export default function AppShell({ initialData }: { initialData: any }) {
           return <PortailMetiers {...props} portal={portal as 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant'} />;
         }
         return <DirectionModule {...props} mode="dashboard" portalLabel={portal === 'enseignant' ? 'Enseignant' : 'Direction'} />;
+      case 'documents': return <DocumentsModule />;
+      case 'etablissement': return <ParametresEtablissement />;
       case 'saas': return <SaasModule {...props} mode="full" />;
       case 'eleves': return <ElevesModule {...props} />;
       case 'personnel': return <PersonnelModule {...props} />;

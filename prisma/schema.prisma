@@ -27,6 +27,17 @@ model Ecole {
   devise        String    @default("XOF")
   fuseauHoraire String    @default("Africa/Dakar")
   logoUrl       String?
+  // ---- Identité documentaire (en-têtes/pieds de page des documents) ----
+  adresse           String? // voie
+  ville             String?
+  telephone         String?
+  emailEcole        String?
+  siteWeb           String?
+  deviseOfficielle  String? // « Excellence • Discipline • Réussite »
+  identifiantsLegaux String? // JSON {ninea, autorisationOuverture, affiliation…}
+  cachetUrl         String? // image du cachet (data-URL, survit sur serverless)
+  signatureUrl      String? // signature scannée de la direction (data-URL)
+  couleurPrincipale String? @default("#047857")
   dateCreation  DateTime  @default(now())
   statut        String    @default("essai") // essai/actif/suspendu/resilie
   deletedAt     DateTime?
