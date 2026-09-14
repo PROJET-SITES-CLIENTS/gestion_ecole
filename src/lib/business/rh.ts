@@ -190,7 +190,7 @@ async function prochainMatriculePersonnel(tx: any, ecoleId: string): Promise<str
   return `PER-${String(max + 1).padStart(4, '0')}`;
 }
 
-export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: CreationPersonnelInput) {
+export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: CreationPersonnelInput & { roleCode?: string }) {
   assertPermission(ctx, 'rh.gerer');
   if (!input.nom?.trim()) throw new ActionError('Le nom est obligatoire.', 'CHAMP_MANQUANT');
   if (!input.prenom?.trim()) throw new ActionError('Le prénom est obligatoire.', 'CHAMP_MANQUANT');
@@ -236,6 +236,12 @@ export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: Creat
             },
           });
           utilisateurId = u.id;
+          // ⬅️ ASSIGNER LE RÔLE dès la création (sinon le compte n'a AUCUNE permission)
+          const roleCode = input.roleCode || 'enseignant'; // défaut sensé
+          const role = await tx.role.findFirst({ where: { ecoleId, code: roleCode } });
+          if (role) {
+            await tx.utilisateurRole.create({ data: { utilisateurId: u.id, roleId: role.id } });
+          }
         }
         const p = await tx.personnel.create({
           data: {

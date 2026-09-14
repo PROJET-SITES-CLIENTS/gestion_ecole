@@ -91,6 +91,17 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               ], required: true },
               { name: 'salaireBrut', label: 'Salaire brut (XOF)', type: 'number', required: true },
               { name: 'diplomePrincipal', label: 'Diplôme principal' },
+              { name: 'roleCode', label: 'Rôle (détermine ses accès)', type: 'select', options: [
+                { value: 'enseignant', label: '👨‍🏫 Enseignant (appel, notes, devoirs, incidents)' },
+                { value: 'secretariat', label: '📝 Secrétariat (inscriptions, admissions, documents)' },
+                { value: 'comptabilite', label: '💰 Comptabilité (encaissements, dépenses, compta)' },
+                { value: 'rh', label: '👥 RH (personnel, contrats, paie)' },
+                { value: 'censeur', label: '🛡️ Censeur (discipline, examens, EDT)' },
+                { value: 'surveillant', label: '👀 Surveillant (présences, sécurité)' },
+                { value: 'infirmier', label: '🏥 Infirmier(ère) (santé)' },
+                { value: 'assistant_direction', label: '💼 Assistant de Direction' },
+                { value: 'direction', label: '🎓 Direction (accès complet)' },
+              ] },
               { name: 'creerCompte', label: 'Créer le compte utilisateur (accès au portail)', type: 'checkbox' },
               { name: 'motDePasseInitial', label: 'Mot de passe initial — minimum 8 caractères', type: 'text', placeholder: 'À communiquer au personnel (≥ 8 caractères)' },
             ]}

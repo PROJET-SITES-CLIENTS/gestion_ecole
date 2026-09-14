@@ -957,3 +957,53 @@ export async function creerClasse(formData: FormData): Promise<ActionResult> {
     return { ok: true, ...r };
   } catch (e) { return echec(e); }
 }
+
+// --------------------------------------------------------------------
+// Classes : renommer / dupliquer (configuration initiale de l'école)
+// --------------------------------------------------------------------
+
+export async function modifierClasse(classeId: string, nom: string, capacite?: number): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const c = await db.classe.findFirst({ where: { id: classeId } });
+    if (!c) return { ok: false, error: 'Classe introuvable.' };
+    if (c.ecoleId !== ctx.ecoleId) return { ok: false, error: 'Classe d une autre école.' };
+    const nb = await db.classe.count({ where: { ecoleId: ctx.ecoleId, anneeScolaireId: c.anneeScolaireId, code: nom, NOT: { id: classeId } } });
+    if (nb > 0) return { ok: false, error: `Une classe « ${nom} » existe déjà cette année.` };
+    await db.classe.update({ where: { id: classeId }, data: { code: nom, libelle: nom, ...(capacite ? { capaciteMax: capacite } : {}) } });
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) { return echec(e); }
+}
+
+export async function dupliquerClasse(classeId: string, suffixe: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const c = await db.classe.findFirst({ where: { id: classeId }, include: { niveau: true } });
+    if (!c) return { ok: false, error: 'Classe introuvable.' };
+    if (c.ecoleId !== ctx.ecoleId) return { ok: false, error: 'Classe d une autre école.' };
+    const nouveauCode = `${c.code.split('-')[0]}-${suffixe}`;
+    const nb = await db.classe.count({ where: { ecoleId: ctx.ecoleId, anneeScolaireId: c.anneeScolaireId, code: nouveauCode } });
+    if (nb > 0) return { ok: false, error: `La classe « ${nouveauCode} » existe déjà.` };
+    const copie = await db.classe.create({
+      data: {
+        ecoleId: c.ecoleId, niveauId: c.niveauId, anneeScolaireId: c.anneeScolaireId,
+        code: nouveauCode, libelle: `${c.libelle?.split(' ')[0] ?? nouveauCode} ${suffixe}`,
+        capaciteMax: c.capaciteMax,
+      },
+    });
+    revalidatePath('/');
+    return { ok: true, classeId: copie.id, code: nouveauCode };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerClasse(classeId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const nbEleves = await db.eleve.count({ where: { classeActuelleId: classeId } });
+    if (nbEleves > 0) return { ok: false, error: `Impossible : ${nbEleves} élève(s) dans cette classe. Transférez-les d'abord.` };
+    await db.classe.delete({ where: { id: classeId } });
+    revalidatePath('/');
+    return { ok: true };
+  } catch (e) { return echec(e); }
+}
