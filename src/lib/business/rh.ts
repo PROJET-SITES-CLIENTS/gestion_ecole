@@ -269,7 +269,7 @@ export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: Creat
           compteCree: Boolean(utilisateurId),
         });
         return { personnelId: p.id, matricule, compteCree: Boolean(utilisateurId) };
-      }, { timeout: 30000, maxWait: 10000 });
+      }, { timeout: 60000, maxWait: 15000 });
     } catch (e: any) {
       if (e instanceof ActionError) throw e;
       const collision = e?.code === 'P2002' && String(e?.meta?.target ?? '').includes('matricule');

@@ -28,9 +28,10 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
   const existant = await db.utilisateur.findFirst({ where: { email, deletedAt: null } });
   if (existant) throw new ActionError('Un compte avec cet email existe déjà.', 'EMAIL_PRIS');
 
-  // Garde-fou anti-abus (action publique) : max 5 écoles créées / heure
+  // Garde-fou anti-abus (action publique) : max 5 écoles actives créées / heure
+  // (les écoles supprimées — residual de tests, résiliations — ne comptent plus)
   const derniereHeure = new Date(Date.now() - 3600000);
-  const nbRecentes = await db.ecole.count({ where: { dateCreation: { gte: derniereHeure } } });
+  const nbRecentes = await db.ecole.count({ where: { dateCreation: { gte: derniereHeure }, deletedAt: null } });
   if (nbRecentes >= 5) throw new ActionError('Trop de créations d\'établissement récentes. Réessayez dans un instant.', 'LIMITE_ATTEINTE');
 
   // Slug unique
