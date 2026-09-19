@@ -41,6 +41,8 @@ import {
   genererConvocationImprimableCore, marquerBulletinImprimableCore,
   // fins de flux (C6, C10)
   verifierRappelsVaccinationCore, statsAbsentéismeCore, relancerAbsencesCore,
+  // AUDIT CONFIG — périodes éditables
+  majPeriodeCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -973,6 +975,21 @@ export async function modifierClasse(classeId: string, nom: string, capacite?: n
     await db.classe.update({ where: { id: classeId }, data: { code: nom, libelle: nom, ...(capacite ? { capaciteMax: capacite } : {}) } });
     revalidatePath('/');
     return { ok: true };
+  } catch (e) { return echec(e); }
+}
+
+/** AUDIT CONFIG — Modification d'une période (dates de trimestre éditables). */
+export async function majPeriode(periodeId: string, donnees: { libelle?: string; dateDebut: string; dateFin: string; typeBulletin?: string }): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await majPeriodeCore(ctx, periodeId, {
+      ...(donnees.libelle ? { libelle: donnees.libelle } : {}),
+      dateDebut: new Date(donnees.dateDebut),
+      dateFin: new Date(donnees.dateFin),
+      ...(donnees.typeBulletin ? { typeBulletin: donnees.typeBulletin } : {}),
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
   } catch (e) { return echec(e); }
 }
 

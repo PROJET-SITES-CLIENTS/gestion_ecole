@@ -239,6 +239,57 @@ export async function genererSeancesDepuisEdtCore(ctx: Ctx, emploiTempsId: strin
 }
 
 // --------------------------------------------------------------------
+// Périodes (trimestres/semestres) — dates éditables par l'école
+// --------------------------------------------------------------------
+
+export type PeriodeInput = {
+  libelle?: string;
+  dateDebut: Date;
+  dateFin: Date;
+  typeBulletin?: string;
+};
+
+/** Modifie une période (dates du trimestre, libellé, type de bulletin). AUDIT CONFIG. */
+export async function majPeriodeCore(ctx: Ctx, periodeId: string, input: PeriodeInput) {
+  assertPermission(ctx, 'admin.saas');
+  const periode = await db.periode.findUnique({ where: { id: periodeId }, include: { anneeScolaire: true } });
+  if (!periode) throw new ActionError('Période introuvable.', 'INTROUVABLE');
+  assertTenant(periode.ecoleId, ctx, 'Cette période');
+  if (isNaN(input.dateDebut?.getTime()) || isNaN(input.dateFin?.getTime())) throw new ActionError('Dates invalides.', 'DATE_INVALIDE');
+  if (input.dateFin <= input.dateDebut) throw new ActionError('La date de fin doit suivre la date de début.', 'DATE_INVALIDE');
+  if (input.libelle !== undefined && !input.libelle.trim()) throw new ActionError('Le libellé est obligatoire.', 'CHAMP_MANQUANT');
+  if (input.typeBulletin && !['primaire', 'college_lycee'].includes(input.typeBulletin)) {
+    throw new ActionError('Type de bulletin inconnu (primaire ou college_lycee).', 'TYPE_INVALIDE');
+  }
+  // La période doit rester DANS l'année scolaire
+  if (input.dateDebut < periode.anneeScolaire.dateDebut || input.dateFin > periode.anneeScolaire.dateFin) {
+    throw new ActionError(`La période doit rester dans l'année scolaire (${formatDateCourt(periode.anneeScolaire.dateDebut)} → ${formatDateCourt(periode.anneeScolaire.dateFin)}).`, 'HORS_ANNEE');
+  }
+  // Pas de chevauchement avec les autres périodes de la même année
+  const soeurs = await db.periode.findMany({ where: { anneeScolaireId: periode.anneeScolaireId, NOT: { id: periodeId } } });
+  for (const s of soeurs) {
+    if (input.dateDebut < s.dateFin && s.dateDebut < input.dateFin) {
+      throw new ActionError(`Chevauchement avec « ${s.libelle} » (${formatDateCourt(s.dateDebut)} → ${formatDateCourt(s.dateFin)}).`, 'CHEVAUCHEMENT');
+    }
+  }
+  const p = await db.periode.update({
+    where: { id: periodeId },
+    data: {
+      ...(input.libelle !== undefined ? { libelle: input.libelle.trim() } : {}),
+      dateDebut: input.dateDebut,
+      dateFin: input.dateFin,
+      ...(input.typeBulletin ? { typeBulletin: input.typeBulletin } : {}),
+    },
+  });
+  await logAction(db, periode.ecoleId, ctx.utilisateurId, 'periode.modification', 'periode', periodeId, { libelle: p.libelle });
+  return { periodeId };
+}
+
+function formatDateCourt(d: Date): string {
+  return d.toLocaleDateString('fr-FR');
+}
+
+// --------------------------------------------------------------------
 // Transition d'année scolaire (F9 — réparée)
 // --------------------------------------------------------------------
 

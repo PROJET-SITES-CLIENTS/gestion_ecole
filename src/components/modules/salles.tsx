@@ -24,6 +24,7 @@ export default function SallesModule({ initialData }: { initialData: any }) {
   const matieres = initialData.matieres ?? [];
   const niveaux = initialData.niveaux ?? [];
   const personnels = initialData.personnels ?? [];
+  const periodes = initialData.periodes ?? [];
   const anneeScolaire = initialData.anneeScolaire ?? null;
   const [messageAnnee, setMessageAnnee] = useState<string | null>(null);
   const retourEdt = useActionFeedback();
@@ -168,6 +169,47 @@ export default function SallesModule({ initialData }: { initialData: any }) {
           ]}
           rows={calendrier}
           emptyLabel="Aucune entrée au calendrier"
+        />
+      </SectionBlock>
+
+      {/* AUDIT CONFIG — dates des trimestres éditables (le calendrier réel varie selon l'école/pays) */}
+      <SectionBlock
+        title="Périodes & trimestres"
+        description="Dates officielles des trimestres — ajustez-les au calendrier réel de votre établissement (aucun chevauchement, période contenue dans l'année scolaire)"
+      >
+        <DataTable
+          columns={[
+            { key: 'libelle', label: 'Période' },
+            { key: 'code', label: 'Code' },
+            { key: 'dateDebut', label: 'Du', render: (p) => formatDate(p.dateDebut) },
+            { key: 'dateFin', label: 'Au', render: (p) => formatDate(p.dateFin) },
+            { key: 'typeBulletin', label: 'Bulletin', render: (p) => <StatusBadge statut={p.typeBulletin === 'primaire' ? 'valide' : 'planifiee'} /> },
+            {
+              key: 'actions', label: '', render: (p) => (
+                <ModalForm
+                  trigger={<Button variant="outline" size="sm">Modifier</Button>}
+                  title={`Modifier « ${p.libelle} »`}
+                  fields={[
+                    { name: 'libelle', label: 'Libellé', required: true, defaultValue: p.libelle },
+                    { name: 'dateDebut', label: 'Date de début', type: 'date', required: true, defaultValue: String(p.dateDebut).slice(0, 10) },
+                    { name: 'dateFin', label: 'Date de fin', type: 'date', required: true, defaultValue: String(p.dateFin).slice(0, 10) },
+                    { name: 'typeBulletin', label: 'Type de bulletin', type: 'select', options: [
+                      { value: 'college_lycee', label: 'College / Lycée (notes chiffrées)' },
+                      { value: 'primaire', label: 'Primaire (compétences)' },
+                    ], defaultValue: p.typeBulletin },
+                  ]}
+                  action={(_fd: FormData) => actionsExt.majPeriode(p.id, {
+                    libelle: String(_fd.get('libelle') ?? ''),
+                    dateDebut: String(_fd.get('dateDebut') ?? ''),
+                    dateFin: String(_fd.get('dateFin') ?? ''),
+                    typeBulletin: String(_fd.get('typeBulletin') ?? ''),
+                  })}
+                />
+              ),
+            },
+          ]}
+          rows={periodes}
+          emptyLabel="Aucune période — elles sont créées automatiquement à l'ouverture de l'école"
         />
       </SectionBlock>
 

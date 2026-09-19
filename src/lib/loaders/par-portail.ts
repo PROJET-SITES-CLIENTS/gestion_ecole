@@ -355,12 +355,16 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   // ---- Structure académique (tous portails internes) ----
   promises.push((async () => {
-    const [niveaux, classes, matieres] = await Promise.all([
+    const [niveaux, classes, matieres, periodesStructure] = await Promise.all([
       db.niveau.findMany({ where: { section: { cycle: { ecoleId } } }, include: { section: { include: { cycle: true } } }, orderBy: { ordre: 'asc' } }),
       db.classe.findMany({ where: { ecoleId, ...(idAnnee ? { anneeScolaireId: idAnnee } : {}) }, include: { niveau: true } }),
       db.matiere.findMany({ where: { ecoleId }, orderBy: { libelle: 'asc' } }),
+      // AUDIT CONFIG — périodes (trimestres) pour le module Salles & Calendrier
+      // (dates éditables par la direction ; chargées ici pour vie_scolaire aussi)
+      db.periode.findMany({ where: { ecoleId, ...(idAnnee ? { anneeScolaireId: idAnnee } : {}) }, orderBy: { dateDebut: 'asc' } }),
     ]);
     v.niveaux = niveaux; v.classes = classes; v.matieres = matieres;
+    if (!v.periodes) v.periodes = periodesStructure;
   })());
 
   // ---- Élèves (base : identité, pas de santé) ----
