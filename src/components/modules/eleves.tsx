@@ -62,6 +62,29 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const totalPaye = eleveEcheances.reduce((s: number, e: any) => s + (e.montantPaye ?? 0), 0);
   const restantDu = totalDu - totalPaye;
 
+  // AUDIT ENSEIGNANT — profil pédagogique de l'élève (notes par matière,
+  // forces/faiblesses, absences, incidents) — visible prof/direction
+  const notes = initialData.notes ?? [];
+  const presences = initialData.presences ?? [];
+  const notesEleve = notes.filter((n: any) => n.eleveId === selectedEleveId && n.evaluation?.matiere && !n.absent && n.valeur != null);
+  const parMatiereEleve = new Map<string, { somme: number; coef: number; n: number }>();
+  for (const n of notesEleve) {
+    const k = n.evaluation.matiere.libelle;
+    const cur = parMatiereEleve.get(k) ?? { somme: 0, coef: 0, n: 0 };
+    cur.somme += (n.valeur / n.evaluation.sur) * 20 * (n.evaluation.coefficient ?? 1);
+    cur.coef += n.evaluation.coefficient ?? 1;
+    cur.n++;
+    parMatiereEleve.set(k, cur);
+  }
+  const moyennesMatiere = [...parMatiereEleve.entries()].map(([lib, v]) => ({ matiere: lib, moyenne: v.coef > 0 ? Number((v.somme / v.coef).toFixed(2)) : 0, nbNotes: v.n }));
+  const moyenneGeneraleEleve = moyennesMatiere.length
+    ? Number((moyennesMatiere.reduce((s2, m) => s2 + m.moyenne, 0) / moyennesMatiere.length).toFixed(2))
+    : null;
+  const meilleureMatiere = moyennesMatiere.length ? moyennesMatiere.reduce((a, b) => (b.moyenne > a.moyenne ? b : a)) : null;
+  const matiereFaible = moyennesMatiere.length ? moyennesMatiere.reduce((a, b) => (b.moyenne < a.moyenne ? b : a)) : null;
+  const absencesEleve = presences.filter((x: any) => x.eleveId === selectedEleveId && x.statut === 'absent').length;
+  const retardsEleve = presences.filter((x: any) => x.eleveId === selectedEleveId && x.statut === 'retard').length;
+
   const consentementsEnAttente = eleves.filter((e: any) => !e.consentementPortailEleve).length;
   const elevesAvecBesoin = eleves.filter((e: any) => besoinsSpecifiques.some((b: any) => b.eleveId === e.id)).length;
 
@@ -144,10 +167,51 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-2 h-auto">
                     <TabsTrigger value="identite" className="text-xs">Identité</TabsTrigger>
                     <TabsTrigger value="finances" className="text-xs">Finances</TabsTrigger>
+                    <TabsTrigger value="pedagogie" className="text-xs">Pédagogie</TabsTrigger>
                     <TabsTrigger value="besoins" className="text-xs">Besoins</TabsTrigger>
                     <TabsTrigger value="manuels" className="text-xs">Manuels</TabsTrigger>
                     <TabsTrigger value="securite" className="text-xs">Sécurité</TabsTrigger>
                   </TabsList>
+
+                  <TabsContent value="pedagogie" className="space-y-4">
+                    {notes.length === 0 ? (
+                      <p className="text-sm text-gray-500">Profil pédagogique non disponible pour votre portail.</p>
+                    ) : moyennesMatiere.length === 0 ? (
+                      <p className="text-sm text-gray-500">Aucune note enregistrée pour cet élève sur la période.</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div className="p-3 bg-emerald-50 rounded text-center">
+                            <div className="text-xs text-emerald-700">Moyenne générale</div>
+                            <div className="text-lg font-semibold text-emerald-700">{moyenneGeneraleEleve?.toFixed(2) ?? '—'}/20</div>
+                          </div>
+                          <div className="p-3 bg-gray-50 rounded text-center">
+                            <div className="text-xs text-gray-500">Points forts</div>
+                            <div className="text-sm font-semibold">{meilleureMatiere?.matiere} ({meilleureMatiere?.moyenne.toFixed(1)})</div>
+                          </div>
+                          <div className="p-3 bg-amber-50 rounded text-center">
+                            <div className="text-xs text-amber-700">À renforcer</div>
+                            <div className="text-sm font-semibold text-amber-700">{matiereFaible?.matiere} ({matiereFaible?.moyenne.toFixed(1)})</div>
+                          </div>
+                          <div className="p-3 bg-rose-50 rounded text-center">
+                            <div className="text-xs text-rose-700">Assiduité</div>
+                            <div className="text-sm font-semibold text-rose-700">{absencesEleve} abs. · {retardsEleve} retards · {eleveIncidents.length} incident(s)</div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {moyennesMatiere.map((m) => (
+                            <div key={m.matiere} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                              <div className="w-40 text-sm font-medium truncate">{m.matiere}</div>
+                              <div className="flex-1 h-2 bg-gray-200 rounded">
+                                <div className={`h-2 rounded ${m.moyenne >= 14 ? 'bg-emerald-500' : m.moyenne >= 10 ? 'bg-blue-500' : 'bg-rose-500'}`} style={{ width: `${(m.moyenne / 20) * 100}%` }} />
+                              </div>
+                              <div className="text-xs font-semibold w-20 text-right">{m.moyenne.toFixed(2)}/20 · {m.nbNotes} note(s)</div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </TabsContent>
 
                   <TabsContent value="finances" className="space-y-4">
                     {echeances.length === 0 ? (

@@ -95,6 +95,10 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     await tx.section.createMany({
       data: STRUCTURE.map((b) => ({ cycleId: cycleParCode.get(b.c)!.id, code: b.s, libelle: b.ls })),
     });
+    // AUDIT ENSEIGNANT — règles de calcul par défaut (arrondi 2 décimales, pondérée)
+    await tx.regleCalculMoyenne.createMany({
+      data: cyclesCrees.map((c) => ({ ecoleId: ecole.id, cycleId: c.id, methode: 'moyenne_ponderee', arrondi: 2 })),
+    });
     const sectionsCreees = await tx.section.findMany({ where: { cycleId: { in: cyclesCrees.map((c) => c.id) } } });
     const sectionParCycle = new Map(sectionsCreees.map((s) => [s.cycleId, s]));
     await tx.niveau.createMany({

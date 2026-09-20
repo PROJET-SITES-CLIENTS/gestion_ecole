@@ -43,6 +43,8 @@ import {
   verifierRappelsVaccinationCore, statsAbsentéismeCore, relancerAbsencesCore,
   // AUDIT CONFIG — périodes éditables
   majPeriodeCore,
+  // AUDIT ENSEIGNANT — règles de calcul des moyennes
+  majRegleCalculCore, majModeEvaluationCycleCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -975,6 +977,26 @@ export async function modifierClasse(classeId: string, nom: string, capacite?: n
     await db.classe.update({ where: { id: classeId }, data: { code: nom, libelle: nom, ...(capacite ? { capaciteMax: capacite } : {}) } });
     revalidatePath('/');
     return { ok: true };
+  } catch (e) { return echec(e); }
+}
+
+/** AUDIT ENSEIGNANT — Règles de calcul des moyennes d'un cycle (primaire ≠ secondaire). */
+export async function majRegleCalcul(cycleId: string, donnees: { methode?: string; notePlancher?: number | null; notePlafond?: number | null; arrondi?: number; inclutAbsents?: boolean }): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await majRegleCalculCore(ctx, cycleId, donnees);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+/** AUDIT ENSEIGNANT — Mode d'évaluation d'un cycle : chiffre ou compétences. */
+export async function majModeEvaluationCycle(cycleId: string, mode: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await majModeEvaluationCycleCore(ctx, cycleId, mode);
+    revalidatePath('/');
+    return { ok: true, ...r };
   } catch (e) { return echec(e); }
 }
 

@@ -419,12 +419,16 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       const [periodes, programmes, avancements, evaluations, notes, bulletins, competences, evalsCompetence, devoirsPeda, cahiersPeda] = await Promise.all([
         db.periode.findMany({ where: { ecoleId, ...(idAnnee ? { anneeScolaireId: idAnnee } : {}) }, orderBy: { dateDebut: 'asc' } }),
         db.programme.findMany({ where: { ecoleId }, include: { matiere: true, niveau: true, chapitres: true } }),
-        db.avancementProgramme.findMany({ include: { chapitre: { include: { programme: { include: { matiere: true } } } }, classe: true } }),
+        // SÉCURITÉ TENANT — filtre par le programme de l'école (avancement sans ecoleId direct)
+        db.avancementProgramme.findMany({ where: { chapitre: { programme: { ecoleId } } }, include: { chapitre: { include: { programme: { include: { matiere: true } } } }, classe: true } }),
         db.evaluation.findMany({ where: { ecoleId, ...(idAnnee ? { periode: { anneeScolaireId: idAnnee } } : {}) }, orderBy: { date: 'desc' }, take: 300, include: { matiere: true, classe: true, _count: { select: { notes: true } } } }),
-        db.note.findMany({ take: CAP.notes, include: { evaluation: { include: { matiere: true } } } }),
-        db.bulletin.findMany({ orderBy: { dateCreation: 'desc' }, take: CAP.bulletin, include: { periode: true, eleve: true } }),
+        // SÉCURITÉ TENANT — note sans ecoleId : filtre via l'évaluation
+        db.note.findMany({ where: { evaluation: { ecoleId } }, take: CAP.notes, include: { evaluation: { include: { matiere: true } } } }),
+        // SÉCURITÉ TENANT — bulletin sans ecoleId : filtre via l'élève
+        db.bulletin.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateCreation: 'desc' }, take: CAP.bulletin, include: { periode: true, eleve: true } }),
         db.competence.findMany({ where: { ecoleId }, include: { matiere: true } }),
-        db.evaluationCompetence.findMany({ take: 500, include: { competence: true, periode: true } }),
+        // SÉCURITÉ TENANT — évaluation de compétence sans ecoleId : filtre via l'élève
+        db.evaluationCompetence.findMany({ where: { eleve: { ecoleId } }, take: 500, include: { competence: true, periode: true } }),
         // AUDIT ENSEIGNANT : devoirs (rendus inclus) + cahiers de textes
         // chargés pour TOUS les portails pédagogiques — plus seulement
         // la direction (v4) : l'enseignant VOIT ses devoirs et son cahier.
@@ -435,6 +439,10 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       v.evaluations = evaluations; v.notes = notes; v.bulletins = bulletins;
       v.competences = competences; v.evalsCompetence = evalsCompetence;
       v.devoirs = devoirsPeda; v.cahiersTexte = cahiersPeda;
+      // AUDIT ENSEIGNANT — règles de calcul (configuration direction)
+      if (portal === 'direction' || portal === 'super_admin') {
+        v.reglesCalcul = await db.regleCalculMoyenne.findMany({ where: { ecoleId }, include: { cycle: true } });
+      }
     })());
   }
 

@@ -480,3 +480,65 @@ export async function changerStatutBulletinCore(
   });
   return { role };
 }
+
+// --------------------------------------------------------------------
+// AUDIT ENSEIGNANT — Règles de calcul des moyennes configurables
+// (par cycle : primaire ≠ secondaire possible)
+// --------------------------------------------------------------------
+
+export type RegleCalculInput = {
+  methode?: string;
+  notePlancher?: number | null;
+  notePlafond?: number | null;
+  arrondi?: number;
+  inclutAbsents?: boolean;
+};
+
+export async function majRegleCalculCore(ctx: Ctx, cycleId: string, input: RegleCalculInput) {
+  assertPermission(ctx, 'admin.saas'); // configuration structurelle — direction
+  const cycle = await db.cycle.findUnique({ where: { id: cycleId } });
+  if (!cycle) throw new ActionError('Cycle introuvable.', 'INTROUVABLE');
+  assertTenant(cycle.ecoleId, ctx, 'Ce cycle');
+  if (input.notePlancher != null && input.notePlafond != null && input.notePlancher > input.notePlafond) {
+    throw new ActionError('Le plancher ne peut pas dépasser le plafond.', 'BORNES_INVALIDES');
+  }
+  if (input.notePlancher != null && (input.notePlancher < 0 || input.notePlancher > 20)) {
+    throw new ActionError('Le plancher doit être entre 0 et 20.', 'BORNES_INVALIDES');
+  }
+  if (input.notePlafond != null && (input.notePlafond < 0 || input.notePlafond > 20)) {
+    throw new ActionError('Le plafond doit être entre 0 et 20.', 'BORNES_INVALIDES');
+  }
+  if (input.arrondi != null && (!Number.isInteger(input.arrondi) || input.arrondi < 0 || input.arrondi > 4)) {
+    throw new ActionError('L\'arrondi doit être un entier entre 0 et 4 décimales.', 'ARRONDI_INVALIDE');
+  }
+  if (input.methode && !['moyenne_ponderee', 'moyenne_simple'].includes(input.methode)) {
+    throw new ActionError('Méthode inconnue (moyenne_ponderee ou moyenne_simple).', 'METHODE_INVALIDE');
+  }
+  const data = {
+    ...(input.methode !== undefined ? { methode: input.methode } : {}),
+    ...(input.notePlancher !== undefined ? { notePlancher: input.notePlancher } : {}),
+    ...(input.notePlafond !== undefined ? { notePlafond: input.notePlafond } : {}),
+    ...(input.arrondi !== undefined ? { arrondi: input.arrondi } : {}),
+    ...(input.inclutAbsents !== undefined ? { inclutAbsents: input.inclutAbsents } : {}),
+  };
+  const existante = await db.regleCalculMoyenne.findFirst({ where: { ecoleId: cycle.ecoleId, cycleId } });
+  const r = existante
+    ? await db.regleCalculMoyenne.update({ where: { id: existante.id }, data })
+    : await db.regleCalculMoyenne.create({ data: { ecoleId: cycle.ecoleId, cycleId, ...data } });
+  await logAction(db, cycle.ecoleId, ctx.utilisateurId, 'regle_calcul.modification', 'regle_calcul_moyenne', r.id, { cycle: cycle.libelle });
+  return { regleId: r.id };
+}
+
+/** Mode d'évaluation du cycle : notes chiffrées (secondaire) ou compétences (primaire/maternelle). */
+export async function majModeEvaluationCycleCore(ctx: Ctx, cycleId: string, mode: string) {
+  assertPermission(ctx, 'admin.saas');
+  if (!['chiffre', 'competences'].includes(mode)) {
+    throw new ActionError('Mode inconnu (chiffre ou competences).', 'MODE_INVALIDE');
+  }
+  const cycle = await db.cycle.findUnique({ where: { id: cycleId } });
+  if (!cycle) throw new ActionError('Cycle introuvable.', 'INTROUVABLE');
+  assertTenant(cycle.ecoleId, ctx, 'Ce cycle');
+  await db.cycle.update({ where: { id: cycleId }, data: { modeEvaluation: mode } });
+  await logAction(db, cycle.ecoleId, ctx.utilisateurId, 'cycle.mode_evaluation', 'cycle', cycleId, { mode });
+  return { cycleId, mode };
+}

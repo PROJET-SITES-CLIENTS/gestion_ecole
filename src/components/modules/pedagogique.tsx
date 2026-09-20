@@ -115,6 +115,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   const evalsCompetence = initialData.evalsCompetence ?? [];
   const programmes = initialData.programmes ?? [];
   const avancements = initialData.avancements ?? [];
+  const reglesCalcul = initialData.reglesCalcul ?? [];
   const devoirs = initialData.devoirs ?? [];
   const cahiersTexte = initialData.cahiersTexte ?? [];
   const dispenses = initialData.dispenses ?? [];
@@ -631,6 +632,63 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             emptyLabel="Aucun avancement déclaré"
           />
         </SectionBlock>
+
+        {(initialData.session?.portal === 'direction' || initialData.session?.portal === 'super_admin') && (
+          <SectionBlock
+            title="Règles de calcul des moyennes (par cycle)"
+            description="Primaire ≠ secondaire : notes chiffrées ou compétences, plancher/plafond, arrondi, absents comptés ou non"
+          >
+            <DataTable
+              columns={[
+                { key: 'cycle', label: 'Cycle', render: (r: any) => r.cycle?.libelle ?? '—' },
+                { key: 'modeEvaluation', label: 'Mode', render: (r: any) => (
+                  <StatusBadge statut={r.cycle?.modeEvaluation === 'competences' ? 'en_attente' : 'valide'} />
+                ) },
+                { key: 'methode', label: 'Méthode', render: (r: any) => r.methode === 'moyenne_simple' ? 'Simple' : 'Pondérée (coefficients)' },
+                { key: 'bornes', label: 'Bornes', render: (r: any) => `${r.notePlancher ?? 0} – ${r.notePlafond ?? 20}` },
+                { key: 'arrondi', label: 'Arrondi', render: (r: any) => `${r.arrondi} déc.` },
+                { key: 'absents', label: 'Absents', render: (r: any) => (r.inclutAbsents ? 'comptés 0' : 'exclus') },
+                {
+                  key: 'actions', label: '', render: (r: any) => (
+                    <div className="flex gap-1">
+                      <ModalForm
+                        trigger={<Button variant="outline" size="sm">Mode</Button>
+                        }
+                        title={`Mode d'évaluation — ${r.cycle?.libelle ?? ''}`}
+                        fields={[
+                          { name: 'mode', label: 'Mode', type: 'select', required: true, defaultValue: r.cycle?.modeEvaluation, options: [
+                            { value: 'chiffre', label: 'Notes chiffrées (secondaire)' },
+                            { value: 'competences', label: 'Compétences (primaire/maternelle)' },
+                          ] },
+                        ]}
+                        action={(fd: FormData) => actionsExt.majModeEvaluationCycle(r.cycleId, String(fd.get('mode') ?? 'chiffre'))}
+                      />
+                      <ModalForm
+                        trigger={<Button variant="outline" size="sm">Règles</Button>
+                        }
+                        title={`Règles de calcul — ${r.cycle?.libelle ?? ''}`}
+                        fields={[
+                          { name: 'notePlancher', label: 'Note plancher (0-20, vide = aucune)', type: 'number', step: '0.5', defaultValue: r.notePlancher != null ? String(r.notePlancher) : '' },
+                          { name: 'notePlafond', label: 'Note plafond (0-20, vide = aucune)', type: 'number', step: '0.5', defaultValue: r.notePlafond != null ? String(r.notePlafond) : '' },
+                          { name: 'arrondi', label: 'Décimales d arrondi (0-4)', type: 'number', defaultValue: String(r.arrondi ?? 2) },
+                          { name: 'inclutAbsents', label: 'Compter les absents comme 0 (déconseillé)', type: 'checkbox' },
+                        ]}
+                        action={(fd: FormData) => actionsExt.majRegleCalcul(r.cycleId, {
+                          notePlancher: fd.get('notePlancher') ? Number(fd.get('notePlancher')) : null,
+                          notePlafond: fd.get('notePlafond') ? Number(fd.get('notePlafond')) : null,
+                          arrondi: Number(fd.get('arrondi') ?? 2),
+                          inclutAbsents: fd.get('inclutAbsents') === 'on',
+                        })}
+                      />
+                    </div>
+                  ),
+                },
+              ]}
+              rows={reglesCalcul}
+              emptyLabel="Aucune règle — les cycles utilisent les valeurs par défaut (pondérée, arrondi 2)"
+            />
+          </SectionBlock>
+        )}
       </div>
     );
   }
