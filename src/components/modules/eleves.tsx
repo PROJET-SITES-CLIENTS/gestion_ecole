@@ -14,7 +14,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import * as actions from '@/app/actions';
-import { formatDate, formatDateTime, initiales } from '@/lib/format';
+import { formatDate, formatDateTime, formatMontant, initiales } from '@/lib/format';
 import * as ext from '@/app/actions/completions';
 
 export default function ElevesModule({ initialData }: { initialData: any }) {
@@ -52,6 +52,15 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
     .filter((c: any) => c.eleveId === selectedEleveId)
     .sort((a: any, b: any) => new Date(b.dateAccord ?? b.dateCreation ?? 0).getTime() - new Date(a.dateAccord ?? a.dateCreation ?? 0).getTime());
   const dernierConsentementImage = eleveConsentementsImage[0];
+
+  // PARCOURS ÉLÈVE — situation financière par élève (échéances chargées pour
+  // direction / comptabilité / secrétariat ; le journal des paiements reste
+  // réservé aux portails financiers)
+  const echeances = initialData.echeances ?? [];
+  const eleveEcheances = echeances.filter((e: any) => e.eleveId === selectedEleveId);
+  const totalDu = eleveEcheances.reduce((s: number, e: any) => s + (e.montant - (e.remise ?? 0)), 0);
+  const totalPaye = eleveEcheances.reduce((s: number, e: any) => s + (e.montantPaye ?? 0), 0);
+  const restantDu = totalDu - totalPaye;
 
   const consentementsEnAttente = eleves.filter((e: any) => !e.consentementPortailEleve).length;
   const elevesAvecBesoin = eleves.filter((e: any) => besoinsSpecifiques.some((b: any) => b.eleveId === e.id)).length;
@@ -132,12 +141,60 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   </SheetTitle>
                 </SheetHeader>
                 <Tabs defaultValue="identite" className="mt-4">
-                  <TabsList className="grid grid-cols-2 md:grid-cols-4 mb-2 h-auto">
+                  <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-2 h-auto">
                     <TabsTrigger value="identite" className="text-xs">Identité</TabsTrigger>
+                    <TabsTrigger value="finances" className="text-xs">Finances</TabsTrigger>
                     <TabsTrigger value="besoins" className="text-xs">Besoins</TabsTrigger>
                     <TabsTrigger value="manuels" className="text-xs">Manuels</TabsTrigger>
                     <TabsTrigger value="securite" className="text-xs">Sécurité</TabsTrigger>
                   </TabsList>
+
+                  <TabsContent value="finances" className="space-y-4">
+                    {echeances.length === 0 ? (
+                      <p className="text-sm text-gray-500">Suivi financier non disponible pour votre portail.</p>
+                    ) : eleveEcheances.length === 0 ? (
+                      <p className="text-sm text-gray-500">Aucune échéance — les frais seront générés à la configuration de la scolarité de la classe.</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="p-3 bg-gray-50 rounded text-center">
+                            <div className="text-xs text-gray-500">Total dû</div>
+                            <div className="text-lg font-semibold">{formatMontant(totalDu)}</div>
+                          </div>
+                          <div className="p-3 bg-emerald-50 rounded text-center">
+                            <div className="text-xs text-emerald-700">Payé</div>
+                            <div className="text-lg font-semibold text-emerald-700">{formatMontant(totalPaye)}</div>
+                          </div>
+                          <div className={`p-3 rounded text-center ${restantDu > 0 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
+                            <div className={`text-xs ${restantDu > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>Restant dû</div>
+                            <div className={`text-lg font-semibold ${restantDu > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{formatMontant(restantDu)}</div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {eleveEcheances.map((e: any) => {
+                            const net = e.montant - (e.remise ?? 0);
+                            const paye = e.montantPaye ?? 0;
+                            const eRestant = net - paye;
+                            return (
+                              <div key={e.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                <div>
+                                  <div className="text-sm font-medium">{e.frais?.libelle ?? 'Échéance'}</div>
+                                  <div className="text-xs text-gray-500">
+                                    Échéance du {formatDate(e.dateEcheance)} · {formatMontant(net)}
+                                    {e.remise > 0 && ` (remise ${formatMontant(e.remise)})`}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <StatusBadge statut={e.statut === 'payee' ? 'valide' : e.statut === 'partiel' ? 'en_attente' : 'absent'} />
+                                  <div className="text-xs text-gray-500 mt-1">{eRestant > 0 ? `Reste ${formatMontant(eRestant)}` : 'Soldée'}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </TabsContent>
 
                   <TabsContent value="identite" className="space-y-4">
                     <Card>

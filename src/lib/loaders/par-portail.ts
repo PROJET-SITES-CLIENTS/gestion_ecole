@@ -534,7 +534,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   if (secretariat || portal === 'vie_scolaire') {
     promises.push((async () => {
-      const [parents, documents, historiquesClasse, besoinsSpecifiques, amenagements, autorisationsSortie, sortiesAnticipees] = await Promise.all([
+      const [parents, documents, historiquesClasse, besoinsSpecifiques, amenagements, autorisationsSortie, sortiesAnticipees, echeancesSuivi] = await Promise.all([
         db.parentTuteur.findMany({
           where: { ecoleId },
           select: {
@@ -545,14 +545,24 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         }),
         db.documentEleve.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
         db.eleveHistoriqueClasse.findMany({ where: { eleve: { ecoleId } }, include: { classe: true, eleve: true } }),
-        db.besoinSpecifique.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true, amenagements: true } }),
+        db.besoinSpecifique.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
         db.amenagement.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
         db.autorisationSortie.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
         db.sortieAnticipee.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateSortie: 'desc' }, take: 200, include: { eleve: true } }),
+        // PARCOURS ÉLÈVE — suivi des échéances (statut, payé, restant) pour le
+        // secrétariat SANS le journal des paiements (réservé aux portails financiers)
+        ...(portal === 'secretariat' ? [db.echeanceFrais.findMany({
+          where: { eleve: { ecoleId }, ...(idAnnee ? { frais: { anneeScolaireId: idAnnee } } : {}) },
+          include: { frais: { select: { libelle: true } } },
+          orderBy: { dateEcheance: 'asc' },
+          take: 2000,
+        })] : []),
       ]);
       v.parents = parents; v.documents = documents; v.historiquesClasse = historiquesClasse;
       v.besoinsSpecifiques = besoinsSpecifiques; v.amenagements = amenagements;
       v.autorisationsSortie = autorisationsSortie; v.sortiesAnticipees = sortiesAnticipees;
+      // (le bloc finances n'existe pas pour le secrétariat — affectation directe sûre)
+      if (portal === 'secretariat' && echeancesSuivi) v.echeances = echeancesSuivi;
     })());
   }
 
