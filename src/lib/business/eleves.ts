@@ -8,6 +8,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
+import { initialiserPiecesDossier } from './secretariat';
 import { ActionError, Ctx, assertPermission, assertTenant, eleveDuTenant, logAction, avecVerrou } from './commun';
 import { STATUTS_ELEVE, zStatutEleve } from '@/lib/constants';
 
@@ -134,6 +135,8 @@ export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: Inscri
             dateInscription: new Date(),
           },
         });
+      // SECRETARIAT — checklist du dossier d'inscription (pièces exigées)
+      await initialiserPiecesDossier(ecoleId, eleve.id, tx);
         // Historisation de l'entrée en classe (F9 : dès l'inscription)
         if (input.classeId) {
           await tx.eleveHistoriqueClasse.create({

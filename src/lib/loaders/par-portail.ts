@@ -589,6 +589,15 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       v.autorisationsSortie = autorisationsSortie; v.sortiesAnticipees = sortiesAnticipees;
       // (le bloc finances n'existe pas pour le secrétariat — affectation directe sûre)
       if (portal === 'secretariat' && echeancesSuivi) v.echeances = echeancesSuivi;
+      // SECRETARIAT — checklist dossiers, registre courrier, réinscriptions
+      if (portal === 'secretariat' || portal === 'direction' || portal === 'super_admin') {
+        const [piecesDossier, courriers, reinscriptions] = await Promise.all([
+          db.pieceDossier.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } } } }),
+          db.courrier.findMany({ where: { ecoleId }, orderBy: { dateEnregistrement: 'desc' }, take: 300 }),
+          db.reinscription.findMany({ where: { eleve: { ecoleId, deletedAt: null } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } }, classeVoulue: true, anneeScolaire: true } }),
+        ]);
+        v.piecesDossier = piecesDossier; v.courriers = courriers; v.reinscriptions = reinscriptions;
+      }
     })());
   }
 

@@ -45,6 +45,9 @@ import {
   majPeriodeCore,
   // AUDIT ENSEIGNANT — règles de calcul des moyennes
   majRegleCalculCore, majModeEvaluationCycleCore,
+  // SECRETARIAT — checklist dossier, courrier, réinscriptions
+  basculerPieceDossierCore, ajouterPieceExigeeCore,
+  enregistrerCourrierCore, traiterCourrierCore, enregistrerReinscriptionCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -1045,4 +1048,34 @@ export async function supprimerClasse(classeId: string): Promise<ActionResult> {
     revalidatePath('/');
     return { ok: true };
   } catch (e) { return echec(e); }
+}
+
+
+// --------------------------------------------------------------------
+// SECRETARIAT — checklist dossier, registre courrier, réinscriptions
+// --------------------------------------------------------------------
+
+export async function basculerPieceDossier(pieceId: string, statut: 'manquante' | 'recue', remarque?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await basculerPieceDossierCore(ctx, pieceId, statut, remarque); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function ajouterPieceExigee(eleveId: string, type: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await ajouterPieceExigeeCore(ctx, eleveId, type); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function enregistrerCourrier(donnees: { direction: 'entrant' | 'sortant'; type?: string; objet: string; correspondant: string }): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const ecoleId = await ecoleIdDuCtx(ctx); const r = await enregistrerCourrierCore(ctx, ecoleId, donnees); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function traiterCourrier(courrierId: string, commentaire?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await traiterCourrierCore(ctx, courrierId, commentaire); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function enregistrerReinscription(donnees: { eleveId: string; classeVoulueId?: string; fraisPayes?: boolean }): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await enregistrerReinscriptionCore(ctx, donnees); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
 }

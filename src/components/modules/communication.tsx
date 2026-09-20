@@ -11,9 +11,10 @@ import { MessageSquare, Send, FileText, MessagesSquare, LifeBuoy, AlertTriangle 
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
 import * as ext from '@/app/actions/extensions';
-import { formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import * as actionsExt from '@/app/actions/extensions';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -399,6 +400,7 @@ function SectionTickets({ tickets }: { tickets: any[] }) {
 }
 
 export default function CommunicationModule({ initialData }: { initialData: any }) {
+  const courriers = initialData.courriers ?? [];
   const notifications = initialData.notifications ?? [];
   const modeles = initialData.modelesMessage ?? [];
   const utilisateurs = initialData.utilisateurs ?? [];
@@ -419,6 +421,76 @@ export default function CommunicationModule({ initialData }: { initialData: any 
     ...classes.map((c: any) => ({ value: 'classe:' + c.id, label: 'Classe ' + c.libelle })),
     ...niveaux.map((n: any) => ({ value: 'niveau:' + n.id, label: 'Niveau ' + n.libelle })),
   ];
+
+  const peutGererCourrier = ['direction', 'secretariat', 'super_admin'].includes(initialData.session?.portal ?? '');
+  function renderCourrier() {
+    return (
+      <SectionBlock
+        title="Registre du courrier (entrant / sortant)"
+        description="Chrono officiel — chaque courrier reçoit une référence séquentielle C-ENT-#### / C-SOR-####"
+        action={peutGererCourrier ? (
+          <div className="flex gap-2">
+            <ModalForm
+              trigger={<CreateButton label="Courrier entrant" />}
+              title="Enregistrer un courrier ENTRANT"
+              fields={[
+                { name: 'objet', label: 'Objet', required: true, placeholder: 'Demande de transfert — famille Ndiaye' },
+                { name: 'correspondant', label: 'Expéditeur', required: true },
+                { name: 'type', label: 'Type', type: 'select', options: [
+                  { value: 'courrier_simple', label: 'Courrier simple' },
+                  { value: 'recommande', label: 'Recommandé' },
+                  { value: 'pli', label: 'Pli / colis' },
+                  { value: 'email', label: 'E-mail officiel' },
+                ] },
+              ]}
+              action={(fd: FormData) => actionsExt.enregistrerCourrier({
+                direction: 'entrant',
+                type: String(fd.get('type') ?? 'courrier_simple'),
+                objet: String(fd.get('objet') ?? ''),
+                correspondant: String(fd.get('correspondant') ?? ''),
+              })}
+            />
+            <ModalForm
+              trigger={<CreateButton label="Courrier sortant" />}
+              title="Enregistrer un courrier SORTANT"
+              fields={[
+                { name: 'objet', label: 'Objet', required: true, placeholder: 'Réponse — attestation de scolarité' },
+                { name: 'correspondant', label: 'Destinataire', required: true },
+                { name: 'type', label: 'Type', type: 'select', options: [
+                  { value: 'courrier_simple', label: 'Courrier simple' },
+                  { value: 'recommande', label: 'Recommandé' },
+                  { value: 'email', label: 'E-mail officiel' },
+                ] },
+              ]}
+              action={(fd: FormData) => actionsExt.enregistrerCourrier({
+                direction: 'sortant',
+                type: String(fd.get('type') ?? 'courrier_simple'),
+                objet: String(fd.get('objet') ?? ''),
+                correspondant: String(fd.get('correspondant') ?? ''),
+              })}
+            />
+          </div>
+        ) : undefined}
+      >
+        <DataTable
+          columns={[
+            { key: 'reference', label: 'Référence' },
+            { key: 'direction', label: 'Sens', render: (c) => <StatusBadge statut={c.direction === 'entrant' ? 'en_attente' : 'planifiee'} /> },
+            { key: 'objet', label: 'Objet' },
+            { key: 'correspondant', label: 'Correspondant' },
+            { key: 'dateEnregistrement', label: 'Date', render: (c) => formatDate(c.dateEnregistrement) },
+            { key: 'traite', label: 'Traitement', render: (c) => c.traite
+              ? <span className="text-xs text-emerald-700">traité le {formatDate(c.dateTraitement)}</span>
+              : (peutGererCourrier
+                  ? <Button variant="outline" size="sm" onClick={() => actionsExt.traiterCourrier(c.id, 'Traité')}>Marquer traité</Button>
+                  : <StatusBadge statut="en_attente" />) },
+          ]}
+          rows={courriers}
+          emptyLabel="Aucun courrier enregistré"
+        />
+      </SectionBlock>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
@@ -521,6 +593,8 @@ export default function CommunicationModule({ initialData }: { initialData: any 
           emptyLabel="Aucun modèle défini"
         />
       </SectionBlock>
+
+      {renderCourrier()}
     </div>
   );
 }

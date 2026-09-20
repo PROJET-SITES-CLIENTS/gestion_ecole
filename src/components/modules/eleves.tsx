@@ -14,7 +14,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import * as actions from '@/app/actions';
+import * as actionsExt from '@/app/actions/extensions';
 import { formatDate, formatDateTime, formatMontant, initiales } from '@/lib/format';
+import { LIBELLES_PIECES } from '@/lib/business/secretariat';
 import * as ext from '@/app/actions/completions';
 
 export default function ElevesModule({ initialData }: { initialData: any }) {
@@ -57,6 +59,12 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   // direction / comptabilité / secrétariat ; le journal des paiements reste
   // réservé aux portails financiers)
   const echeances = initialData.echeances ?? [];
+  // SECRETARIAT — checklist de complétude du dossier d'inscription
+  const piecesDossier = initialData.piecesDossier ?? [];
+  const piecesEleve = piecesDossier.filter((p: any) => p.eleveId === selectedEleveId);
+  const piecesManquantes = piecesEleve.filter((p: any) => p.statut !== 'recue').length;
+  const reinscriptions = initialData.reinscriptions ?? [];
+  const reinscritEleve = reinscriptions.find((x: any) => x.eleveId === selectedEleveId);
   const eleveEcheances = echeances.filter((e: any) => e.eleveId === selectedEleveId);
   const totalDu = eleveEcheances.reduce((s: number, e: any) => s + (e.montant - (e.remise ?? 0)), 0);
   const totalPaye = eleveEcheances.reduce((s: number, e: any) => s + (e.montantPaye ?? 0), 0);
@@ -118,11 +126,49 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         <StatCard title="Besoins spécifiques" value={elevesAvecBesoin} sub="élèves concernés" icon={Accessibility} color="amber" />
         <StatCard title="Consentements en attente" value={consentementsEnAttente} sub="portail élève mineur" icon={FileCheck} color="rose" />
         <StatCard title="Dernière inscription" value={eleves.length ? formatDate(eleves[eleves.length - 1].dateInscription) : '—'} icon={Users} color="blue" />
+        {piecesDossier.length > 0 && (
+          <StatCard title="Dossiers incomplets" value={new Set(piecesDossier.filter((p: any) => p.statut !== 'recue').map((p: any) => p.eleveId)).size} sub="il manque au moins une pièce" icon={FileText} color="rose" />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Liste des élèves */}
         <div className="lg:col-span-1">
+          {(reinscriptions.length > 0 || peutEcrire) && initialData.session?.portal !== 'enseignant' && (
+            <SectionBlock
+              title="Réinscriptions (année en cours)"
+              description={`${reinscriptions.length} réinscrit(s) sur ${eleves.filter((e: any) => e.statut === 'actif').length} élèves actifs — frais de réinscription suivis`}
+              action={peutEcrire ? (
+                <ModalForm
+                  trigger={<CreateButton label="Enregistrer une réinscription" />}
+                  title="Réinscription d'un élève"
+                  fields={[
+                    { name: 'eleveId', label: 'Élève', type: 'select', required: true, options: eleves.filter((e: any) => e.statut === 'actif').map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom} (${e.matricule})` })) },
+                    { name: 'classeVoulueId', label: 'Classe souhaitée', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
+                    { name: 'fraisPayes', label: 'Frais de réinscription payés', type: 'checkbox' },
+                  ]}
+                  action={(fd: FormData) => actionsExt.enregistrerReinscription({
+                    eleveId: String(fd.get('eleveId') ?? ''),
+                    classeVoulueId: String(fd.get('classeVoulueId') ?? '') || undefined,
+                    fraisPayes: fd.get('fraisPayes') === 'on',
+                  })}
+                />
+              ) : undefined}
+            >
+              <DataTable
+                columns={[
+                  { key: 'eleve', label: 'Élève', render: (x) => `${x.eleve?.prenom ?? ''} ${x.eleve?.nom ?? ''}` },
+                  { key: 'annee', label: 'Année', render: (x) => x.anneeScolaire?.libelle ?? '—' },
+                  { key: 'classeVoulue', label: 'Classe souhaitée', render: (x) => x.classeVoulue?.libelle ?? '—' },
+                  { key: 'fraisPayes', label: 'Frais', render: (x) => <StatusBadge statut={x.fraisPayes ? 'valide' : 'en_attente'} /> },
+                  { key: 'dateReinscription', label: 'Date', render: (x) => formatDate(x.dateReinscription) },
+                ]}
+                rows={reinscriptions}
+                emptyLabel="Aucune réinscription enregistrée"
+              />
+            </SectionBlock>
+          )}
+
           <SectionBlock title="Liste des élèves" description={`${eleves.length} au total`}>
             <div className="max-h-[60vh] overflow-y-auto -mx-2">
               {eleves.map((e: any) => (
@@ -168,10 +214,64 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                     <TabsTrigger value="identite" className="text-xs">Identité</TabsTrigger>
                     <TabsTrigger value="finances" className="text-xs">Finances</TabsTrigger>
                     <TabsTrigger value="pedagogie" className="text-xs">Pédagogie</TabsTrigger>
+                    <TabsTrigger value="dossier" className="text-xs">Dossier</TabsTrigger>
                     <TabsTrigger value="besoins" className="text-xs">Besoins</TabsTrigger>
                     <TabsTrigger value="manuels" className="text-xs">Manuels</TabsTrigger>
                     <TabsTrigger value="securite" className="text-xs">Sécurité</TabsTrigger>
                   </TabsList>
+
+                  <TabsContent value="dossier" className="space-y-4">
+                    {piecesDossier.length === 0 ? (
+                      <p className="text-sm text-gray-500">Suivi de dossier non disponible pour votre portail.</p>
+                    ) : piecesEleve.length === 0 ? (
+                      <p className="text-sm text-gray-500">Aucune pièce suivie pour cet élève.</p>
+                    ) : (
+                      <>
+                        <div className={`p-3 rounded ${piecesManquantes === 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                          <div className={`text-sm font-semibold ${piecesManquantes === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {piecesManquantes === 0 ? '✓ Dossier complet' : `Dossier incomplet — ${piecesManquantes} pièce(s) manquante(s)`}
+                          </div>
+                          {piecesManquantes > 0 && <div className="text-xs text-amber-700 mt-1">Relancez la famille pour compléter le dossier avant la rentrée.</div>}
+                        </div>
+                        <div className="space-y-2">
+                          {piecesEleve.map((p: any) => (
+                            <div key={p.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <div>
+                                <div className="text-sm font-medium">{LIBELLES_PIECES[p.type] ?? p.type}</div>
+                                {p.remarque && <div className="text-xs text-gray-500">{p.remarque}</div>}
+                                {p.dateReception && <div className="text-xs text-gray-500">Reçue le {formatDate(p.dateReception)}</div>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <StatusBadge statut={p.statut === 'recue' ? 'valide' : 'absent'} />
+                                {peutEcrire && (
+                                  <Button
+                                    variant="outline" size="sm"
+                                    onClick={() => actionsExt.basculerPieceDossier(p.id, p.statut === 'recue' ? 'manquante' : 'recue')}
+                                  >
+                                    {p.statut === 'recue' ? 'Retirer' : 'Marquer reçue'}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {peutEcrire && (
+                          <details className="text-sm">
+                            <summary className="cursor-pointer text-emerald-700">Exiger une pièce supplémentaire (ex. certificat de transfert)</summary>
+                            <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); actionsExt.ajouterPieceExigee(eleve.id, String(fd.get('type') ?? '')); }}>
+                              <input name="type" placeholder="Libellé de la pièce" className="flex-1 h-8 border rounded px-2" required />
+                              <Button size="sm">Exiger</Button>
+                            </form>
+                          </details>
+                        )}
+                        {reinscritEleve && (
+                          <div className="p-2 bg-emerald-50 rounded text-xs text-emerald-700">
+                            ✓ Réinscrit·e pour {reinscritEleve.anneeScolaire?.libelle} {reinscritEleve.classeVoulue ? `→ ${reinscritEleve.classeVoulue.libelle}` : ''} {reinscritEleve.fraisPayes ? '· frais payés' : '· frais en attente'}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </TabsContent>
 
                   <TabsContent value="pedagogie" className="space-y-4">
                     {notes.length === 0 ? (
