@@ -155,6 +155,39 @@ export async function encaisserPaiementCore(ctx: Ctx, input: EncaissementInput) 
       alloue += applique;
     }
 
+    // AUDIT COMPTA — écriture SYSCOHADA en TEMPS RÉEL (partie double) :
+    // débit 571 Caisse (espèces/mobile) ou 521 Banque (virement/chèque/carte),
+    // crédit 411 Clients (extinction de la créance famille). Journal VE.
+    // Silencieux si le plan comptable n'est pas encore initialisé (l'école
+    // peut encaisser avant d'avoir activé la comptabilité).
+    try {
+      const comptesTreso = await tx.compteComptable.findMany({ where: { ecoleId, numero: { in: ['571', '521', '411'] } } });
+      const parNum = new Map(comptesTreso.map((c: any) => [c.numero, c]));
+      const treso = /esp|mobile|cash/i.test(input.modePaiement) ? parNum.get('571') ?? parNum.get('521') : parNum.get('521') ?? parNum.get('571');
+      const clientsC = parNum.get('411');
+      const journalVE = await tx.journalComptable.findFirst({ where: { ecoleId, code: 'VE' } });
+      if (treso && clientsC && journalVE) {
+        await tx.ecritureComptable.create({
+          data: {
+            ecoleId, journalId: journalVE.id, date: new Date(),
+            numeroPiece: `ENC-${paiement.id.slice(-10)}`,
+            libelle: `Encaissement ${reference} (${input.modePaiement})`,
+            statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+            lignes: {
+              create: [
+                { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse' : 'Banque', debit: input.montant, credit: 0 },
+                { compteId: clientsC.id, libelle: 'Clients — familles', debit: 0, credit: input.montant },
+              ],
+            },
+          },
+        });
+        const deltaTreso = ['actif', 'charge'].includes(treso.type) ? input.montant : -input.montant;
+        const deltaClients = ['actif', 'charge'].includes(clientsC.type) ? -input.montant : input.montant;
+        await tx.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: deltaTreso } } });
+        await tx.compteComptable.update({ where: { id: clientsC.id }, data: { solde: { increment: deltaClients } } });
+      }
+    } catch { /* plan absent : comptabilité non activée — flux métier prioritaire */ }
+
     await logAction(tx, ecoleId, ctx.utilisateurId, 'paiement.encaissement', 'paiement', paiement.id, {
       montantCentimes: input.montant,
       eleveId: input.eleveId,
@@ -216,6 +249,35 @@ export async function annulerPaiementCore(ctx: Ctx, paiementId: string, motif: s
         annuleParId: ctx.utilisateurId,
       },
     });
+    // 2bis) AUDIT COMPTA — écriture INVERSE (débit 411, crédit 571/521 selon
+    // le mode d'origine) : l'annulation remet la créance due et sort la trésorerie.
+    try {
+      const comptesTreso = await tx.compteComptable.findMany({ where: { ecoleId: p.ecoleId, numero: { in: ['571', '521', '411'] } } });
+      const parNum = new Map(comptesTreso.map((c: any) => [c.numero, c]));
+      const treso = /esp|mobile|cash/i.test(p.modePaiement) ? parNum.get('571') ?? parNum.get('521') : parNum.get('521') ?? parNum.get('571');
+      const clientsC = parNum.get('411');
+      const journalVE = await tx.journalComptable.findFirst({ where: { ecoleId: p.ecoleId, code: 'VE' } });
+      if (treso && clientsC && journalVE) {
+        await tx.ecritureComptable.create({
+          data: {
+            ecoleId: p.ecoleId, journalId: journalVE.id, date: new Date(),
+            numeroPiece: `ANN-${p.id.slice(-10)}`,
+            libelle: `Annulation encaissement ${p.referenceTransaction ?? p.id} : ${motif.trim().slice(0, 60)}`,
+            statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+            lignes: {
+              create: [
+                { compteId: clientsC.id, libelle: 'Clients — familles (annulation)', debit: p.montant, credit: 0 },
+                { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse (annulation)' : 'Banque (annulation)', debit: 0, credit: p.montant },
+              ],
+            },
+          },
+        });
+        const deltaTreso = ['actif', 'charge'].includes(treso.type) ? -p.montant : p.montant;
+        const deltaClients = ['actif', 'charge'].includes(clientsC.type) ? p.montant : -p.montant;
+        await tx.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: deltaTreso } } });
+        await tx.compteComptable.update({ where: { id: clientsC.id }, data: { solde: { increment: deltaClients } } });
+      }
+    } catch { /* plan absent — comptabilité non activée */ }
     // 3) Remboursement : émission d'un avoir (F3).
     let avoirNumero: string | null = null;
     if (rembourser) {

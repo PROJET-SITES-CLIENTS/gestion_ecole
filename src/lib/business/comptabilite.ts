@@ -99,7 +99,7 @@ export async function passerEcritureCore(ctx: Ctx, input: {
   const ecriture = await db.ecritureComptable.create({
     data: {
       ecoleId, journalId: journal.id, date: input.date ?? new Date(),
-      numeroPiece: input.piece ?? `ECR-${Date.now().toString(36).toUpperCase()}`,
+      numeroPiece: input.piece ?? `ECR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
       libelle: input.libelle, statut: 'valide', valideParId: ctx.utilisateurId,
       dateValidation: new Date(), sectionComptableId: input.sectionComptableId ?? null,
       lignes: {

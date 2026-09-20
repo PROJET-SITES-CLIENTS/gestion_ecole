@@ -190,10 +190,24 @@ export async function genererEcrituresAutomatiquesCore(ctx: Ctx, ecoleId: string
   assertPermission(ctx, 'finances.valider');
   const comptes = await db.compteComptable.findMany({ where: { ecoleId } });
   const parNumero = new Map(comptes.map((c) => [c.numero, c]));
-  const banque = parNumero.get('512') ?? comptes[0];
-  const recettes = parNumero.get('411') ?? parNumero.get('707') ?? banque;
-  const achats = parNumero.get('607') ?? banque;
-  if (!banque) throw new ActionError('Plan comptable vide : créez au moins un compte 512 (Banque).', 'PLAN_VIDE');
+  // AUDIT COMPTA — le plan école utilise 521 (banque) et 571 (caisse), pas 512 :
+  // l'ancien repli sur comptes[0] produisait des écritures 411/411 absurdes.
+  const banque = parNumero.get('521') ?? parNumero.get('512');
+  const caisse = parNumero.get('571');
+  const clients = parNumero.get('411');
+  if (!banque || !clients) throw new ActionError('Plan comptable incomplet : initialisez le plan SYSCOHADA école (521 Banque + 411 Clients requis).', 'PLAN_VIDE');
+  // Charge par catégorie de dépense (heuristique SYSCOHADA école)
+  const compteChargePour = (categorie: string) => {
+    const c = categorie.toLowerCase();
+    if (/fournitur|livre|manuel|papet/.test(c)) return parNumero.get('601');
+    if (/mat[ée]riel|mobilier|informatiq|equip/.test(c)) return parNumero.get('602');
+    if (/denr|aliment|cantine|repas|cuisine/.test(c)) return parNumero.get('605');
+    if (/energie|electricit|eau|charbon|gaz/.test(c)) return parNumero.get('608');
+    if (/carburant|transport|vehicule/.test(c)) return parNumero.get('624');
+    if (/entretien|reparation|maint/.test(c)) return parNumero.get('628');
+    return parNumero.get('618');
+  };
+  const tresoreriePour = (mode: string) => (/esp[eè]c|mobile|cash/i.test(mode) ? caisse ?? banque : banque);
   const journal = await db.journalComptable.findFirst({ where: { ecoleId, code: 'VE' } }) ??
     await db.journalComptable.findFirst({ where: { ecoleId } });
   if (!journal) throw new ActionError('Aucun journal comptable.', 'PLAN_VIDE');
@@ -207,21 +221,22 @@ export async function genererEcrituresAutomatiquesCore(ctx: Ctx, ecoleId: string
     for (const p of paiements) {
       const numero = `ENC-${p.id.slice(-10)}`;
       if (numerosExistants.has(numero)) continue;
+      const treso = tresoreriePour(p.modePaiement ?? ''); // espèces/mobile → 571, sinon 521
       await tx.ecritureComptable.create({
         data: {
           ecoleId, journalId: journal.id, date: p.datePaiement, numeroPiece: numero,
-          libelle: `Encaissement ${p.referenceTransaction ?? p.id}`,
+          libelle: `Encaissement ${p.referenceTransaction ?? p.id} (${p.modePaiement})`,
           statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
           lignes: {
             create: [
-              { compteId: banque.id, libelle: 'Banque', debit: p.montant, credit: 0 },
-              { compteId: recettes.id, libelle: 'Recettes scolarité', debit: 0, credit: p.montant },
+              { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse' : 'Banque', debit: p.montant, credit: 0 },
+              { compteId: clients.id, libelle: 'Clients — familles', debit: 0, credit: p.montant },
             ],
           },
         },
       });
-      await tx.compteComptable.update({ where: { id: banque.id }, data: { solde: { increment: p.montant } } });
-      await tx.compteComptable.update({ where: { id: recettes.id }, data: { solde: { increment: -p.montant } } });
+      await tx.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: p.montant } } });
+      await tx.compteComptable.update({ where: { id: clients.id }, data: { solde: { increment: -p.montant } } });
       créées++;
     }
     // 2) Dépenses validées sans écriture
@@ -229,6 +244,7 @@ export async function genererEcrituresAutomatiquesCore(ctx: Ctx, ecoleId: string
     for (const d of depenses) {
       const numero = `DEP-${d.id.slice(-10)}`;
       if (numerosExistants.has(numero)) continue;
+      const charge = compteChargePour(d.categorie) ?? banque;
       await tx.ecritureComptable.create({
         data: {
           ecoleId, journalId: journalACH.id, date: d.dateDepense, numeroPiece: numero,
@@ -236,13 +252,13 @@ export async function genererEcrituresAutomatiquesCore(ctx: Ctx, ecoleId: string
           statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
           lignes: {
             create: [
-              { compteId: achats.id, libelle: d.categorie.slice(0, 80), debit: d.montant, credit: 0 },
+              { compteId: charge.id, libelle: d.categorie.slice(0, 80), debit: d.montant, credit: 0 },
               { compteId: banque.id, libelle: 'Banque', debit: 0, credit: d.montant },
             ],
           },
         },
       });
-      await tx.compteComptable.update({ where: { id: achats.id }, data: { solde: { increment: d.montant } } });
+      await tx.compteComptable.update({ where: { id: charge.id }, data: { solde: { increment: d.montant } } });
       await tx.compteComptable.update({ where: { id: banque.id }, data: { solde: { increment: -d.montant } } });
       créées++;
     }
