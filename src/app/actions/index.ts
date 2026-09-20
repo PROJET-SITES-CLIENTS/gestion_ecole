@@ -33,7 +33,7 @@ import {
   executerSanctionCore, exclureTemporairementCore,
   // RH
   demanderCongeCore, traiterCongeCore, assignerRemplacementCore,
-  creerPersonnelCore, annulerCongeCore,
+  creerPersonnelCore, annulerCongeCore, majPerimetreSecretariatCore,
   // services
   inscrireCantineCore, preterLivreCore, retournerLivreCore, attribuerManuelCore,
   creerLivreBiblioCore, retournerManuelCore, annulerCantineCore,
@@ -1038,6 +1038,7 @@ export async function assignerRemplacement(formData: FormData): Promise<ActionRe
 }
 
 const PersonnelSchema = z.object({
+  perimetreSecretariat: z.enum(['primaire', 'secondaire']).optional().or(z.literal('')),
   nom: strReq, prenom: strReq, email: z.string().trim().email('email invalide').optional().or(z.literal('')),
   telephone: str.optional(), dateEmbauche: dateReq,
   typeContrat: z.enum(['CDI', 'CDD', 'vacataire', 'stagiaire']).optional(),
@@ -1059,6 +1060,7 @@ export async function creerPersonnel(formData: FormData): Promise<ActionResult> 
       salaireBrut: d.salaireBrut !== undefined ? versCentimes(d.salaireBrut) : undefined,
       creerCompte: estCoche(d.creerCompte),
       motDePasseInitial: d.motDePasseInitial || undefined,
+      perimetreSecretariat: (d.perimetreSecretariat === 'primaire' || d.perimetreSecretariat === 'secondaire') ? d.perimetreSecretariat : undefined,
     });
     revalidatePath('/');
     return { ok: true, ...r };
@@ -1629,4 +1631,15 @@ export async function chargerSuite(dataset: string, offset: number, take = 200):
   } catch (e) {
     return echec(e);
   }
+}
+
+
+/** SECRÉTARIAT SPLIT — modifie le périmètre d'un personnel (direction). */
+export async function majPerimetreSecretariat(personnelId: string, perimetre: 'primaire' | 'secondaire' | null): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await majPerimetreSecretariatCore(ctx, personnelId, perimetre);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
 }

@@ -336,6 +336,23 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
   v.anneeConsultee = anneeCible;
   const idAnnee = anneeCible?.id;
 
+  // SECRÉTARIAT SPLIT — périmètre du personnel (primaire/secondaire/école entière).
+  // Les secrétariats délimités ne voient QUE les élèves de leur section.
+  let ouElevesPerimetre: any = undefined;
+  let codesCyclesPerimetre: string[] | null = null;
+  if (portal === 'secretariat') {
+    const pers = await db.personnel.findFirst({ where: { utilisateurId: session.utilisateur.id, deletedAt: null }, select: { perimetreSecretariat: true } });
+    if (pers?.perimetreSecretariat === 'primaire' || pers?.perimetreSecretariat === 'secondaire') {
+      codesCyclesPerimetre = pers.perimetreSecretariat === 'primaire' ? ['MAT', 'PRIM'] : ['COLL', 'LYC'];
+      ouElevesPerimetre = {
+        OR: [
+          { classeActuelleId: null },
+          { classeActuelle: { niveau: { section: { cycle: { code: { in: codesCyclesPerimetre } } } } } },
+        ],
+      };
+    }
+  }
+
   // Périmètres
   const rh = voirtRh(portal);
   const sante = voitSante(portal);
@@ -369,10 +386,11 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   // ---- Élèves (base : identité, pas de santé) ----
   promises.push((async () => {
+    const ouEleves = { ecoleId, deletedAt: null, ...ouElevesPerimetre };
     const [total, eleves] = await Promise.all([
-      db.eleve.count({ where: { ecoleId, deletedAt: null } }),
+      db.eleve.count({ where: ouEleves }),
       db.eleve.findMany({
-        where: { ecoleId, deletedAt: null },
+        where: ouEleves,
         orderBy: { nom: 'asc' },
         take: CAP.eleves,
         select: {
@@ -560,7 +578,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         // PARCOURS ÉLÈVE — suivi des échéances (statut, payé, restant) pour le
         // secrétariat SANS le journal des paiements (réservé aux portails financiers)
         ...(portal === 'secretariat' ? [db.echeanceFrais.findMany({
-          where: { eleve: { ecoleId }, ...(idAnnee ? { frais: { anneeScolaireId: idAnnee } } : {}) },
+          where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre }, ...(idAnnee ? { frais: { anneeScolaireId: idAnnee } } : {}) },
           include: { frais: { select: { libelle: true } } },
           orderBy: { dateEcheance: 'asc' },
           take: 2000,
@@ -574,8 +592,9 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
     })());
   }
 
-  if (portal === 'vie_scolaire' || securite) {
+  if (portal === 'vie_scolaire' || portal === 'secretariat' || securite) {
     promises.push((async () => {
+      // SECRÉTARIAT : registre des visiteurs (accueil) — il peut y inscrire
       v.visiteurs = await db.visiteur.findMany({ where: { ecoleId }, orderBy: { dateHeureEntree: 'desc' }, take: 200 });
     })());
   }
@@ -586,7 +605,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.creneauRdv.findMany({ where: { personnel: { ecoleId } }, orderBy: { date: 'asc' }, take: 200, include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } }),
         db.rdv.findMany({ where: { parent: { ecoleId } }, orderBy: { createdAt: 'desc' }, take: CAP.rdvs, include: { parent: true, eleve: true, creneauRdv: { include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } } } }),
         db.reunionCollective.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'asc' }, include: { classe: true } }),
-        db.candidatureAdmission.findMany({ where: { ecoleId }, orderBy: { dateSoumission: 'desc' }, include: { niveau: true } }),
+        db.candidatureAdmission.findMany({ where: { ecoleId, ...(codesCyclesPerimetre ? { niveau: { section: { cycle: { code: { in: codesCyclesPerimetre } } } } } : {}) }, orderBy: { dateSoumission: 'desc' }, include: { niveau: true } }),
       ]);
       v.creneauxRdv = creneauxRdv; v.rdvs = rdvs; v.reunionsCollectives = reunionsCollectives;
       v.candidaturesAdmission = candidaturesAdmission;

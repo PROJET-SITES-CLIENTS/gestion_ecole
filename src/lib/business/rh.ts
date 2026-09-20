@@ -175,6 +175,7 @@ export type CreationPersonnelInput = {
   diplomePrincipal?: string;
   creerCompte?: boolean;
   motDePasseInitial?: string; // fourni par l'action (jamais stocké en clair)
+  perimetreSecretariat?: 'primaire' | 'secondaire'; // split secrétariat (null = école entière)
 };
 
 async function prochainMatriculePersonnel(tx: any, ecoleId: string): Promise<string> {
@@ -255,6 +256,7 @@ export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: Creat
             dateEmbauche: input.dateEmbauche,
             contrats: { create: { typeContrat: input.typeContrat || 'CDI', salaireBrut: input.salaireBrut || 0, dateDebut: input.dateEmbauche } },
             diplomePrincipal: input.diplomePrincipal?.trim() || undefined,
+            ...(input.perimetreSecretariat ? { perimetreSecretariat: input.perimetreSecretariat } : {}),
             statut: 'actif',
           },
         });
@@ -297,4 +299,18 @@ export async function annulerCongeCore(ctx: Ctx, congeId: string) {
   await db.conge.update({ where: { id: congeId }, data: { statut: 'annule' } });
   await logAction(db, p!.ecoleId, ctx.utilisateurId, 'conge.annulation', 'conge', congeId);
   return { congeId };
+}
+
+// --------------------------------------------------------------------
+// SECRÉTARIAT SPLIT — périmètre primaire/secondaire éditable (direction)
+// --------------------------------------------------------------------
+
+export async function majPerimetreSecretariatCore(ctx: Ctx, personnelId: string, perimetre: 'primaire' | 'secondaire' | null) {
+  assertPermission(ctx, 'admin.saas');
+  const p = await db.personnel.findUnique({ where: { id: personnelId } });
+  if (!p) throw new ActionError('Personnel introuvable.', 'INTROUVABLE');
+  assertTenant(p.ecoleId, ctx, 'Ce personnel');
+  await db.personnel.update({ where: { id: personnelId }, data: { perimetreSecretariat: perimetre } });
+  await logAction(db, p.ecoleId, ctx.utilisateurId, 'personnel.perimetre_secretariat', 'personnel', personnelId, { perimetre: perimetre ?? 'ecole' });
+  return { personnelId, perimetre: perimetre ?? 'ecole' };
 }

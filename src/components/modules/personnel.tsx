@@ -102,6 +102,11 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                 { value: 'assistant_direction', label: '💼 Assistant de Direction' },
                 { value: 'direction', label: '🎓 Direction (accès complet)' },
               ] },
+              { name: 'perimetreSecretariat', label: 'Périmètre (si secrétariat scindé)', type: 'select', options: [
+                { value: '', label: 'École entière (secrétariat unique)' },
+                { value: 'primaire', label: 'Primaire uniquement (maternelle incluse)' },
+                { value: 'secondaire', label: 'Secondaire uniquement (collège + lycée)' },
+              ] },
               { name: 'creerCompte', label: 'Créer le compte utilisateur (accès au portail)', type: 'checkbox' },
               { name: 'motDePasseInitial', label: 'Mot de passe initial — minimum 8 caractères', type: 'text', placeholder: 'À communiquer au personnel (≥ 8 caractères)' },
             ]}

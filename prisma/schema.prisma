@@ -616,6 +616,8 @@ model Personnel {
   dateSortie            DateTime?
   motifSortie           String?
   statut                String             @default("actif")
+  // SECRÉTARIAT SPLIT — périmètre : null = école entière, 'primaire' = maternelle+primaire, 'secondaire' = collège+lycée
+  perimetreSecretariat String?
   typeContrat           String? // CDI/CDD/vacataire/stagiaire (champ historique conservé)
   salaireBrut           Int? // centimes — contrat courant (l'historique vit dans ContratPersonnel)
   contrats              ContratPersonnel[]

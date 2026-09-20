@@ -65,6 +65,22 @@ async function verifierEtMajQuotaEleves(ecoleId: string, client: typeof db = db)
   });
 }
 
+
+/** SECRÉTARIAT SPLIT — vérifie que la classe cible est dans le périmètre du personnel appelant. */
+async function assertClasseDansPerimetre(ctx: Ctx, classe: { id: string; niveauId: string | null; ecoleId: string }) {
+  const pers = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, deletedAt: null }, select: { perimetreSecretariat: true } });
+  const perimetre = pers?.perimetreSecretariat;
+  if (perimetre !== 'primaire' && perimetre !== 'secondaire') return; // école entière
+  const niveau = await db.niveau.findUnique({ where: { id: classe.niveauId! }, include: { section: { include: { cycle: true } } } });
+  const codes = perimetre === 'primaire' ? ['MAT', 'PRIM'] : ['COLL', 'LYC'];
+  if (!niveau || !codes.includes(niveau.section.cycle.code)) {
+    throw new ActionError(
+      `Votre secrétariat couvre le ${perimetre === 'primaire' ? 'primaire' : 'secondaire'} — cette classe n'en fait pas partie.`,
+      'HORS_PERIMETRE',
+    );
+  }
+}
+
 export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: InscriptionEleveInput) {
   assertPermission(ctx, 'eleves.ecrire');
   if (!input.nom?.trim()) throw new ActionError('Le nom est obligatoire.', 'CHAMP_MANQUANT');
@@ -77,6 +93,7 @@ export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: Inscri
     const classe = await db.classe.findUnique({ where: { id: input.classeId } });
     if (!classe) throw new ActionError('Classe introuvable.', 'INTROUVABLE');
     assertTenant(classe.ecoleId, ctx, 'Cette classe');
+    await assertClasseDansPerimetre(ctx, classe); // SECRÉTARIAT SPLIT
   }
   // F4 — quota d'élèves du plan SaaS
   await verifierEtMajQuotaEleves(ecoleId);
@@ -253,6 +270,7 @@ export async function transfererClasseCore(ctx: Ctx, eleveId: string, nouvelleCl
   const classe = await db.classe.findUnique({ where: { id: nouvelleClasseId } });
   if (!classe) throw new ActionError('Classe destination introuvable.', 'INTROUVABLE');
   assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  await assertClasseDansPerimetre(ctx, classe); // SECRÉTARIAT SPLIT
   
   const nbEleves = await db.eleve.count({ where: { classeActuelleId: nouvelleClasseId, statut: 'actif', deletedAt: null } });
   if (classe.capaciteMax && nbEleves >= classe.capaciteMax) {
