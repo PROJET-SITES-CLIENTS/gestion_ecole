@@ -453,6 +453,101 @@ const docsPedagogie: ModeleDoc[] = [
       };
     },
   },
+
+// ====================================================================
+// SECRETARIAT — carte scolaire, duplicata, anciens élèves
+// ====================================================================
+
+  {
+    code: 'carte_scolaire', libelle: 'Carte scolaire élève', domaine: 'Scolarité & pédagogie',
+    description: 'Carte nominative d\'identité scolaire (photo, matricule, classe, validité annuelle).',
+    entete: 'majeur', permission: 'eleves.ecrire',
+    parametres: [P.eleve()],
+    generer: async (c) => {
+      const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
+      const parent0 = el.parents?.[0]?.parent;
+      return {
+        titre: '',
+        corps: `
+        <div style="display:flex;justify-content:center">
+        <div style="width:430px;border:2.5px solid ${c.identite.couleur};border-radius:14px;overflow:hidden">
+          <div style="background:${c.identite.couleur};color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:800;letter-spacing:2px">CARTE SCOLAIRE</div>
+            <div style="font-size:9pt">${echapper(c.identite.nom)}</div>
+          </div>
+          <div style="padding:14px 16px;display:flex;gap:14px">
+            <div style="width:74px;height:88px;border:1.5px dashed #aaa;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:8pt;text-align:center">${el.photoUrl ? `<img src="${echapper(el.photoUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:7px"/>` : 'Photo<br/>élève'}</div>
+            <div style="flex:1">
+              <div style="font-size:15pt;font-weight:800">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
+              <div style="font-size:10pt;color:#444;margin-top:3px">${echapper(el.classeActuelle?.libelle || '—')} · Matricule ${echapper(el.matricule || '—')}</div>
+              <div style="margin-top:9px;font-size:10.6pt"><b>Né(e) le :</b> ${dateFr(el.dateNaissance)}</div>
+              ${parent0 ? `<div style="font-size:10.6pt"><b>Contact :</b> ${echapper(parent0.prenom || '')} ${echapper(parent0.nom || '')} · ${echapper(parent0.telephone || '—')}</div>` : ''}
+              <div style="font-size:10.6pt"><b>Validité :</b> année ${echapper(c.identite.anneeScolaire)}</div>
+            </div>
+          </div>
+          <div style="background:#f4f8f7;padding:8px 16px;font-size:8.6pt;color:#444;display:flex;justify-content:space-between">
+            <div><b>Carte strictement nominative.</b> À présenter à toute demande.<br/>Perte : ${formatXOF(200000)}.</div>
+            <div style="text-align:right">${echapper(c.identite.telephone || '')}</div>
+          </div>
+        </div>
+        </div>`,
+      };
+    },
+  },
+  {
+    code: 'duplicata_bulletin', libelle: 'Duplicata de bulletin (perte)', domaine: 'Scolarité & pédagogie',
+    description: 'Copie de secours du bulletin estampillée DUPLICATA (variante détectée automatiquement : maternelle/primaire/collège).',
+    entete: 'majeur', permission: 'eleves.ecrire', filigrane: 'DUPLICATA',
+    parametres: [P.eleve(), P.periode()],
+    generer: async (c) => {
+      const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
+      const cycleCode = (el.classeActuelle as any)?.niveau?.section?.cycle?.code;
+      const variante = cycleCode === 'MAT' ? 'maternelle' : cycleCode === 'PRIM' ? 'primaire' : 'college';
+      const r = await corpsBulletin(c, variante);
+      return {
+        ...r,
+        sousTitre: `${r.sousTitre || ''} — DUPLICATA délivré le ${dateFr(new Date())} (document original perdu)`.replace(/^ — /, ''),
+        corps: r.corps + `<div class="mention-legale">Duplicata délivré à la famille le ${dateFr(new Date())}. Toute reproduction du document original est sans valeur.</div>`,
+      };
+    },
+  },
+  {
+    code: 'attestation_ancien_eleve', libelle: 'Attestation de scolarité (ancien élève)', domaine: 'Scolarité & pédagogie',
+    description: 'Attestation rétroactive pour un élève sorti : période de fréquentation et classes parcourues.',
+    entete: 'majeur', permission: 'eleves.ecrire',
+    parametres: [P.eleve()],
+    generer: async (c) => {
+      const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
+      if (el.statut === 'actif') throw new ActionError('Cet élève est encore actif — utilisez le certificat de scolarité classique.', 'ELEVE_ACTIF');
+      const historique = await db.eleveHistoriqueClasse.findMany({
+        where: { eleveId: el.id },
+        include: { classe: true },
+        orderBy: { dateEntree: 'asc' },
+      });
+      const du = el.dateInscription ?? historique[0]?.dateEntree;
+      const au = el.dateSortie ?? historique[historique.length - 1]?.dateSortie;
+      const parcours = historique.length
+        ? historique.map((h: any) => `${echapper(h.classe?.libelle || '—')} (${dateCourte(h.dateEntree)} → ${h.dateSortie ? dateCourte(h.dateSortie) : 'en cours'})`).join('<br/>')
+        : '—';
+      return {
+        titre: 'Attestation de fréquentation scolaire',
+        sousTitre: `Ancien élève · ${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}`,
+        corps: trameAttestation({
+          titre: 'Attestation de fréquentation scolaire',
+          intro: `Le Chef de l'établissement <b>${echapper(c.identite.nom)}</b> atteste que l'élève ci-dessous désigné(e) a fréquenté l'établissement (ancien élève${el.motifSortie ? `, motif de sortie : ${echapper(el.motifSortie)}` : ''}).`,
+          blocsHtml: blocEleve({
+            prenom: el.prenom, nom: el.nom, matricule: el.matricule, dateNaissance: el.dateNaissance, lieuNaissance: el.lieuNaissance,
+            lignes: [
+              ['Période de fréquentation', `${du ? dateFr(du) : '—'} → ${au ? dateFr(au) : '—'}`],
+              ['Statut', echapper(el.statut)],
+              ['Parcours', parcours],
+            ],
+          }),
+          finale: 'La présente attestation est délivrée à l\'intéressé(e) pour servir et valoir ce que de droit.',
+        }) + zoneSignature(c.identite, { qui: 'Le Chef d\'Établissement' }) + mention('Attestation délivrée sur les archives de l\'établissement — vérifiable auprès de la scolarité.'),
+      };
+    },
+  },
 ];
 
 export { selectMention, docsPedagogie };

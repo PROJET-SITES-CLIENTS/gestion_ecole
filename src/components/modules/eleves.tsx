@@ -37,6 +37,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const accesRgpd = portal === 'direction' || portal === 'secretariat';
   const peutEcrire = ['direction', 'secretariat', 'super_admin', 'assistant'].includes(portal ?? '');
   const [selectedEleveId, setSelectedEleveId] = useState<string | null>(eleves[0]?.id ?? null);
+  const [rechercheAncien, setRechercheAncien] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
   const consentementFb = useActionFeedback();
   const rgpdFb = useActionFeedback();
@@ -166,6 +167,36 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                 rows={reinscriptions}
                 emptyLabel="Aucune réinscription enregistrée"
               />
+            </SectionBlock>
+          )}
+
+          {/* ARCHIVES — anciens élèves (sortis, diplômés, transférés, exclus) */}
+          {initialData.session?.portal !== 'enseignant' && (
+            <SectionBlock
+              title="Archives — anciens élèves"
+              description={`${eleves.filter((e: any) => e.statut !== 'actif').length} ancien(s) élève(s) · attestations de fréquentation délivrables sur archives`}
+            >
+              <div className="mb-2">
+                <input
+                  value={rechercheAncien}
+                  onChange={(e) => setRechercheAncien(e.target.value)}
+                  placeholder="Rechercher un ancien (nom, prénom, matricule)…"
+                  className="w-full h-9 border rounded-md px-3 text-sm"
+                />
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'nom', label: 'Élève', render: (e) => `${e.prenom} ${e.nom}` },
+                  { key: 'matricule', label: 'Matricule' },
+                  { key: 'statut', label: 'Statut', render: (e) => <StatusBadge statut={e.statut === 'diplome' ? 'valide' : 'absent'} /> },
+                  { key: 'entree', label: 'Entré(e) le', render: (e) => formatDate(e.dateInscription) },
+                  { key: 'sortie', label: 'Sorti(e) le', render: (e) => e.dateSortie ? formatDate(e.dateSortie) : '—' },
+                  { key: 'motifSortie', label: 'Motif', render: (e) => e.motifSortie ?? '—' },
+                ]}
+                rows={eleves.filter((e: any) => e.statut !== 'actif' && `${e.prenom} ${e.nom} ${e.matricule ?? ''}`.toLowerCase().includes(rechercheAncien.toLowerCase()))}
+                emptyLabel="Aucun ancien élève"
+              />
+              <p className="text-xs text-gray-500 mt-2">Attestation de fréquentation (période + parcours) : ouvrez la fiche de l'ancien élève → Documents → « Attestation de scolarité (ancien élève) ».</p>
             </SectionBlock>
           )}
 
