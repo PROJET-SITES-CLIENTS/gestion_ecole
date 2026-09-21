@@ -24,6 +24,7 @@ const VieScolaireModule = dynamic(() => import('./modules/vie-scolaire'), { ssr:
 const FinancesModule = dynamic(() => import('./modules/finances'), { ssr: false });
 const ServicesModule = dynamic(() => import('./modules/services'), { ssr: false });
 const SallesModule = dynamic(() => import('./modules/salles'), { ssr: false });
+const AssistantIA = dynamic(() => import('./assistant-ia'), { ssr: false });
 const ExamensModule = dynamic(() => import('./modules/examens'), { ssr: false });
 const RdvModule = dynamic(() => import('./modules/rdv'), { ssr: false });
 const SecuriteModule = dynamic(() => import('./modules/securite'), { ssr: false });
@@ -561,6 +562,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
           <span>Session authentifiée · École : {school?.nom ?? '—'}</span>
         </footer>
       </div>
-    </div>
+          <AssistantIA prenom={sessionUser?.prenom} />
+</div>
   );
 }
