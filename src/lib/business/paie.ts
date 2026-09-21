@@ -9,6 +9,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
+import { passerEcriturePaieCore } from './compta-plus';
 import { ActionError, Ctx, assertPermission, assertTenant, logAction, avecVerrou } from './commun';
 
 // --------------------------------------------------------------------
@@ -102,8 +103,15 @@ export async function traiterBulletinPaieCore(ctx: Ctx, bulletinId: string, deci
       ? { statut: 'valide', dateValidation: new Date(), valideParId: ctx.utilisateurId }
       : { statut: 'paye', datePaiement: new Date() },
   });
-  await logAction(db, b.ecoleId, ctx.utilisateurId, `paie.${decision}`, 'bulletin_paie', bulletinId);
-  return { bulletinId, statut: decision };
+  // COMPTA+ — écriture comptable automatique à la VALIDATION (641/644/421).
+  // Silencieux si le plan comptable n'est pas initialisé.
+  let ecriturePaie: string | null = null;
+  if (decision === 'valide') {
+    try { ecriturePaie = (await passerEcriturePaieCore(ctx, bulletinId)).ecritureId; }
+    catch (e: any) { if (!/PLAN_VIDE|compte .*absent/i.test(String(e?.message))) throw e; }
+  }
+  await logAction(db, b.ecoleId, ctx.utilisateurId, `paie.${decision}`, 'bulletin_paie', bulletinId, { ecriturePaie });
+  return { bulletinId, statut: decision, ecriturePaie };
 }
 
 /** Ajoute une variable de paie (prime, heure sup) pour un personnel et une période. */

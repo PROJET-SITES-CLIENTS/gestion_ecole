@@ -9,6 +9,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { Calculator, Wallet, Truck, BarChart3, Split, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
+import { ModalForm, CreateButton } from '@/components/shared-ui';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as ext from '@/app/actions/comptabilite';
@@ -21,6 +22,9 @@ function Champ({ label, children }: { label: string; children: React.ReactNode }
 const sel = 'w-full h-9 rounded-md border border-gray-200 bg-white px-3 text-sm';
 
 export default function ComptaModule({ initialData }: { initialData?: any }) {
+  const immobilisations = initialData?.immobilisations ?? [];
+  const rapprochements = initialData?.rapprochementsBancaires ?? [];
+  const budgets = initialData?.budgets ?? [];
   const [pending, start] = useTransition();
   const [data, setData] = useState<any>(null);
   const [onglet, setOnglet] = useState('accueil');
@@ -275,6 +279,117 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
           )}
         </SectionBlock>
       )}
+
+        {/* ═══ COMPTA+ ═══ */}
+        <SectionBlock title="Amortissements des immobilisations" description="Acquisition (241/521) et dotation annuelle linéaire (681/281) avec prorata la 1re année">
+          <div className="flex flex-wrap gap-2 mb-3">
+            <ModalForm
+              trigger={<CreateButton label="Nouvelle immobilisation" />}
+              title="Enregistrer une immobilisation"
+              fields={[
+                { name: 'libelle', label: 'Libellé', required: true, placeholder: 'Véhicule de service' },
+                { name: 'categorie', label: 'Catégorie', type: 'select', options: [
+                  { value: 'materiel', label: 'Matériel' }, { value: 'mobilier', label: 'Mobilier' },
+                  { value: 'vehicule', label: 'Véhicule' }, { value: 'informatique', label: 'Informatique' }, { value: 'batiment', label: 'Bâtiment' },
+                ] },
+                { name: 'montantAcquisition', label: "Montant d'acquisition (F)", type: 'number', required: true },
+                { name: 'dateAcquisition', label: "Date d'acquisition", type: 'date', required: true },
+                { name: 'dureeAnnees', label: 'Durée (années)', type: 'number', defaultValue: '5' },
+              ]}
+              action={ext.enregistrerImmobilisation}
+            />
+            <Button variant="outline" size="sm" onClick={() => ext.genererDotations(new Date().getFullYear())}>
+              Passer les dotations {new Date().getFullYear()}
+            </Button>
+          </div>
+          <DataTable
+            columns={[
+              { key: 'libelle', label: 'Immobilisation' },
+              { key: 'categorie', label: 'Catégorie' },
+              { key: 'montantAcquisition', label: 'Acquisition', render: (i: any) => fmt(i.montantAcquisition) },
+              { key: 'dateAcquisition', label: 'Le', render: (i: any) => new Date(i.dateAcquisition).toLocaleDateString('fr-FR') },
+              { key: 'dureeAnnees', label: 'Durée', render: (i: any) => i.dureeAnnees + ' ans' },
+              { key: 'dotation', label: 'Dotation annuelle', render: (i: any) => fmt(Math.round(i.montantAcquisition / i.dureeAnnees)) },
+            ]}
+            rows={immobilisations}
+            emptyLabel="Aucune immobilisation"
+          />
+        </SectionBlock>
+
+        <SectionBlock title="Rapprochement bancaire" description="Compare le solde du compte 521 aux relevés — écarts explicables et ajustement (frais bancaires 671)">
+          <div className="mb-3">
+            <ModalForm
+              trigger={<CreateButton label="Nouveau rapprochement" />}
+              title="Rapprochement bancaire"
+              fields={[
+                { name: 'dateReleve', label: 'Date du relevé', type: 'date', required: true },
+                { name: 'soldeReleve', label: 'Solde final du relevé (F)', type: 'number', required: true },
+                { name: 'lignesJson', label: 'Écarts explicables (JSON, optionnel)', type: 'textarea', placeholder: '[{"libelle":"Chèque non débité","montant":5000000,"sens":"en_Retrait"}]' },
+                { name: 'ajuster', label: "Ajuster l'écart résiduel (frais bancaires)", type: 'checkbox' },
+              ]}
+              action={ext.creerRapprochement}
+            />
+          </div>
+          <DataTable
+            columns={[
+              { key: 'dateReleve', label: 'Date', render: (r: any) => new Date(r.dateReleve).toLocaleDateString('fr-FR') },
+              { key: 'soldeComptable', label: 'Solde 521 (compta)', render: (r: any) => fmt(r.soldeComptable) },
+              { key: 'soldeReleve', label: 'Solde relevé', render: (r: any) => fmt(r.soldeReleve) },
+              { key: 'ecart', label: 'Écart', render: (r: any) => <span className={r.ecart === 0 ? 'text-emerald-700' : 'text-amber-700 font-semibold'}>{fmt(r.ecart)}</span> },
+              { key: 'ajuste', label: 'Ajusté', render: (r: any) => <StatusBadge statut={r.ajuste ? 'valide' : 'en_attente'} /> },
+            ]}
+            rows={rapprochements}
+            emptyLabel="Aucun rapprochement"
+          />
+        </SectionBlock>
+
+        <SectionBlock title="Budget prévisionnel" description="Prévu vs réalisé par poste — réalisé recalculé depuis les écritures de l'année">
+          <div className="mb-3">
+            <ModalForm
+              trigger={<CreateButton label="Nouveau budget" />}
+              title="Budget prévisionnel"
+              fields={[
+                { name: 'libelle', label: 'Libellé', required: true, placeholder: 'Budget 2026-2027' },
+                { name: 'lignesJson', label: 'Lignes (JSON, montants en centimes)', type: 'textarea', required: true, placeholder: '[{"categorie":"recettes","sousCategorie":"frais_scolarite","libelle":"Scolarités","montantPrevu":500000000}]' },
+              ]}
+              action={ext.creerBudget}
+            />
+          </div>
+          {(budgets ?? []).map((b: any) => (
+            <div key={b.id} className="mb-3">
+              <div className="text-sm font-semibold mb-1">{b.libelle}</div>
+              <DataTable
+                columns={[
+                  { key: 'libelle', label: 'Poste' },
+                  { key: 'categorie', label: 'Nature', render: (l: any) => <StatusBadge statut={l.categorie === 'recettes' ? 'valide' : 'absent'} /> },
+                  { key: 'montantPrevu', label: 'Prévu', render: (l: any) => fmt(l.montantPrevu) },
+                  { key: 'montantRealise', label: 'Réalisé', render: (l: any) => fmt(l.montantRealise) },
+                  { key: 'pourcentageRealise', label: '%', render: (l: any) => (
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-2 bg-gray-200 rounded"><div className="h-2 bg-emerald-500 rounded" style={{ width: Math.min(100, l.pourcentageRealise) + '%' }} /></div>
+                      <span className="text-xs">{l.pourcentageRealise}%</span>
+                    </div>
+                  ) },
+                ]}
+                rows={b.lignes ?? []}
+                emptyLabel="Aucune ligne"
+              />
+            </div>
+          ))}
+        </SectionBlock>
+
+        <SectionBlock title="Clôture d'exercice & exports" description="Solde des comptes de gestion vers 120 Résultat — exports FEC/balance pour l'expert-comptable">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => ext.cloturerExercice(
+              new Date(new Date().getFullYear(), 0, 1).toISOString(),
+              new Date(new Date().getFullYear(), 11, 31).toISOString(),
+            )}>
+              Clôturer l'exercice {new Date().getFullYear()}
+            </Button>
+            <a href="/api/compta/export?type=fec" className="text-sm px-3 py-1.5 border rounded-md hover:bg-gray-50">⬇ Export FEC (CSV)</a>
+            <a href="/api/compta/export?type=balance" className="text-sm px-3 py-1.5 border rounded-md hover:bg-gray-50">⬇ Balance (CSV)</a>
+          </div>
+        </SectionBlock>
     </div>
   );
 }

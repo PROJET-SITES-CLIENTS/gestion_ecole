@@ -493,6 +493,15 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       v.frais = frais; v.echeances = echeances; v.paiements = paiements;
       v.depenses = depenses; v.articlesStock = articlesStock; v.mouvementsStock = mouvementsStock;
       v.totaux.paiements = totPaiements; v.totaux.echeances = totEcheances;
+      // COMPTA+ — immobilisations, rapprochements bancaires, budgets
+      if (portal === 'comptabilite' || portal === 'direction' || portal === 'super_admin') {
+        const [immobilisations, rapprochementsBancaires, budgets] = await Promise.all([
+          db.immobilisation.findMany({ where: { ecoleId }, orderBy: { dateAcquisition: 'desc' } }),
+          db.rapprochementBancaire.findMany({ where: { ecoleId }, orderBy: { dateReleve: 'desc' }, take: 50 }),
+          db.budget.findMany({ where: { ecoleId }, include: { lignes: true, anneeScolaire: true }, orderBy: { dateDebut: 'desc' } }),
+        ]);
+        v.immobilisations = immobilisations; v.rapprochementsBancaires = rapprochementsBancaires; v.budgets = budgets;
+      }
     })());
   }
 

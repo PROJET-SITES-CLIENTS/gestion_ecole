@@ -24,3 +24,4 @@ export * from './infrastructures';
 export * from './comptabilite';
 export * from './rh-complements';
 export * from './secretariat';
+export * from './compta-plus';

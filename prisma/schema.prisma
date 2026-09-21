@@ -45,6 +45,8 @@ model Ecole {
   piecesDossier PieceDossier[]
   courriers     Courrier[]
   reinscriptions Reinscription[]
+  immobilisations Immobilisation[]
+  rapprochementsBancaires RapprochementBancaire[]
 
   abonnements                Abonnement[]
   facturesSaas               FactureSaas[]
@@ -280,6 +282,42 @@ model Reinscription {
   enregistreParId  String?
   @@unique([eleveId, anneeScolaireId])
   @@index([ecoleId, anneeScolaireId])
+}
+
+
+// ====================================================================
+// COMPTA+ — immobilisations, rapprochement bancaire
+// ====================================================================
+
+model Immobilisation {
+  id                 String    @id @default(cuid())
+  ecoleId            String
+  ecole              Ecole     @relation(fields: [ecoleId], references: [id])
+  libelle            String
+  categorie          String @default("materiel") // materiel/mobilier/vehicule/batiment/informatique
+  montantAcquisition Int // centimes
+  dateAcquisition    DateTime
+  dureeAnnees        Int @default(5)
+  modeLineaire       Boolean   @default(true)
+  statut             String    @default("actif") // actif/cede
+  sectionComptableId String?
+  createdAt          DateTime  @default(now())
+  @@index([ecoleId, statut])
+}
+
+model RapprochementBancaire {
+  id            String   @id @default(cuid())
+  ecoleId       String
+  ecole         Ecole    @relation(fields: [ecoleId], references: [id])
+  dateReleve    DateTime
+  soldeReleve   Int // centimes — solde final du relevé bancaire
+  soldeComptable Int // centimes — solde du compte 521 calculé
+  ecart         Int // centimes
+  lignes        String // JSON : [{libelle, montant, sens}] — chèques émis non débités, dépôts en cours, frais…
+  ajuste        Boolean  @default(false) // écriture d'ajustement passée
+  creeParId     String?
+  createdAt     DateTime @default(now())
+  @@index([ecoleId, dateReleve])
 }
 
 model Cycle {

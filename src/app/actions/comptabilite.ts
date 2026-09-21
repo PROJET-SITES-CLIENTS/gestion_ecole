@@ -10,6 +10,7 @@ import { ActionError } from '@/lib/business';
 import { requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { avecRetryBdd } from '@/lib/retry-bdd';
+import { versCentimes } from '@/lib/format';
 import {
   configurerSectionsCore, listerSectionsCore, initialiserPlanComptableCore,
   ouvrirCaisseCore, operationCaisseCore, fermerCaisseCore,
@@ -17,6 +18,8 @@ import {
   enregistrerFactureFournisseurCore, payerFournisseurCore,
   balanceComptableCore, grandLivreCore, compteResultatCore, bilanSimplifieCore,
   balanceAgeeClientsCore, balanceAgeeFournisseursCore, etatCaisseCore,
+  completerPlanComptableCore, passerEcriturePaieCore, enregistrerImmobilisationCore,
+  genererDotationsCore, creerRapprochementCore, creerBudgetCore, cloturerExerciceComptableCore,
 } from '@/lib/business';
 
 type Ok = { ok: true; [k: string]: unknown };
@@ -186,4 +189,68 @@ export async function grandLivre(numeroCompte: string): Promise<ActionResult> {
     const r = await grandLivreCore(ctx, numeroCompte);
     return { ok: true, ...r };
   } catch (e) { return echec(e); }
+}
+
+// --------------------------------------------------------------------
+// COMPTA+ — clôture, rapprochement, budget, amortissements, exports
+// --------------------------------------------------------------------
+
+export async function completerPlanComptable(): Promise<ActionResult> {
+  try { const { ctx } = await ctxSession(); const r = await completerPlanComptableCore(ctx); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function passerEcriturePaie(bulletinId: string): Promise<ActionResult> {
+  try { const { ctx } = await ctxSession(); const r = await passerEcriturePaieCore(ctx, bulletinId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function enregistrerImmobilisation(formData: FormData): Promise<ActionResult> {
+  try {
+    const { ctx } = await ctxSession();
+    const d = z.object({
+      libelle: z.string().min(2), categorie: z.string().optional(),
+      montantAcquisition: z.coerce.number().min(1), dateAcquisition: z.string(),
+      dureeAnnees: z.coerce.number().int().min(1).max(50).optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await enregistrerImmobilisationCore(ctx, {
+      ...d, montantAcquisition: versCentimes(d.montantAcquisition), dateAcquisition: new Date(d.dateAcquisition),
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function genererDotations(annee: number): Promise<ActionResult> {
+  try { const { ctx } = await ctxSession(); const r = await genererDotationsCore(ctx, annee); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function creerRapprochement(formData: FormData): Promise<ActionResult> {
+  try {
+    const { ctx } = await ctxSession();
+    const d = z.object({
+      dateReleve: z.string(), soldeReleve: z.coerce.number(),
+      lignesJson: z.string().optional(), ajuster: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const lignes = d.lignesJson ? JSON.parse(d.lignesJson) : [];
+    const r = await creerRapprochementCore(ctx, {
+      dateReleve: new Date(d.dateReleve), soldeReleve: versCentimes(d.soldeReleve),
+      lignes, ajuster: d.ajuster === 'on',
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function creerBudget(formData: FormData): Promise<ActionResult> {
+  try {
+    const { ctx } = await ctxSession();
+    const d = z.object({ libelle: z.string().min(2), lignesJson: z.string() }).parse(Object.fromEntries(formData));
+    const r = await creerBudgetCore(ctx, { libelle: d.libelle, lignes: JSON.parse(d.lignesJson) });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function cloturerExercice(dateDebut: string, dateFin: string): Promise<ActionResult> {
+  try { const { ctx } = await ctxSession(); const r = await cloturerExerciceComptableCore(ctx, new Date(dateDebut), new Date(dateFin)); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
 }
