@@ -45,6 +45,8 @@ import {
   majPeriodeCore,
   // AUDIT ENSEIGNANT — règles de calcul des moyennes
   majRegleCalculCore, majModeEvaluationCycleCore,
+  // PÉDAGOGIE — génération en masse, synthèse annuelle, système trimestres/semestres
+  genererBulletinsClasseCore, syntheseAnnuelleCore, configurerSystemePeriodesCore,
   // SECRETARIAT — checklist dossier, courrier, réinscriptions
   basculerPieceDossierCore, ajouterPieceExigeeCore,
   enregistrerCourrierCore, traiterCourrierCore, enregistrerReinscriptionCore,
@@ -1077,5 +1079,24 @@ export async function traiterCourrier(courrierId: string, commentaire?: string):
 
 export async function enregistrerReinscription(donnees: { eleveId: string; classeVoulueId?: string; fraisPayes?: boolean }): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await enregistrerReinscriptionCore(ctx, donnees); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+
+/** Génère les bulletins de toute une classe en un clic. */
+export async function genererBulletinsClasse(classeId: string, periodeId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await genererBulletinsClasseCore(ctx, classeId, periodeId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+/** Synthèse annuelle : moyennes par période + moyenne générale annuelle + rang annuel. */
+export async function syntheseAnnuelle(eleveId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await syntheseAnnuelleCore(ctx, eleveId); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+/** Système d'évaluation : 3 trimestres ou 2 semestres (avant toute saisie de notes). */
+export async function configurerSystemePeriodes(systeme: 'trimestres' | 'semestres'): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await configurerSystemePeriodesCore(ctx, systeme); revalidatePath('/'); return { ok: true, ...r }; }
   catch (e) { return echec(e); }
 }

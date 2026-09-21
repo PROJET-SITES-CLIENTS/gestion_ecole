@@ -5,6 +5,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
+import { mentionPourMoyenne } from '@/lib/constants';
 import { ActionError, Ctx, assertPermission, assertTenant, logAction, notifierParentsEtDirection } from './commun';
 
 // --------------------------------------------------------------------
@@ -351,4 +352,125 @@ export async function mettreAJourAvancementCore(ctx: Ctx, chapitreId: string, in
       return { avancementId: created.id };
     }
   }
+}
+
+// --------------------------------------------------------------------
+// GESTION PÉDAGOGIQUE — génération en masse, synthèse annuelle, semestres
+// --------------------------------------------------------------------
+
+/** Génère les bulletins de TOUS les élèves actifs d'une classe (1 clic). */
+export async function genererBulletinsClasseCore(ctx: Ctx, classeId: string, periodeId: string) {
+  assertPermission(ctx, 'notes.saisir');
+  const classe = await db.classe.findUnique({ where: { id: classeId } });
+  if (!classe) throw new ActionError('Classe introuvable.', 'INTROUVABLE');
+  assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  const eleves = await db.eleve.findMany({ where: { classeActuelleId: classeId, statut: 'actif', deletedAt: null } });
+  const { genererBulletinCore } = await import('./pedagogie');
+  const resultats: Array<{ eleveId: string; bulletinId?: string; erreur?: string }> = [];
+  for (const e of eleves) {
+    try {
+      const b = await genererBulletinCore(ctx, { eleveId: e.id, periodeId, classeId });
+      resultats.push({ eleveId: e.id, bulletinId: b.bulletinId });
+    } catch (err: any) {
+      resultats.push({ eleveId: e.id, erreur: err?.message ?? 'erreur' });
+    }
+  }
+  await logAction(db, classe.ecoleId, ctx.utilisateurId, 'bulletins.generation_classe', 'classe', classeId, {
+    periodeId, generes: resultats.filter((x) => x.bulletinId).length, total: eleves.length,
+  });
+  return { generes: resultats.filter((x) => x.bulletinId).length, total: eleves.length, resultats };
+}
+
+/** Synthèse ANNUELLE d'un élève : moyenne par période + moyenne générale annuelle + rang annuel. */
+export async function syntheseAnnuelleCore(ctx: Ctx, eleveId: string) {
+  assertPermission(ctx, 'eleves.lire');
+  const eleve = await db.eleve.findUnique({ where: { id: eleveId }, include: { classeActuelle: true } });
+  if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
+  assertTenant(eleve.ecoleId, ctx, 'Cet élève');
+  const anneeActive = await db.anneeScolaire.findFirst({ where: { ecoleId: eleve.ecoleId, active: true } });
+  if (!anneeActive) throw new ActionError('Aucune année scolaire active.', 'ANNEE_INACTIVE');
+  // Dernier bulletin (version max) de chaque période
+  const bulletins = await db.bulletin.findMany({
+    where: { eleveId, periode: { anneeScolaireId: anneeActive.id } },
+    orderBy: { version: 'desc' },
+    include: { periode: true },
+  });
+  const parPeriode = new Map<string, { libelle: string; moyenne: number | null; rang: number | null; mention: string }>();
+  for (const b of bulletins) {
+    if (parPeriode.has(b.periodeId)) continue; // version la plus récente déjà prise
+    parPeriode.set(b.periodeId, { libelle: b.periode.libelle, moyenne: b.moyenneGenerale, rang: b.rang, mention: b.moyenneGenerale !== null ? mentionPourMoyenne(b.moyenneGenerale) : '—' });
+  }
+  const moyennes = [...parPeriode.values()].filter((x) => x.moyenne !== null).map((x) => x.moyenne as number);
+  const moyenneAnnuelle = moyennes.length
+    ? Number((moyennes.reduce((s, m) => s + m, 0) / moyennes.length).toFixed(2))
+    : null;
+  // Rang annuel : même calcul sur tous les élèves de la classe
+  let rangAnnuel: number | null = null;
+  if (moyenneAnnuelle !== null && eleve.classeActuelleId) {
+    const camarades = await db.eleve.findMany({ where: { classeActuelleId: eleve.classeActuelleId, statut: 'actif', deletedAt: null }, select: { id: true } });
+    const annuels: Array<{ eleveId: string; moy: number }> = [];
+    for (const c of camarades) {
+      const bs = await db.bulletin.findMany({
+        where: { eleveId: c.id, periode: { anneeScolaireId: anneeActive.id } },
+        orderBy: { version: 'desc' },
+        select: { periodeId: true, moyenneGenerale: true },
+      });
+      const vus = new Set<string>();
+      const ms: number[] = [];
+      for (const b of bs) {
+        if (vus.has(b.periodeId)) continue;
+        vus.add(b.periodeId);
+        if (b.moyenneGenerale !== null) ms.push(b.moyenneGenerale);
+      }
+      if (ms.length) annuels.push({ eleveId: c.id, moy: ms.reduce((s2, m) => s2 + m, 0) / ms.length });
+    }
+    annuels.sort((a, b) => b.moy - a.moy);
+    rangAnnuel = annuels.findIndex((x) => x.eleveId === eleveId) + 1 || null;
+    if (rangAnnuel === 0) rangAnnuel = null;
+  }
+  const mentionAnnuelle = moyenneAnnuelle !== null ? mentionPourMoyenne(moyenneAnnuelle) : '—';
+  return { eleveId, periodes: [...parPeriode.values()], moyenneAnnuelle, rangAnnuel, mentionAnnuelle };
+}
+
+/** Configure le système d'évaluation : 3 trimestres (T1-T3) ou 2 semestres (S1-S2). */
+export async function configurerSystemePeriodesCore(ctx: Ctx, systeme: 'trimestres' | 'semestres') {
+  assertPermission(ctx, 'admin.saas');
+  const ecoleId = ctx.ecoleId!;
+  const annee = await db.anneeScolaire.findFirst({ where: { ecoleId, active: true } });
+  if (!annee) throw new ActionError('Aucune année scolaire active.', 'ANNEE_INACTIVE');
+  // Garde-fou : aucune donnée pédagogique ne doit être rattachée aux périodes existantes
+  const periodes = await db.periode.findMany({ where: { ecoleId, anneeScolaireId: annee.id } });
+  const ids = periodes.map((p) => p.id);
+  const nbEvals = await db.evaluation.count({ where: { periodeId: { in: ids } } });
+  const nbBulletins = await db.bulletin.count({ where: { periodeId: { in: ids } } });
+  if (nbEvals > 0 || nbBulletins > 0) {
+    throw new ActionError(
+      `Impossible : ${nbEvals} évaluation(s) et ${nbBulletins} bulletin(s) sont rattachés aux périodes actuelles. Configurez le système avant la saisie des notes.`,
+      'PERIODES_UTILISEES',
+    );
+  }
+  const debut = annee.dateDebut.getFullYear();
+  const defs = systeme === 'trimestres'
+    ? [
+        { code: 'T1', libelle: 'Trimestre 1', d: [debut, 8, 1], f: [debut, 11, 15] },
+        { code: 'T2', libelle: 'Trimestre 2', d: [debut + 1, 0, 5], f: [debut + 1, 2, 30] },
+        { code: 'T3', libelle: 'Trimestre 3', d: [debut + 1, 3, 1], f: [debut + 1, 5, 30] },
+      ]
+    : [
+        { code: 'S1', libelle: 'Semestre 1', d: [debut, 8, 1], f: [debut + 1, 0, 31] },
+        { code: 'S2', libelle: 'Semestre 2', d: [debut + 1, 1, 1], f: [debut + 1, 5, 30] },
+      ];
+  await db.$transaction(async (tx) => {
+    if (ids.length) await tx.periode.deleteMany({ where: { id: { in: ids } } });
+    await tx.periode.createMany({
+      data: defs.map((x) => ({
+        ecoleId, anneeScolaireId: annee.id, code: x.code, libelle: x.libelle,
+        dateDebut: new Date(Date.UTC(...(x.d as [number, number, number]))),
+        dateFin: new Date(Date.UTC(...(x.f as [number, number, number]))),
+        typeBulletin: 'college_lycee',
+      })),
+    });
+  });
+  await logAction(db, ecoleId, ctx.utilisateurId, 'periodes.systeme', 'annee_scolaire', annee.id, { systeme });
+  return { systeme, periodes: defs.length };
 }

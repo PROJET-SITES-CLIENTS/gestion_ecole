@@ -195,6 +195,76 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
     return (
       <div className="space-y-4">
         <SectionBlock
+          title="Génération des bulletins (classe entière)"
+          description="Un clic : bulletins de tous les élèves actifs de la classe, moyennes, rangs et mentions calculés"
+        >
+          <div className="flex flex-wrap gap-2 items-end">
+            <ModalForm
+              trigger={<Button size="sm">Générer les bulletins de la classe</Button>}
+              title="Générer les bulletins"
+              fields={[
+                { name: 'classeId', label: 'Classe', type: 'select', required: true, options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
+                { name: 'periodeId', label: 'Période', type: 'select', required: true, options: (initialData.periodes ?? []).map((p: any) => ({ value: p.id, label: p.libelle })) },
+              ]}
+              action={(fd: FormData) => actionsExt.genererBulletinsClasse(String(fd.get('classeId') ?? ''), String(fd.get('periodeId') ?? ''))}
+            />
+          </div>
+        </SectionBlock>
+
+        <SectionBlock
+          title="Synthèse annuelle par élève"
+          description="Moyennes de chaque période + moyenne générale ANNUELLE cumulée + rang annuel et mention"
+        >
+          {(() => {
+            const [eleveSynthese, setEleveSynthese] = useState<string>('');
+            const [synthese, setSynthese] = useState<any>(null);
+            return (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2 items-end">
+                  <select value={eleveSynthese} onChange={(e) => setEleveSynthese(e.target.value)} className="h-9 border rounded-md px-2 text-sm">
+                    <option value="">— Choisir un élève —</option>
+                    {(initialData.eleves ?? []).filter((e: any) => e.statut === 'actif').map((e: any) => (
+                      <option key={e.id} value={e.id}>{e.prenom} {e.nom}</option>
+                    ))}
+                  </select>
+                  <Button size="sm" disabled={!eleveSynthese} onClick={async () => {
+                    const r = await actionsExt.syntheseAnnuelle(eleveSynthese);
+                    setSynthese(r);
+                  }}>Calculer la synthèse</Button>
+                </div>
+                {synthese?.ok && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-3 bg-emerald-50 rounded text-center">
+                        <div className="text-xs text-emerald-700">Moyenne annuelle</div>
+                        <div className="text-lg font-semibold text-emerald-700">{synthese.moyenneAnnuelle?.toFixed(2) ?? '—'}/20</div>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded text-center">
+                        <div className="text-xs text-gray-500">Rang annuel</div>
+                        <div className="text-lg font-semibold">{synthese.rangAnnuel ?? '—'}{synthese.rangAnnuel ? 'ᵉ' : ''}</div>
+                      </div>
+                      <div className="p-3 bg-blue-50 rounded text-center">
+                        <div className="text-xs text-blue-700">Mention annuelle</div>
+                        <div className="text-sm font-semibold text-blue-700">{synthese.mentionAnnuelle}</div>
+                      </div>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-xs text-gray-500"><th className="py-1">Période</th><th>Moyenne</th><th>Rang</th><th>Mention</th></tr></thead>
+                      <tbody>
+                        {(synthese.periodes ?? []).map((p: any, i: number) => (
+                          <tr key={i} className="border-t"><td className="py-1">{p.libelle}</td><td>{p.moyenne?.toFixed(2) ?? '—'}</td><td>{p.rang ?? '—'}</td><td>{p.mention}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {synthese && !synthese.ok && <div className="text-sm text-rose-600">{synthese.error}</div>}
+              </div>
+            );
+          })()}
+        </SectionBlock>
+
+        <SectionBlock
           title="Circuit de validation des bulletins"
           description="Génération -> Validation PP -> Validation direction -> Publication"
         >
@@ -292,6 +362,22 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             </Card>
           );
         })()}
+
+        {(initialData.session?.portal === 'direction' || initialData.session?.portal === 'super_admin') && (
+          <SectionBlock
+            title="Système d'évaluation"
+            description="Trimestres (T1-T3) ou semestres (S1-S2) — à configurer AVANT toute saisie de notes"
+          >
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => actionsExt.configurerSystemePeriodes('trimestres')}>
+                3 trimestres
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => actionsExt.configurerSystemePeriodes('semestres')}>
+                2 semestres
+              </Button>
+            </div>
+          </SectionBlock>
+        )}
       </div>
     );
   }
