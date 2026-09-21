@@ -41,7 +41,7 @@ async function main() {
   const e1 = await inscrireEleveCore(ctxDir, r.ecoleId, { nom: 'Un', prenom: 'Eleve', dateNaissance: new Date('2013-01-01'), lieuNaissance: 'D', sexe: 'F', classeId: classe!.id } as never);
   const e2 = await inscrireEleveCore(ctxDir, r.ecoleId, { nom: 'Deux', prenom: 'Eleve', dateNaissance: new Date('2013-02-02'), lieuNaissance: 'D', sexe: 'M', classeId: classe!.id } as never);
   const e3 = await inscrireEleveCore(ctxDir, r.ecoleId, { nom: 'Trois', prenom: 'Eleve', dateNaissance: new Date('2013-03-03'), lieuNaissance: 'D', sexe: 'F', classeId: classe!.id } as never);
-  check('école + prof + 3 élèves', !!r.ecoleId && !!prof.personnelId && e1.eleveId && e2.eleveId && e3.eleveId);
+  check('école + prof + 3 élèves', !!r.ecoleId && !!prof.personnelId && !!e1.eleveId && !!e2.eleveId && !!e3.eleveId);
 
   console.log('\n═══ 1. SYSTÈME SEMESTRIEL configurable ═══');
   // École sans notes : passage en semestres possible
@@ -76,7 +76,6 @@ async function main() {
   check('moyennes exactes : 16 / 12 / 8', parEleve(e1.eleveId).moyenneGenerale === 16 && parEleve(e2.eleveId).moyenneGenerale === 12 && parEleve(e3.eleveId).moyenneGenerale === 8,
     `${parEleve(e1.eleveId).moyenneGenerale}/${parEleve(e2.eleveId).moyenneGenerale}/${parEleve(e3.eleveId).moyenneGenerale}`);
   check('RANGS : 1er, 2e, 3e', parEleve(e1.eleveId).rang === 1 && parEleve(e2.eleveId).rang === 2 && parEleve(e3.eleveId).rang === 3);
-  check('MENTIONS : Très bien / Passable / Insuffisant', parEleve(e1.eleveId).mention === undefined || true); // mention dérivée, vérif via retour genererBulletin — vérif appréciation :
   check('APPRÉCIATIONS générales présentes', bulletins.every((b: any) => (b.appreciationGenerale ?? '').length > 0));
 
   // Appréciations PAR MATIÈRE (prof)
