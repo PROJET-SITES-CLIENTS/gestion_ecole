@@ -25,3 +25,4 @@ export * from './comptabilite';
 export * from './rh-complements';
 export * from './secretariat';
 export * from './compta-plus';
+export * from './viescolaire-plus';

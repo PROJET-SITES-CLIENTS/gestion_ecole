@@ -47,6 +47,9 @@ model Ecole {
   reinscriptions Reinscription[]
   immobilisations Immobilisation[]
   rapprochementsBancaires RapprochementBancaire[]
+  retards Retard[]
+  surveillancesExamens SurveillanceExamen[]
+  conseilsDiscipline ConseilDiscipline[]
 
   abonnements                Abonnement[]
   facturesSaas               FactureSaas[]
@@ -320,6 +323,63 @@ model RapprochementBancaire {
   @@index([ecoleId, dateReleve])
 }
 
+
+// ====================================================================
+// VIE SCOLAIRE+ — retards (billets), surveillances d'examens, conseils de discipline
+// ====================================================================
+
+model Retard {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  ecole        Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId      String
+  eleve        Eleve    @relation(fields: [eleveId], references: [id])
+  dateHeure    DateTime
+  dureeMinutes Int      @default(15)
+  motif        String?
+  billetNumero String // B-0001, unique par école
+  seanceId     String?
+  saisiParId   String?
+  justifie     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  @@unique([ecoleId, billetNumero])
+  @@index([ecoleId, eleveId])
+}
+
+model SurveillanceExamen {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  intitule        String // Composition Maths T1, Examen blanc…
+  dateHeureDebut  DateTime
+  dateHeureFin    DateTime
+  salleId         String?
+  matiereId       String?
+  classeIds       String // JSON : classes concernées
+  surveillantsIds String // JSON : personnels de surveillance
+  nbElevesPrevus  Int      @default(0)
+  observations    String?
+  createdAt       DateTime @default(now())
+  @@index([ecoleId, dateHeureDebut])
+}
+
+model ConseilDiscipline {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  ecole        Ecole    @relation(fields: [ecoleId], references: [id])
+  eleveId      String
+  eleve        Eleve    @relation(fields: [eleveId], references: [id])
+  dateConseil  DateTime
+  membresIds   String // JSON : personnels membres
+  presidentId  String?
+  faits        String
+  decision     String?
+  sanctionId   String?
+  statut       String   @default("prevu") // prevu/tenu/reporte
+  createdAt    DateTime @default(now())
+  @@index([ecoleId, statut])
+}
+
 model Cycle {
   id             String @id @default(cuid())
   ecoleId        String
@@ -580,6 +640,8 @@ model Eleve {
   @@index([ecoleId, nom]) // F18
   piecesDossier  PieceDossier[]
   reinscriptions Reinscription[]
+  retards          Retard[]
+  conseilsDiscipline ConseilDiscipline[]
 }
 
 model Famille {
@@ -2207,6 +2269,9 @@ model CahierTexte {
 
   entrees EntreeCahierTexte[]
   devoirs Devoir[] // F17
+  visaCenseurId  String?
+  visaDate       DateTime?
+  visaRemarque   String?
 }
 
 model EntreeCahierTexte {

@@ -475,6 +475,13 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       ]);
       v.seances = seances; v.presences = presences; v.incidents = incidents;
       v.sanctions = sanctions; v.justificationsAbsence = justificationsAbsence;
+      // VIE SCOLAIRE+ — retards (billets), surveillances d'examens, conseils de discipline
+      const [retards, surveillancesExamens, conseilsDiscipline] = await Promise.all([
+        db.retard.findMany({ where: { ecoleId }, orderBy: { dateHeure: 'desc' }, take: 300, include: { eleve: { include: { classeActuelle: true } } } }),
+        db.surveillanceExamen.findMany({ where: { ecoleId }, orderBy: { dateHeureDebut: 'asc' }, take: 100 }),
+        db.conseilDiscipline.findMany({ where: { ecoleId }, orderBy: { dateConseil: 'desc' }, take: 50, include: { eleve: true } }),
+      ]);
+      v.retards = retards; v.surveillancesExamens = surveillancesExamens; v.conseilsDiscipline = conseilsDiscipline;
     })());
   }
 

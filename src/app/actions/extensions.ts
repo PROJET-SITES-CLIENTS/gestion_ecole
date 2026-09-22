@@ -45,6 +45,9 @@ import {
   majPeriodeCore,
   // AUDIT ENSEIGNANT — règles de calcul des moyennes
   majRegleCalculCore, majModeEvaluationCycleCore,
+  // VIE SCOLAIRE+ — retards, stats discipline, surveillances, conseils, visa
+  enregistrerRetardCore, justifierRetardCore, statsDisciplineCore, creerSurveillanceCore,
+  creerConseilDisciplineCore, deciderConseilDisciplineCore, viserCahierTexteCore,
   // PÉDAGOGIE — génération en masse, synthèse annuelle, système trimestres/semestres
   genererBulletinsClasseCore, syntheseAnnuelleCore, configurerSystemePeriodesCore,
   // SECRETARIAT — checklist dossier, courrier, réinscriptions
@@ -1098,5 +1101,76 @@ export async function syntheseAnnuelle(eleveId: string): Promise<ActionResult> {
 /** Système d'évaluation : 3 trimestres ou 2 semestres (avant toute saisie de notes). */
 export async function configurerSystemePeriodes(systeme: 'trimestres' | 'semestres'): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await configurerSystemePeriodesCore(ctx, systeme); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// --------------------------------------------------------------------
+// VIE SCOLAIRE+ — retards, stats discipline, surveillances, conseils, visa
+// --------------------------------------------------------------------
+
+export async function enregistrerRetard(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      eleveId: z.string().min(1), dateHeure: z.string(),
+      dureeMinutes: z.coerce.number().int().min(1).max(240).optional(), motif: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await enregistrerRetardCore(ctx, { ...d, dateHeure: new Date(d.dateHeure) });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function justifierRetard(retardId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await justifierRetardCore(ctx, retardId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function statsDiscipline(jours = 30): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await statsDisciplineCore(ctx, jours); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function creerSurveillance(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      intitule: z.string().min(2), dateHeureDebut: z.string(), dateHeureFin: z.string(),
+      salleId: z.string().optional(), matiereId: z.string().optional(),
+      classeIds: z.string().optional(), surveillantsIds: z.string(), nbElevesPrevus: z.coerce.number().optional(),
+      observations: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await creerSurveillanceCore(ctx, {
+      intitule: d.intitule, dateHeureDebut: new Date(d.dateHeureDebut), dateHeureFin: new Date(d.dateHeureFin),
+      salleId: d.salleId || undefined, matiereId: d.matiereId || undefined,
+      classeIds: d.classeIds ? d.classeIds.split(',').filter(Boolean) : [],
+      surveillantsIds: d.surveillantsIds.split(',').filter(Boolean),
+      nbElevesPrevus: d.nbElevesPrevus, observations: d.observations,
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function creerConseilDiscipline(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      eleveId: z.string().min(1), dateConseil: z.string(), membresIds: z.string(),
+      presidentId: z.string().optional(), faits: z.string().min(10),
+    }).parse(Object.fromEntries(formData));
+    const r = await creerConseilDisciplineCore(ctx, {
+      eleveId: d.eleveId, dateConseil: new Date(d.dateConseil),
+      membresIds: d.membresIds.split(',').filter(Boolean), presidentId: d.presidentId || undefined, faits: d.faits,
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function deciderConseilDiscipline(conseilId: string, decision: string, sanctionId?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await deciderConseilDisciplineCore(ctx, conseilId, decision, sanctionId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function viserCahierTexte(cahierId: string, remarque?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await viserCahierTexteCore(ctx, cahierId, remarque); revalidatePath('/'); return { ok: true, ...r }; }
   catch (e) { return echec(e); }
 }

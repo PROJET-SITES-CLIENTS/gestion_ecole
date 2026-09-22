@@ -5,12 +5,18 @@
 // ====================================================================
 
 import { Shield, AlertTriangle, FileText } from 'lucide-react';
+import { useState } from 'react';
+import * as actionsExt from '@/app/actions/extensions';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 export default function VieScolaireModule({ initialData }: { initialData: any }) {
+  const retards = initialData.retards ?? [];
+  const surveillancesExamens = initialData.surveillancesExamens ?? [];
+  const conseilsDiscipline = initialData.conseilsDiscipline ?? [];
+  const [stats, setStats] = useState<any>(null);
   const incidents = initialData.incidents ?? [];
   const sanctions = initialData.sanctions ?? [];
   const eleves = initialData.eleves ?? [];
@@ -126,6 +132,144 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
             action={actions.exclureTemporairement}
           />
         </div>
+      </SectionBlock>
+
+      {/* VIE SCOLAIRE+ */}
+      <SectionBlock
+        title="Registre des retards (billets numérotés)"
+        description="Chaque retard reçoit un billet B-#### — alerte automatique aux parents au 3e retard non justifié sur 30 jours"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Enregistrer un retard" />}
+            title="Nouveau retard"
+            fields={[
+              { name: 'eleveId', label: 'Élève', type: 'select', required: true, options: (initialData.eleves ?? []).map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom} (${e.matricule})` })) },
+              { name: 'dateHeure', label: 'Date et heure', type: 'datetime-local', required: true },
+              { name: 'dureeMinutes', label: 'Durée du retard (min)', type: 'number', defaultValue: '15' },
+              { name: 'motif', label: 'Motif avancé' },
+            ]}
+            action={actionsExt.enregistrerRetard}
+          />
+        }
+      >
+        <DataTable
+          columns={[
+            { key: 'billetNumero', label: 'Billet' },
+            { key: 'eleve', label: 'Élève', render: (r: any) => `${r.eleve?.prenom ?? ''} ${r.eleve?.nom ?? ''}` },
+            { key: 'classe', label: 'Classe', render: (r: any) => r.eleve?.classeActuelle?.libelle ?? '—' },
+            { key: 'dateHeure', label: 'Le', render: (r: any) => new Date(r.dateHeure).toLocaleString('fr-FR') },
+            { key: 'dureeMinutes', label: 'Durée', render: (r: any) => `${r.dureeMinutes} min` },
+            { key: 'justifie', label: 'Justifié', render: (r: any) => r.justifie ? <StatusBadge statut="valide" /> : <Button variant="outline" size="sm" onClick={() => actionsExt.justifierRetard(r.id)}>Justifier</Button> },
+          ]}
+          rows={retards}
+          emptyLabel="Aucun retard enregistré"
+        />
+      </SectionBlock>
+
+      <SectionBlock
+        title="Statistiques de discipline (30 jours)"
+        description="Pilotage censeur : incidents, retards, absences par classe et élèves à suivre"
+        action={<Button size="sm" onClick={async () => { const r = await actionsExt.statsDiscipline(30); setStats(r); }}>Calculer</Button>}
+      >
+        {stats?.ok ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <StatCard title="Incidents" value={stats.totaux.incidents} color="amber" />
+              <StatCard title="Graves" value={stats.totaux.graves} color="rose" />
+              <StatCard title="Retards" value={stats.totaux.retards} sub={`${stats.totaux.retardsNonJustifies} non justifiés`} color="blue" />
+              <StatCard title="Absences" value={stats.totaux.absences} color="purple" />
+              <StatCard title="Sanctions" value={stats.totaux.sanctions} color="emerald" />
+            </div>
+            <DataTable
+              columns={[
+                { key: 'classe', label: 'Classe' }, { key: 'incidents', label: 'Incidents' },
+                { key: 'retards', label: 'Retards' }, { key: 'absences', label: 'Absences' },
+              ]}
+              rows={stats.parClasse}
+              emptyLabel="—"
+            />
+            <div>
+              <div className="text-sm font-semibold mb-1">Élèves à suivre (score = incidents×3 + retards×2 + absences)</div>
+              <DataTable
+                columns={[
+                  { key: 'eleve', label: 'Élève' }, { key: 'score', label: 'Score' },
+                  { key: 'incidents', label: 'Incidents' }, { key: 'retards', label: 'Retards' }, { key: 'absences', label: 'Absences' },
+                ]}
+                rows={stats.elevesASuivre}
+                emptyLabel="Aucun"
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Cliquez sur « Calculer » pour actualiser les statistiques.</p>
+        )}
+      </SectionBlock>
+
+      <SectionBlock
+        title="Surveillance des compositions & examens"
+        description="Planning des épreuves avec affectation des surveillants (anti-chevauchement automatique)"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Planifier une épreuve" />}
+            title="Nouvelle épreuve surveillée"
+            fields={[
+              { name: 'intitule', label: 'Intitulé', required: true, placeholder: 'Composition Mathématiques T1' },
+              { name: 'dateHeureDebut', label: 'Début', type: 'datetime-local', required: true },
+              { name: 'dateHeureFin', label: 'Fin', type: 'datetime-local', required: true },
+              { name: 'surveillantsIds', label: 'Surveillants (ids séparés par virgules)', required: true },
+              { name: 'nbElevesPrevus', label: 'Élèves attendus', type: 'number' },
+              { name: 'observations', label: 'Observations' },
+            ]}
+            action={actionsExt.creerSurveillance}
+          />
+        }
+      >
+        <DataTable
+          columns={[
+            { key: 'intitule', label: 'Épreuve' },
+            { key: 'dateHeureDebut', label: 'Début', render: (x: any) => new Date(x.dateHeureDebut).toLocaleString('fr-FR') },
+            { key: 'dateHeureFin', label: 'Fin', render: (x: any) => new Date(x.dateHeureFin).toLocaleTimeString('fr-FR') },
+            { key: 'surveillants', label: 'Surveillants', render: (x: any) => `${JSON.parse(x.surveillantsIds ?? '[]').length} affecté(s)` },
+            { key: 'nbElevesPrevus', label: 'Élèves' },
+          ]}
+          rows={surveillancesExamens}
+          emptyLabel="Aucune épreuve planifiée"
+        />
+      </SectionBlock>
+
+      <SectionBlock
+        title="Conseils de discipline"
+        description="Séances formalisées : convocation automatique des parents, décision notifiée"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Convoquer un conseil" />}
+            title="Conseil de discipline"
+            fields={[
+              { name: 'eleveId', label: 'Élève', type: 'select', required: true, options: (initialData.eleves ?? []).map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })) },
+              { name: 'dateConseil', label: 'Date du conseil', type: 'datetime-local', required: true },
+              { name: 'membresIds', label: 'Membres (ids séparés par virgules)', required: true },
+              { name: 'faits', label: 'Faits reprochés', type: 'textarea', required: true },
+            ]}
+            action={actionsExt.creerConseilDiscipline}
+          />
+        }
+      >
+        <DataTable
+          columns={[
+            { key: 'eleve', label: 'Élève', render: (c: any) => `${c.eleve?.prenom ?? ''} ${c.eleve?.nom ?? ''}` },
+            { key: 'dateConseil', label: 'Date', render: (c: any) => new Date(c.dateConseil).toLocaleString('fr-FR') },
+            { key: 'statut', label: 'Statut', render: (c: any) => <StatusBadge statut={c.statut === 'tenu' ? 'valide' : 'en_attente'} /> },
+            { key: 'decision', label: 'Décision', render: (c: any) => c.decision ?? '—' },
+            { key: 'action', label: '', render: (c: any) => c.statut !== 'tenu' ? (
+              <Button variant="outline" size="sm" onClick={() => {
+                const decision = window.prompt('Décision du conseil :');
+                if (decision) actionsExt.deciderConseilDiscipline(c.id, decision);
+              }}>Statuer</Button>
+            ) : null },
+          ]}
+          rows={conseilsDiscipline}
+          emptyLabel="Aucun conseil programmé"
+        />
       </SectionBlock>
     </div>
   );

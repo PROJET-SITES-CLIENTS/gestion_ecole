@@ -798,6 +798,75 @@ const docsRh: ModeleDoc[] = [
       };
     },
   },
+
+// ====================================================================
+// VIE SCOLAIRE+ — billet de retard, convocation conseil de discipline
+// ====================================================================
+
+  {
+    code: 'billet_retard', libelle: 'Billet de retard', domaine: 'Vie scolaire & discipline',
+    description: "Billet numéroté remis à l'élève retardataire (à conserver dans le carnet).",
+    entete: 'mineur', permission: 'presences.saisir',
+    parametres: [P.eleve()],
+    generer: async (c) => {
+      const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);
+      const r = await db.retard.findFirst({ where: { eleveId: el.id }, orderBy: { dateHeure: 'desc' } });
+      return {
+        titre: '',
+        corps: `
+        <div style="display:flex;justify-content:center">
+        <div style="width:430px;border:2.5px solid ${c.identite.couleur};border-radius:12px;overflow:hidden">
+          <div style="background:${c.identite.couleur};color:#fff;padding:8px 14px;font-weight:800;letter-spacing:2px;text-align:center">BILLET DE RETARD</div>
+          <div style="padding:16px">
+            <div style="font-size:14pt;font-weight:800;text-align:center">${echapper(el.prenom)} ${echapper(String(el.nom).toUpperCase())}</div>
+            <div style="text-align:center;color:#444;margin-top:2px">${echapper(el.classeActuelle?.libelle || '')} · Matricule ${echapper(el.matricule || '—')}</div>
+            <table style="width:100%;margin-top:14px;font-size:10.6pt">
+              <tr><td style="padding:4px 0"><b>N° du billet :</b> ${echapper(r?.billetNumero ?? '—')}</td><td><b>Date :</b> ${r ? dateFr(r.dateHeure) : dateFr(new Date())}</td></tr>
+              <tr><td style="padding:4px 0"><b>Heure d'arrivée :</b> ${r ? r.dateHeure.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td><td><b>Retard :</b> ${r?.dureeMinutes ?? 15} min</td></tr>
+              <tr><td colspan="2" style="padding:4px 0"><b>Motif :</b> ${echapper(r?.motif ?? 'non communiqué')}</td></tr>
+            </table>
+            <div style="margin-top:14px;font-size:9pt;color:#555;border-top:1px dashed #bbb;padding-top:8px">
+              Ce billet doit être présenté au professeur et signé par le parent. Trois retards non justifiés sur 30 jours entraînent une convocation de la vie scolaire.
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:9pt">
+              <div>Signature de l'élève : ………………………</div>
+              <div>Signature du parent : ………………………</div>
+            </div>
+          </div>
+        </div>
+        </div>`,
+      };
+    },
+  },
+  {
+    code: 'convocation_conseil_discipline', libelle: 'Convocation conseil de discipline', domaine: 'Vie scolaire & discipline',
+    description: "Convocation officielle de l'élève et de sa famille devant le conseil de discipline.",
+    entete: 'majeur', permission: 'vie_scolaire.gerer',
+    parametres: [{ cle: 'conseilId', libelle: 'Conseil (laisser vide = dernier)', type: 'texte', requis: false }],
+    generer: async (c) => {
+      const conseil = c.p.conseilId
+        ? await db.conseilDiscipline.findFirst({ where: { id: c.p.conseilId, ecoleId: c.identite.ecoleId }, include: { eleve: { include: { classeActuelle: true } } } })
+        : await db.conseilDiscipline.findFirst({ where: { ecoleId: c.identite.ecoleId }, orderBy: { dateConseil: 'desc' }, include: { eleve: { include: { classeActuelle: true } } } });
+      if (!conseil) throw new ActionError('Aucun conseil de discipline trouvé.', 'INTROUVABLE');
+      return {
+        titre: 'Convocation au conseil de discipline',
+        sousTitre: `${echapper(conseil.eleve.prenom)} ${echapper(String(conseil.eleve.nom).toUpperCase())} · ${echapper(conseil.eleve.classeActuelle?.libelle || '')}`,
+        corps: `
+        ${trameConvocation({
+          identite: c.identite,
+          destinataireHtml: `<b>À la famille de ${echapper(conseil.eleve.prenom)} ${echapper(conseil.eleve.nom)}</b>`,
+          motif: 'Convocation devant le conseil de discipline',
+          dateHeure: `${dateFr(conseil.dateConseil)} à ${conseil.dateConseil.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+          lieu: 'Salle de réunion de la direction',
+          ordreDuJour: ["Exposé des faits", "Audition de l'élève", "Audition des représentants légaux", "Avis des membres du conseil", "Décision du chef d'établissement"],
+          obligatoire: true,
+          signataire: "Le Chef d'Établissement",
+        }) + zoneSignature(c.identite, { qui: "Le Chef d'Établissement" })}
+        <div class="section-titre">Faits reprochés</div>
+        <div style="font-size:10.6pt;white-space:pre-wrap">${echapper(conseil.faits)}</div>`,
+      };
+    },
+  },
 ];
 
 export { docsVieScolaire, docsFinances, docsRh };
