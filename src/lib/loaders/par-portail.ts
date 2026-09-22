@@ -617,7 +617,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
     })());
   }
 
-  if (portal === 'vie_scolaire' || portal === 'secretariat' || securite) {
+  if (portal === 'vie_scolaire' || portal === 'secretariat' || portal === 'assistant' || securite) {
     promises.push((async () => {
       // SECRÉTARIAT : registre des visiteurs (accueil) — il peut y inscrire
       v.visiteurs = await db.visiteur.findMany({ where: { ecoleId }, orderBy: { dateHeureEntree: 'desc' }, take: 200 });
