@@ -698,7 +698,7 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
             <h4 className="text-sm font-medium mb-2">Sessions actives</h4>
             <DataTable
               columns={[
-                { key: 'utilisateur', label: 'Utilisateur', render: (s) => { const u = utilisateurs.find((x: any) => x.id === s.utilisateurId); return u ? `${u.prenom} ${u.nom}` : s.utilisateurId.slice(0, 8) + '…'; } },
+                { key: 'utilisateur', label: 'Utilisateur', render: (s) => { const u = utilisateurs.find((x: any) => x.id === s.utilisateurId); return u ? `${u.prenom} ${u.nom}` : (s.utilisateurId ?? '?').slice(0, 8) + '…'; } },
                 { key: 'adresseIp', label: 'IP', render: (s) => s.adresseIp ? <span className="font-mono text-xs">{s.adresseIp}</span> : '—' },
                 { key: 'dateCreation', label: 'Ouverte', render: (s) => formatDateTime(s.dateCreation) },
                 { key: 'dateDerniereActivite', label: 'Dernière activité', render: (s) => s.dateDerniereActivite ? formatDateTime(s.dateDerniereActivite) : '—' },

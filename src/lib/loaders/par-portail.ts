@@ -773,7 +773,12 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
     })());
   }
 
-  await Promise.all(promises);
+  // ROBUSTESSE : chaque bloc de données est NON FATAL — si un bloc échoue
+  // (réveil Neon, requête lente), la page se charge quand même avec les
+  // autres données au lieu de tomber en erreur complète.
+  await Promise.all(promises.map(async (p, i) => {
+    try { await p; } catch (e) { console.error(`[loader-bloc ${i}]`, e); }
+  }));
   return { ...v, session: infoSession(session, portal) };
 }
 
