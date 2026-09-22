@@ -45,6 +45,8 @@ import {
   majPeriodeCore,
   // AUDIT ENSEIGNANT — règles de calcul des moyennes
   majRegleCalculCore, majModeEvaluationCycleCore,
+  // RH SUITE — sortie, renouvellement, pilotage
+  quitterPersonnelCore, renouvelerContratCore, statsRhCore,
   // VIE SCOLAIRE+ — retards, stats discipline, surveillances, conseils, visa
   enregistrerRetardCore, justifierRetardCore, statsDisciplineCore, creerSurveillanceCore,
   creerConseilDisciplineCore, deciderConseilDisciplineCore, viserCahierTexteCore,
@@ -1172,5 +1174,41 @@ export async function deciderConseilDiscipline(conseilId: string, decision: stri
 
 export async function viserCahierTexte(cahierId: string, remarque?: string): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await viserCahierTexteCore(ctx, cahierId, remarque); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// --------------------------------------------------------------------
+// RH SUITE — sortie formelle, renouvellement, pilotage
+// --------------------------------------------------------------------
+
+export async function quitterPersonnel(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      personnelId: z.string().min(1), motifSortie: z.enum(['demission', 'fin_contrat', 'retraite', 'licenciement', 'mutualisation', 'deces']),
+      dateSortie: z.string(), preavisJours: z.coerce.number().optional(), commentaire: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await quitterPersonnelCore(ctx, { ...d, dateSortie: new Date(d.dateSortie) });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function renouvelerContrat(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      personnelId: z.string().min(1), nouvelleDateFin: z.string(),
+      nouveauSalaireBrut: z.coerce.number().optional(), nouveauType: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await renouvelerContratCore(ctx, {
+      personnelId: d.personnelId, nouvelleDateFin: new Date(d.nouvelleDateFin),
+      nouveauSalaireBrut: d.nouveauSalaireBrut ? versCentimes(d.nouveauSalaireBrut) : undefined, nouveauType: d.nouveauType,
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function statsRh(): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await statsRhCore(ctx); return { ok: true, ...r }; }
   catch (e) { return echec(e); }
 }

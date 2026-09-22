@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { formatXOF, formatDate, initiales } from '@/lib/format';
 
 export default function PersonnelModule({ initialData }: { initialData: any }) {
+  const [statsRh, setStatsRh] = useState<any>(null);
   const personnels = initialData.personnels ?? [];
   const roles = initialData.roles ?? [];
   const conges = initialData.conges ?? [];
@@ -400,6 +401,78 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
         </div>
         </div>
       </div>
+      {/* RH SUITE — pilotage, fins de contrats, sorties */}
+      <SectionBlock
+        title="Pilotage RH"
+        description="Masse salariale, effectifs par contrat, ancienneté, fins de contrats imminentes (60 j)"
+        action={
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async () => { const r = await actionsExt.statsRh(); setStatsRh(r); }}>Actualiser</Button>
+            <ModalForm
+              trigger={<Button variant="outline" size="sm">Renouveler un contrat</Button>}
+              title="Renouvellement de contrat (CDD)"
+              fields={[
+                { name: 'personnelId', label: 'Personnel', type: 'select', required: true, options: personnels.map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })) },
+                { name: 'nouvelleDateFin', label: 'Nouveau terme', type: 'date', required: true },
+                { name: 'nouveauSalaireBrut', label: 'Nouveau salaire brut (F, optionnel)', type: 'number' },
+                { name: 'nouveauType', label: 'Type', type: 'select', options: [{ value: 'CDD', label: 'CDD' }, { value: 'vacataire', label: 'Vacataire' }] },
+              ]}
+              action={actionsExt.renouvelerContrat}
+            />
+            <ModalForm
+              trigger={<Button variant="outline" size="sm">Sortie du personnel</Button>}
+              title="Sortie formelle (démission, retraite…)"
+              fields={[
+                { name: 'personnelId', label: 'Personnel', type: 'select', required: true, options: personnels.filter((p: any) => p.statut === 'actif').map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })) },
+                { name: 'motifSortie', label: 'Motif', type: 'select', required: true, options: [
+                  { value: 'demission', label: 'Démission' }, { value: 'fin_contrat', label: 'Fin de contrat' },
+                  { value: 'retraite', label: 'Retraite' }, { value: 'licenciement', label: 'Licenciement' },
+                ] },
+                { name: 'dateSortie', label: 'Date effective', type: 'date', required: true },
+                { name: 'preavisJours', label: 'Préavis (jours)', type: 'number' },
+                { name: 'commentaire', label: 'Commentaire', type: 'textarea' },
+              ]}
+              action={actionsExt.quitterPersonnel}
+            />
+          </div>
+        }
+      >
+        {statsRh?.ok ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <StatCard title="Actifs" value={statsRh.actifs} sub={`${statsRh.sortis} sortis`} color="emerald" />
+              <StatCard title="Masse salariale/mois" value={fmtMontant(statsRh.masseSalarialeMensuelle)} sub={`patronal ≈ ${fmtMontant(statsRh.cotisationPatronaleEstimee)}`} color="blue" />
+              <StatCard title="Ancienneté moy." value={`${statsRh.ancienneteMoyenneAnnees} ans`} color="purple" />
+              <StatCard title="Congés en cours" value={statsRh.congesEnCours} sub={`${statsRh.formationsEnCours} formation(s)`} color="amber" />
+              <StatCard title="Fins contrats < 60j" value={statsRh.finsContratsImminentes.length} color="rose" />
+            </div>
+            {(statsRh.finsContratsImminentes ?? []).length > 0 && (
+              <div>
+                <div className="text-sm font-semibold mb-1 text-rose-700">Contrats arrivant à terme</div>
+                <DataTable
+                  columns={[
+                    { key: 'nom', label: 'Personnel' }, { key: 'type', label: 'Contrat' },
+                    { key: 'dateFin', label: 'Terme', render: (x: any) => new Date(x.dateFin).toLocaleDateString('fr-FR') },
+                    { key: 'joursRestants', label: 'Jours restants', render: (x: any) => <span className="font-semibold text-rose-700">{x.joursRestants} j</span> },
+                  ]}
+                  rows={statsRh.finsContratsImminentes}
+                  emptyLabel="—"
+                />
+              </div>
+            )}
+            <DataTable
+              columns={[
+                { key: 'type', label: 'Type de contrat' }, { key: 'nb', label: 'Effectif' },
+                { key: 'masse', label: 'Masse salariale', render: (x: any) => fmtMontant(x.masse) },
+              ]}
+              rows={statsRh.parTypeContrat}
+              emptyLabel="—"
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Cliquez sur « Actualiser » pour le tableau de bord RH.</p>
+        )}
+      </SectionBlock>
     </div>
   );
 }
@@ -568,6 +641,12 @@ function SectionRecrutement({ initialData, run, pending }: {
           emptyLabel="Aucune candidature reçue"
         />
       </SectionBlock>
+
     </>
   );
+}
+
+function fmtMontant(centimes: number | null | undefined) {
+  if (!centimes) return '—';
+  return (centimes / 100).toLocaleString('fr-FR') + ' F';
 }

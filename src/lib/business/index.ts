@@ -26,3 +26,4 @@ export * from './rh-complements';
 export * from './secretariat';
 export * from './compta-plus';
 export * from './viescolaire-plus';
+export * from './rh-suite';

@@ -74,6 +74,11 @@ export async function purgerEcoles(ecoleIds: string[], verbose = false): Promise
   }
   if (verbose && erreurs.size) for (const [m, n] of erreurs) console.log(`  ⚠ ${n}× ${m}`);
 
+  // Chaîne recrutement SANS ecoleId (2 niveaux) : Etapes/Entretiens → Candidatures → Offres
+  await db.$executeRawUnsafe(`DELETE FROM "EtapeRecrutement" WHERE "candidatureId" IN (SELECT ca.id FROM "Candidature" ca JOIN "OffreEmploi" o ON ca."offreId" = o.id WHERE o."ecoleId" IN (${idList}))`).catch(() => {});
+  await db.$executeRawUnsafe(`DELETE FROM "EntretienRecrutement" WHERE "candidatureId" IN (SELECT ca.id FROM "Candidature" ca JOIN "OffreEmploi" o ON ca."offreId" = o.id WHERE o."ecoleId" IN (${idList}))`).catch(() => {});
+  await db.$executeRawUnsafe(`DELETE FROM "Candidature" WHERE "offreId" IN (SELECT id FROM "OffreEmploi" WHERE "ecoleId" IN (${idList}))`).catch(() => {});
+
   // Chaîne transitive sans ecoleId : Niveau → Section → Cycle (vérifiée en prod)
   await db.$executeRawUnsafe(`DELETE FROM "Niveau" WHERE "sectionId" IN (SELECT s.id FROM "Section" s JOIN "Cycle" c ON s."cycleId" = c.id WHERE c."ecoleId" IN (${idList}))`).catch(() => {});
   await db.$executeRawUnsafe(`DELETE FROM "Section" WHERE "cycleId" IN (SELECT id FROM "Cycle" WHERE "ecoleId" IN (${idList}))`).catch(() => {});

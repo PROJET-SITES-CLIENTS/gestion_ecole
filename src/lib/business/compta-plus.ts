@@ -101,7 +101,7 @@ export async function passerEcriturePaieCore(ctx: Ctx, bulletinId: string) {
 
   const e = await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, b.ecoleId, {
     journalCode: 'PA', libelle: `Paie ${b.periode}`, piece, lignes,
-  }));
+  }), { timeout: 60000, maxWait: 15000 });
   await logAction(db, b.ecoleId, ctx.utilisateurId, 'compta.paie_ecriture', 'bulletin_paie', bulletinId, { piece });
   return { ecritureId: e.id };
 }
@@ -166,7 +166,7 @@ export async function genererDotationsCore(ctx: Ctx, annee: number) {
   lignes.push({ compteId: (await compteNumero(ecoleId, '281')).id, libelle: 'Amortissements cumulés', debit: 0, credit: total });
   const e = await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, ecoleId, {
     journalCode: 'OD', piece, libelle: `Dotations aux amortissements ${annee}`, lignes,
-  }));
+  }), { timeout: 60000, maxWait: 15000 });
   await logAction(db, ecoleId, ctx.utilisateurId, 'immo.dotations', 'ecriture_comptable', e.id, { annee, total });
   return { ecritureId: e.id, total };
 }
@@ -337,7 +337,7 @@ export async function cloturerExerciceComptableCore(ctx: Ctx, dateDebut: Date, d
   const e = await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, ecoleId, {
     journalCode: 'OD', piece, libelle: `Clôture de l'exercice ${dateDebut.getFullYear()}-${dateFin.getFullYear()}`,
     lignes: lignesCloture,
-  }));
+  }), { timeout: 60000, maxWait: 15000 });
   await logAction(db, ecoleId, ctx.utilisateurId, 'compta.cloture', 'ecriture_comptable', e.id, { resultat, totalCharges, totalProduits });
   return { resultat, totalCharges, totalProduits, ecritureId: e.id };
 }
