@@ -15,6 +15,7 @@ import AppShell from '@/components/app-shell';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // réveil Neon + charge lourde direction (Hobby: 60 s max)
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ annee?: string }> | { annee?: string } }) {
   let session: SessionInfo | null = null;

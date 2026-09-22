@@ -674,6 +674,11 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const demandesEnAttente = (initialData.demandesCompte ?? []).filter((d: any) => d.statut === 'en_attente');
   if (demandesEnAttente.length > 0)
     alertes.push({ label: `${demandesEnAttente.length} demande(s) de compte à valider`, detail: `${demandesEnAttente.map((d: any) => d.utilisateur?.email ?? d.type).slice(0, 3).join(', ')}${demandesEnAttente.length > 3 ? '…' : ''} — module Sécurité site`, severite: 'rouge' });
+  // AUDIT DIRECTION : candidatures d'admission en attente (formulaire public + secrétariat)
+  const candidaturesEnAttente = (initialData.candidaturesAdmission ?? []).filter((c: any) => c.statut === 'soumis');
+  if (candidaturesEnAttente.length > 0)
+    alertes.push({ label: `${candidaturesEnAttente.length} candidature(s) d'admission à traiter`, detail: `${candidaturesEnAttente.map((c: any) => `${c.prenom} ${c.nom}`).slice(0, 3).join(', ')}${candidaturesEnAttente.length > 3 ? '…' : ''} — module Admissions`, severite: 'ambre' });
+
   const stocksBas = (initialData.articlesStock ?? []).filter((a: any) => a.quantite <= (a.seuilAlerte ?? 0));
   if (stocksBas.length > 0 && vueComplete)
     alertes.push({ label: `${stocksBas.length} article(s) sous le seuil de stock`, detail: `${stocksBas.slice(0, 3).map((a: any) => a.nom).join(', ')}${stocksBas.length > 3 ? '…' : ''} — réapprovisionnez (Magasin)`, severite: 'ambre' });

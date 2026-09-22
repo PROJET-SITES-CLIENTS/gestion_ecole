@@ -648,9 +648,30 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
               { key: 'motivation', label: 'Motivation', render: (d: any) => (d.motivation ?? '—').slice(0, 60) },
               { key: 'date', label: 'Date', render: (d: any) => new Date(d.dateDemande).toLocaleDateString('fr-FR') },
               { key: 'actions', label: 'Actions', render: (d: any) => (
-                <div className="flex gap-1">
+                <div className="flex gap-1 items-center">
+                  <select
+                    defaultValue={d.roleDemande ?? 'enseignant'}
+                    id={`role-${d.id}`}
+                    className="text-xs h-7 border rounded px-1"
+                    title="Rôle à attribuer à l'approbation"
+                  >
+                    <option value="enseignant">👨‍🏫 Enseignant</option>
+                    <option value="secretariat">📝 Secrétariat</option>
+                    <option value="comptabilite">💰 Comptabilité</option>
+                    <option value="rh">👥 RH</option>
+                    <option value="censeur">🛡️ Censeur</option>
+                    <option value="surveillant">👀 Surveillant</option>
+                    <option value="infirmier">🏥 Infirmier(ère)</option>
+                    <option value="assistant_direction">💼 Assistant dir.</option>
+                    <option value="direction">🎓 Direction</option>
+                  </select>
                   <button
-                    onClick={() => { if (confirm(`Approuver ${d.utilisateur?.prenom} ${d.utilisateur?.nom} ?`)) { retour.run(async () => extC.traiterDemandeCompte(d.id, 'approuve'), 'Compte approuvé'); } }}
+                    onClick={() => {
+                      const role = (document.getElementById(`role-${d.id}`) as HTMLSelectElement)?.value ?? d.roleDemande ?? 'enseignant';
+                      if (confirm(`Approuver ${d.utilisateur?.prenom} ${d.utilisateur?.nom} en tant que « ${role} » ?`)) {
+                        retour.run(async () => extC.traiterDemandeCompte(d.id, 'approuve', undefined, role), 'Compte approuvé — rôle attribué');
+                      }
+                    }}
                     className="text-xs px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
                     disabled={retour.pending}
                   >✓ Approuver</button>
