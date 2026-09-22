@@ -13,7 +13,6 @@
 // ====================================================================
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
-  const router = useRouter();
 import { Shield, UserCheck, LogOut, AlertTriangle, KeyRound, Smartphone, DatabaseBackup, HardDriveDownload, Building2 } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
