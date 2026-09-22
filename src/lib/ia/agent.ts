@@ -19,36 +19,46 @@ export type ResultatAgent = {
   actions: Array<{ outil: string; resume: string; ok: boolean }>;
 };
 
-function cleApi(): string {
-  const k = process.env.OPENROUTER_API_KEY;
-  if (!k) throw new Error('OPENROUTER_API_KEY manquante (variables d\'environnement).');
-  return k;
+/** Clés disponibles : principale + secours (OPENROUTER_API_KEY peut contenir
+ *  plusieurs clés séparées par virgules, ou OPENROUTER_API_KEY_SECOURS) —
+ *  repli automatique sur quota dépassé (402/429) ou clé invalide (401). */
+function clesApi(): string[] {
+  const brutes = [process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_API_KEY_SECOURS]
+    .filter((x): x is string => Boolean(x))
+    .flatMap((x) => x.split(',').map((k) => k.trim()).filter(Boolean));
+  if (brutes.length === 0) throw new Error('OPENROUTER_API_KEY manquante (variables d\'environnement).');
+  return brutes;
 }
 
 async function appelerOpenRouter(messages: MessageIA[], tools: unknown[]): Promise<any> {
-  const reponse = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${cleApi()}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://scolagestion.app',
-      'X-Title': 'ScolaGestion Assistant',
-    },
-    body: JSON.stringify({
-      model: process.env.IA_MODELE || 'openai/gpt-4o-mini',
-      messages,
-      tools: tools.length ? tools : undefined,
-      tool_choice: 'auto',
-      temperature: 0.2,
-      max_tokens: 1600,
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!reponse.ok) {
-    const texte = await reponse.text().catch(() => '');
-    throw new Error(`OpenRouter ${reponse.status} : ${texte.slice(0, 200)}`);
+  const cles = clesApi();
+  let derniereErreur: Error | null = null;
+  for (const cle of cles) {
+    const reponse = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cle}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://scolagestion.app',
+        'X-Title': 'ScolaGestion Assistant',
+      },
+      body: JSON.stringify({
+        model: process.env.IA_MODELE || 'openai/gpt-4o-mini',
+        messages,
+        tools: tools.length ? tools : undefined,
+        tool_choice: 'auto',
+        temperature: 0.2,
+        max_tokens: 900, // réduit : compatible comptes à crédits limités
+      }),
+      signal: AbortSignal.timeout(45000),
+    }).catch(() => null);
+    if (reponse?.ok) return reponse.json();
+    const texte = reponse ? await reponse.text().catch(() => '') : 'réseau indisponible';
+    const statut = reponse?.status ?? 0;
+    derniereErreur = new Error(`OpenRouter ${statut} : ${texte.slice(0, 200)}`);
+    if (![401, 402, 429].includes(statut)) break; // autre erreur : pas de repli
   }
-  return reponse.json();
+  throw derniereErreur ?? new Error('OpenRouter injoignable.');
 }
 
 export async function invoquerAssistant(opts: {

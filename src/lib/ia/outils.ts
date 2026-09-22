@@ -26,7 +26,7 @@ export type OutilIA = {
   executer: (ctx: Ctx, args: Record<string, unknown>) => Promise<unknown>;
 };
 
-const P = (properties: Record<string, { type: string; description: string; enum?: string[] }>, required?: string[]): ParametreOutil => ({ type: 'object', properties, required });
+const P = (properties: Record<string, { type: string; description?: string; enum?: string[] }>, required?: string[]): ParametreOutil => ({ type: 'object', properties, required });
 
 // --------------------------------------------------------------------
 // LECTURE — information (permissions en lecture)
@@ -500,7 +500,184 @@ const outilsAction: OutilIA[] = [
   },
 ];
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction];
+
+
+// --------------------------------------------------------------------
+// OUTILS PROFONDS v2 — couverture complète par métier (descriptions en
+// guillemets doubles : aucune apostrophe simple à échapper)
+// --------------------------------------------------------------------
+
+const outilsProfonds: OutilIA[] = [
+  {
+    nom: "rechercher_personnel",
+    description: "Recherche un membre du personnel par nom ; retourne matricule, poste, contrat, solde de congés.",
+    permission: "rh.gerer",
+    parametres: P({ q: { type: "string", description: "Nom ou prénom" } }, ["q"]),
+    executer: async (ctx, args) => {
+      const q = String(args.q ?? "").trim();
+      const pers = await db.personnel.findMany({
+        where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: q, mode: "insensitive" } }, { prenom: { contains: q, mode: "insensitive" } }] },
+        include: { contrats: { where: { actif: true } }, soldeConges: true },
+        take: 8,
+      });
+      return pers.map((p: any) => ({
+        personnelId: p.id, nom: `${p.prenom} ${p.nom}`, matricule: p.matricule, statut: p.statut,
+        contrat: p.contrats[0]?.typeContrat ?? p.typeContrat,
+        salaireF: p.salaireBrut ? p.salaireBrut / 100 : null,
+        congesRestants: p.soldeConges?.[0]?.joursRestants ?? null,
+      }));
+    },
+  },
+  {
+    nom: "traiter_conge",
+    description: "Valide ou refuse une demande de congé en attente (solde décrémenté automatiquement).",
+    permission: "rh.gerer",
+    parametres: P({
+      personnel: { type: "string", description: "Nom du personnel" },
+      decision: { type: "string", enum: ["valide", "refuse"] },
+      commentaire: { type: "string", description: "Commentaire (optionnel)" },
+    }, ["personnel", "decision"]),
+    executer: async (ctx, args) => {
+      const pers = await db.personnel.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.personnel), mode: "insensitive" } }, { prenom: { contains: String(args.personnel), mode: "insensitive" } }] } });
+      if (!pers) return { erreur: "Personnel introuvable." };
+      const conge = await db.conge.findFirst({ where: { personnelId: pers.id, statut: "demande" }, orderBy: { dateDebut: "asc" } });
+      if (!conge) return { erreur: `Aucune demande de congé en attente pour ${pers.prenom} ${pers.nom}.` };
+      return biz.traiterCongeCore(ctx as never, conge.id, String(args.decision) as "valide" | "refuse", args.commentaire ? String(args.commentaire) : undefined);
+    },
+  },
+  {
+    nom: "generer_paie",
+    description: "Génère les bulletins de paie de tous les personnels actifs pour un mois (format AAAA-MM).",
+    permission: "rh.gerer",
+    parametres: P({ periode: { type: "string", description: "Mois AAAA-MM (ex: 2026-09)" } }, ["periode"]),
+    executer: async (ctx, args) => {
+      if (!/^\d{4}-\d{2}$/.test(String(args.periode))) return { erreur: "Format attendu : AAAA-MM." };
+      return biz.genererBulletinsPaieCore(ctx as never, ctx.ecoleId!, String(args.periode));
+    },
+  },
+  {
+    nom: "stats_rh",
+    description: "Pilotage RH : effectifs, masse salariale mensuelle, ancienneté, fins de contrats imminentes, congés en cours.",
+    permission: "rh.gerer",
+    parametres: P({}),
+    executer: async (ctx) => biz.statsRhCore(ctx as never),
+  },
+  {
+    nom: "situation_financiere",
+    description: "Vue financière globale : total encaissé, restant dû, nombre de impayés, dépenses validées.",
+    permission: "finances.voir",
+    parametres: P({}),
+    executer: async (ctx) => {
+      const ecoleId = ctx.ecoleId!;
+      const [paiements, eches, depenses] = await Promise.all([
+        db.paiement.aggregate({ where: { ecoleId, annule: false }, _sum: { montant: true } }),
+        db.echeanceFrais.findMany({ where: { eleve: { ecoleId, deletedAt: null }, statut: { in: ["impayee", "partiel"] } } }),
+        db.depense.aggregate({ where: { ecoleId, validee: true, annulee: false }, _sum: { montant: true } }),
+      ]);
+      const restant = eches.reduce((s2, e) => s2 + (e.montant - e.remise - e.montantPaye), 0);
+      return {
+        totalEncaisseF: ((paiements._sum.montant ?? 0) / 100).toLocaleString("fr-FR") + " F",
+        restantDuF: (restant / 100).toLocaleString("fr-FR") + " F",
+        nbImpayes: eches.length,
+        depensesValideesF: ((depenses._sum.montant ?? 0) / 100).toLocaleString("fr-FR") + " F",
+      };
+    },
+  },
+  {
+    nom: "maj_avancement",
+    description: "Met à jour le pourcentage de progression du programme pour une classe (qui suit son avancement).",
+    permission: "notes.saisir",
+    parametres: P({
+      matiere: { type: "string", description: "Matière" },
+      chapitre: { type: "string", description: "Titre du chapitre" },
+      classe: { type: "string", description: "Libellé de la classe" },
+      pourcentage: { type: "number", description: "0 à 100" },
+    }, ["matiere", "chapitre", "classe", "pourcentage"]),
+    executer: async (ctx, args) => {
+      const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
+      if (!classe) return { erreur: "Classe introuvable." };
+      const chap = await db.chapitre.findFirst({
+        where: { titre: { contains: String(args.chapitre), mode: "insensitive" }, programme: { ecoleId: ctx.ecoleId!, matiere: { libelle: { contains: String(args.matiere), mode: "insensitive" } } } },
+      });
+      if (!chap) return { erreur: "Chapitre introuvable pour cette matière." };
+      return biz.mettreAJourAvancementCore(ctx as never, chap.id, { classeId: classe.id, pourcentage: Math.max(0, Math.min(100, Number(args.pourcentage))) });
+    },
+  },
+  {
+    nom: "assigner_devoir",
+    description: "Assigne un devoir à faire à la maison à une classe (visible élèves et parents).",
+    permission: "notes.saisir",
+    parametres: P({
+      classe: { type: "string", description: "Libellé de la classe" },
+      intitule: { type: "string", description: "Intitulé du devoir" },
+      dateRendu: { type: "string", description: "Date de rendu ISO" },
+      sur: { type: "number", description: "Barème (défaut 20)" },
+    }, ["classe", "intitule", "dateRendu"]),
+    executer: async (ctx, args) => {
+      const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
+      if (!classe) return { erreur: "Classe introuvable." };
+      return biz.creerDevoirCore(ctx as never, { classeId: classe.id, intitule: String(args.intitule), dateRendu: new Date(String(args.dateRendu)), sur: Number(args.sur ?? 20) } as never);
+    },
+  },
+  {
+    nom: "certificat_scolarite",
+    description: "Génère le certificat de scolarité ou l attestation d inscription d un élève.",
+    permission: "eleves.ecrire",
+    parametres: P({
+      eleve: { type: "string", description: "Nom de l élève" },
+      type: { type: "string", enum: ["certificat_scolarite", "attestation_inscription"] },
+    }, ["eleve", "type"]),
+    executer: async (ctx, args) => {
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      if (!el) return { erreur: "Élève introuvable." };
+      return biz.genererAttestationCore(ctx as never, el.id, String(args.type) as "certificat_scolarite" | "attestation_inscription");
+    },
+  },
+  {
+    nom: "reinscrire_eleve",
+    description: "Enregistre la réinscription d un élève pour l année en cours (classe souhaitée + suivi des frais).",
+    permission: "eleves.ecrire",
+    parametres: P({
+      eleve: { type: "string", description: "Nom de l élève" },
+      classe: { type: "string", description: "Classe souhaitée (optionnel)" },
+      fraisPayes: { type: "boolean", description: "Frais de réinscription payés ?" },
+    }, ["eleve"]),
+    executer: async (ctx, args) => {
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, statut: "actif", OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      if (!el) return { erreur: "Élève actif introuvable." };
+      let classeVoulueId: string | undefined;
+      if (args.classe) {
+        const c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
+        classeVoulueId = c?.id;
+      }
+      return biz.enregistrerReinscriptionCore(ctx as never, { eleveId: el.id, classeVoulueId, fraisPayes: args.fraisPayes === true } as never);
+    },
+  },
+  {
+    nom: "enregistrer_retard",
+    description: "Enregistre un retard d élève avec billet numéroté (alerte parents au 3e non justifié).",
+    permission: "presences.saisir",
+    parametres: P({
+      eleve: { type: "string", description: "Nom de l élève" },
+      dureeMinutes: { type: "number", description: "Durée en minutes (défaut 15)" },
+      motif: { type: "string", description: "Motif (optionnel)" },
+    }, ["eleve"]),
+    executer: async (ctx, args) => {
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      if (!el) return { erreur: "Élève introuvable." };
+      return biz.enregistrerRetardCore(ctx as never, { eleveId: el.id, dateHeure: new Date(), dureeMinutes: Number(args.dureeMinutes ?? 15), motif: args.motif ? String(args.motif) : undefined } as never);
+    },
+  },
+  {
+    nom: "stats_discipline",
+    description: "Statistiques de discipline : incidents, retards, absences par classe + élèves à suivre.",
+    permission: "vie_scolaire.gerer",
+    parametres: P({ jours: { type: "number", description: "Période en jours (défaut 30)" } }),
+    executer: async (ctx, args) => biz.statsDisciplineCore(ctx as never, Number(args.jours ?? 30)),
+  },
+];
+
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
