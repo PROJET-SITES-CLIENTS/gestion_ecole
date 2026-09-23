@@ -10,7 +10,7 @@ import { Ctx, logAction } from '@/lib/business/commun';
 import { outilsPourSession, versOutilsOpenAI, CATALOGUE_IA } from './outils';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_ETAPEES = 6; // profondeur : jusqu'à 6 vagues d'actions par message
+const MAX_ETAPEES = 10; // configuration complète : beaucoup d'actions en chaîne // profondeur : jusqu'à 6 vagues d'actions par message
 
 export type MessageIA = { role: 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string; name?: string; tool_calls?: any[] };
 
@@ -79,6 +79,13 @@ TES RÈGLES ABSOLUES :
 2. Pour TOUTE demande de données, UTILISE les outils (jamais d'invention). Pour toute action, utilise l'outil correspondant — exécute VRAIMENT, en profondeur, sans demander de confirmation inutile.
 3. Pour trouver un élève par son nom, commence TOUJOURS par rechercher_eleve puis réutilise l'eleveId exact.
 4. Les montants : l'utilisateur parle en FRANCS CFA ; les outils attendent des FRANCS (la conversion en centimes est faite pour toi quand nécessaire).
+4bis. TU ES AUSSI UN CONFIGURATEUR COMPLET DE L'ÉCOLE. Tu sais :
+   - créer/modifier/supprimer des classes (creer_classes, modifier_classe, supprimer_classe_vide) ;
+   - créer les matières par niveau avec les particularités demandées (creer_matieres) ;
+   - créer les programmes annuels détaillés chapitre par chapitre avec trimestres et semaines (creer_programme_annee) ;
+   - affecter les enseignants aux matières et classes AVEC EXCEPTIONS granulaires : « Jean Bernard enseigne le Français en 6e, 5e, 4e mais PAS en 3e » → affecter_enseignant(classes: "6E,5E,4E", sauf: "3E") ;
+   - définir les règles de calcul des moyennes par cycle (regle_calcul_moyenne).
+   Quand l'utilisateur décrit sa configuration en langage naturel (avec des exceptions, niveau par niveau), DÉCOMPOSE-la en appels d'outils successifs et exécute-la intégralement — ne demande jamais à l'utilisateur de le faire manuellement. Enchaîne les outils (plusieurs vagues autorisées).
 5. Réponds de façon concise, structurée (listes courtes), avec les chiffres exacts retournés par les outils. Termine par proposer la suite logique.
 6. Date du jour : ${new Date().toISOString().slice(0, 10)}.`;
 

@@ -50,6 +50,7 @@ model Ecole {
   retards Retard[]
   surveillancesExamens SurveillanceExamen[]
   conseilsDiscipline ConseilDiscipline[]
+  affectationsEnseignants AffectationEnseignant[]
 
   abonnements                Abonnement[]
   facturesSaas               FactureSaas[]
@@ -380,6 +381,27 @@ model ConseilDiscipline {
   @@index([ecoleId, statut])
 }
 
+
+// ====================================================================
+// CONFIG IA — affectations granulaires enseignant × matière × classe
+// (le « qui enseigne quoi où », avec exceptions gérées par l'IA)
+// ====================================================================
+
+model AffectationEnseignant {
+  id           String   @id @default(cuid())
+  ecoleId      String
+  ecole        Ecole    @relation(fields: [ecoleId], references: [id])
+  personnelId  String
+  personnel    Personnel @relation(fields: [personnelId], references: [id])
+  matiereId    String
+  matiere      Matiere  @relation(fields: [matiereId], references: [id])
+  classeId     String
+  classe       Classe   @relation(fields: [classeId], references: [id])
+  createdAt    DateTime @default(now())
+  @@unique([ecoleId, personnelId, matiereId, classeId])
+  @@index([ecoleId, classeId])
+}
+
 model Cycle {
   id             String @id @default(cuid())
   ecoleId        String
@@ -455,6 +477,7 @@ model Classe {
   @@unique([ecoleId, code, anneeScolaireId])
   @@index([ecoleId, anneeScolaireId]) // F18
   reinscriptionsCibles Reinscription[]
+  affectationsEnseignant AffectationEnseignant[]
 }
 
 // ====================================================================
@@ -812,6 +835,7 @@ model Personnel {
   creneauHebdos            CreneauHebdo[] // F17
 
   @@unique([ecoleId, matricule])
+  affectationsEnseignant AffectationEnseignant[]
 }
 
 model PersonnelRole {
@@ -927,6 +951,7 @@ model Matiere {
   groupes               Groupe[]
 
   @@unique([ecoleId, code])
+  affectations AffectationEnseignant[]
 }
 
 model Programme {

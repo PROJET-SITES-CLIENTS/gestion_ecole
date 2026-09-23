@@ -677,7 +677,212 @@ const outilsProfonds: OutilIA[] = [
   },
 ];
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds];
+
+// --------------------------------------------------------------------
+// OUTILS CONFIGURATION v3 — l'IA configure l'école : classes, matières
+// par niveau AVEC EXCEPTIONS, affectations granulaires, programmes
+// annuels détaillés, règles de calcul des moyennes
+// --------------------------------------------------------------------
+
+const outilsConfiguration: OutilIA[] = [
+  {
+    nom: "creer_classes",
+    description: "Crée plusieurs classes d'un coup pour un niveau (ex: niveau CE1, classes CE1-A et CE1-B). Accepte aussi plusieurs exemplaires.",
+    permission: "admin.saas",
+    parametres: P({
+      niveau: { type: "string", description: "Code ou libellé du niveau (ex: CP, CE1, 6E, 2NDE)" },
+      classes: { type: "string", description: "Noms des classes séparés par virgules (ex: CE1-A, CE1-B)" },
+      capacite: { type: "number", description: "Capacité max (défaut 40)" },
+    }, ["niveau", "classes"]),
+    executer: async (ctx, args) => {
+      const ecoleId = ctx.ecoleId!;
+      const niv = await db.niveau.findFirst({ where: { section: { cycle: { ecoleId } }, OR: [{ code: { contains: String(args.niveau).toUpperCase() } }, { libelle: { contains: String(args.niveau), mode: "insensitive" } }] } });
+      if (!niv) return { erreur: `Niveau « ${args.niveau} » introuvable.` };
+      const annee = await db.anneeScolaire.findFirst({ where: { ecoleId, active: true } });
+      if (!annee) return { erreur: "Aucune année scolaire active." };
+      const creees: string[] = [];
+      const ignorees: string[] = [];
+      for (const nomBrut of String(args.classes).split(",").map((x) => x.trim()).filter(Boolean)) {
+        const code = nomBrut.toUpperCase();
+        const existe = await db.classe.findFirst({ where: { ecoleId, anneeScolaireId: annee.id, code } });
+        if (existe) { ignorees.push(code); continue; }
+        await db.classe.create({ data: { ecoleId, anneeScolaireId: annee.id, niveauId: niv.id, code, libelle: nomBrut, capaciteMax: Number(args.capacite ?? 40) } });
+        creees.push(nomBrut);
+      }
+      return { niveau: niv.libelle, creees, ignorees: ignorees.length ? ignorees : undefined };
+    },
+  },
+  {
+    nom: "modifier_classe",
+    description: "Renomme une classe ou change sa capacité.",
+    permission: "admin.saas",
+    parametres: P({
+      classe: { type: "string", description: "Nom actuel de la classe" },
+      nouveauNom: { type: "string", description: "Nouveau nom (optionnel)" },
+      capacite: { type: "number", description: "Nouvelle capacité (optionnelle)" },
+    }, ["classe"]),
+    executer: async (ctx, args) => {
+      const c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
+      if (!c) return { erreur: "Classe introuvable." };
+      const nom = args.nouveauNom ? String(args.nouveauNom) : c.libelle;
+      const dbl = await db.classe.count({ where: { ecoleId: c.ecoleId, anneeScolaireId: c.anneeScolaireId, code: nom.toUpperCase(), NOT: { id: c.id } } });
+      if (dbl > 0) return { erreur: `Une classe « ${nom} » existe déjà.` };
+      await db.classe.update({ where: { id: c.id }, data: { code: nom.toUpperCase(), libelle: nom, ...(args.capacite ? { capaciteMax: Number(args.capacite) } : {}) } });
+      return { classeId: c.id, nouveauNom: nom };
+    },
+  },
+  {
+    nom: "supprimer_classe_vide",
+    description: "Supprime une classe UNIQUEMENT si elle est vide (refus si des élèves y sont inscrits).",
+    permission: "admin.saas",
+    parametres: P({ classe: { type: "string", description: "Nom de la classe" } }, ["classe"]),
+    executer: async (ctx, args) => {
+      const c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
+      if (!c) return { erreur: "Classe introuvable." };
+      return biz.supprimerClasseCore(ctx as never, c.id);
+    },
+  },
+  {
+    nom: "creer_matieres",
+    description: "Crée plusieurs matières d'un coup (ex: Français, Mathématiques, Dessin). Ignore celles qui existent déjà. Exemples de particularités gérées : l'utilisateur peut préciser des matières seulement pour certains niveaux — l'association niveau se fait via creer_programme.",
+    permission: "admin.saas",
+    parametres: P({
+      matieres: { type: "string", description: "Liste séparée par virgules (ex: Français, Mathématiques, Éducation scientifique, Dessin)" },
+      coefficients: { type: "string", description: "Optionnel : coefficients par matière « Français:2, Mathématiques:3 »" },
+    }, ["matieres"]),
+    executer: async (ctx, args) => {
+      const ecoleId = ctx.ecoleId!;
+      const coefs = new Map<string, number>();
+      for (const paire of String(args.coefficients ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+        const [nom, c] = paire.split(":").map((x) => x.trim());
+        if (nom && c) coefs.set(nom.toLowerCase(), Number(c));
+      }
+      const creees: string[] = [];
+      const existantes: string[] = [];
+      for (const libelle of String(args.matieres).split(",").map((x) => x.trim()).filter(Boolean)) {
+        const existe = await db.matiere.findFirst({ where: { ecoleId, OR: [{ libelle: { equals: libelle, mode: "insensitive" } }, { libelle: { contains: libelle, mode: "insensitive" } }] } });
+        if (existe) { existantes.push(libelle); continue; }
+        const initiales = libelle.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z]/g, "").slice(0, 4).toUpperCase() || "MAT";
+        const code = `${initiales}-${Date.now().toString(36).slice(-3).toUpperCase()}`;
+        await db.matiere.create({ data: { ecoleId, code, libelle, coefficient: coefs.get(libelle.toLowerCase()) ?? 1 } });
+        creees.push(libelle);
+      }
+      return { creees, existantes };
+    },
+  },
+  {
+    nom: "creer_programme_annee",
+    description: "Crée le programme annuel d'une matière pour un niveau AVEC tous ses chapitres (plan de l'année : chapitres ordonnés, avec périodes/trimestres et semaines). Exemple: chapitres 'Ch1 Les fractions:T1:sem3; Ch2 Les nombres décimaux:T1:sem6'.",
+    permission: "notes.saisir",
+    parametres: P({
+      matiere: { type: "string", description: "Matière" },
+      niveau: { type: "string", description: "Niveau (ex: 6E, CM1)" },
+      intitule: { type: "string", description: "Intitulé du programme (défaut: Programme <matière> <niveau>)" },
+      chapitres: { type: "string", description: "Chapitres séparés par points-virgules. Format par chapitre: 'Titre' OU 'Titre:Trimestre:Semaine' OU 'Titre:ordre'" },
+    }, ["matiere", "niveau", "chapitres"]),
+    executer: async (ctx, args) => {
+      const ecoleId = ctx.ecoleId!;
+      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
+      const niv = await db.niveau.findFirst({ where: { section: { cycle: { ecoleId } }, OR: [{ code: { contains: String(args.niveau).toUpperCase() } }, { libelle: { contains: String(args.niveau), mode: "insensitive" } }] } });
+      if (!mat || !niv) return { erreur: "Matière ou niveau introuvable. Créez la matière d'abord (creer_matieres)." };
+      const intitule = args.intitule ? String(args.intitule) : `Programme ${mat.libelle} ${niv.libelle}`;
+      const prog = await biz.creerProgrammeCore(ctx as never, ecoleId, { matiereId: mat.id, niveauId: niv.id, intitule } as never);
+      const ajoutes: string[] = [];
+      const items = String(args.chapitres).split(";").map((x) => x.trim()).filter(Boolean);
+      let ordreAuto = 0;
+      for (const item of items) {
+        const parties = item.split(":").map((x) => x.trim());
+        const titre = parties[0];
+        const periode = parties.find((p) => /^T\d|S\d|trim|sem/i.test(p));
+        const ordre = Number(parties.find((p) => /^\d+$/.test(p))) ?? ++ordreAuto;
+        if (!Number.isInteger(Number(ordre))) { ordreAuto++; }
+        // le core des chapitres ne stocke que titre+ordre : la période est
+        // intégrée au titre pour rester visible partout (cahier, suivi)
+        const titreComplet = periode ? `${titre} [${periode}]` : titre;
+        await biz.ajouterChapitreCore(ctx as never, (prog as any).programmeId, { intitule: titreComplet, ordre: Number.isFinite(Number(ordre)) ? Number(ordre) : ++ordreAuto } as never);
+        ajoutes.push(titreComplet);
+      }
+      return { programmeId: (prog as any).programmeId, intitule, chapitresAjoutes: ajoutes.length, detail: ajoutes };
+    },
+  },
+  {
+    nom: "affecter_enseignant",
+    description: "Affecte un enseignant à une matière sur plusieurs classes, AVEC EXCEPTIONS. Ex: Jean Bernard enseigne le Français en 6e, 5e et 4e mais PAS en 3e → classes: 6E-A,5E-A,4E-A et sauf: 3E-A. Retourne les affectations créées.",
+    permission: "edt.gerer",
+    parametres: P({
+      enseignant: { type: "string", description: "Nom de l enseignant" },
+      matiere: { type: "string", description: "Matière" },
+      classes: { type: "string", description: "Classes concernées, séparées par virgules (libellés ou codes, ex: 6E-A, 5E-A, 4E-A). Utiliser TOUS pour toutes les classes" },
+      sauf: { type: "string", description: "Classes à EXCLURE, séparées par virgules (ex: 3E-A) — l exception granulaire" },
+    }, ["enseignant", "matiere", "classes"]),
+    executer: async (ctx, args) => {
+      const ecoleId = ctx.ecoleId!;
+      const pers = await db.personnel.findFirst({ where: { ecoleId, deletedAt: null, OR: [{ nom: { contains: String(args.enseignant), mode: "insensitive" } }, { prenom: { contains: String(args.enseignant), mode: "insensitive" } }] } });
+      if (!pers) return { erreur: `Enseignant « ${args.enseignant} » introuvable.` };
+      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
+      if (!mat) return { erreur: `Matière « ${args.matiere} » introuvable (créez-la avec creer_matieres).` };
+      const toutes = await db.classe.findMany({ where: { ecoleId } });
+      const resoudre = (liste: string) => String(liste).split(",").map((x) => x.trim()).filter(Boolean);
+      let cibleNoms = resoudre(String(args.classes));
+      const tout = cibleNoms.some((n) => /^tous|toutes$/i.test(n));
+      let classes = tout ? toutes : toutes.filter((c) => cibleNoms.some((n) => c.libelle.toUpperCase().includes(n.toUpperCase()) || c.code.toUpperCase().includes(n.toUpperCase()) || n.toUpperCase().includes(c.code.toUpperCase())));
+      const saufNoms = resoudre(String(args.sauf ?? ""));
+      const exclusions = saufNoms.length ? toutes.filter((c) => saufNoms.some((n) => c.libelle.toUpperCase().includes(n.toUpperCase()) || c.code.toUpperCase().includes(n.toUpperCase()))) : [];
+      const exclusIds = new Set(exclusions.map((c) => c.id));
+      const classesFinales = classes.filter((c) => !exclusIds.has(c.id));
+      if (classesFinales.length === 0) return { erreur: "Aucune classe correspondante." };
+      const r = await biz.affecterEnseignantCore(ctx as never, {
+        personnelId: pers.id, matiereId: mat.id,
+        classeIds: classesFinales.map((c) => c.id),
+        saufClasseIds: exclusions.map((c) => c.id),
+      } as never);
+      return {
+        enseignant: `${pers.prenom} ${pers.nom}`, matiere: mat.libelle,
+        classesDetail: classesFinales.map((c) => c.libelle),
+        exceptions: exclusions.map((c) => c.libelle),
+        affectationsCreees: (r as any).ajoutees ?? 0,
+      };
+    },
+  },
+  {
+    nom: "voir_affectations",
+    description: "Liste qui enseigne quelle matière dans quelles classes (les affectations configurées).",
+    permission: "edt.gerer",
+    parametres: P({}),
+    executer: async (ctx) => {
+      const affectations = await db.affectationEnseignant.findMany({
+        where: { ecoleId: ctx.ecoleId! },
+        include: { personnel: true, matiere: true, classe: true },
+      });
+      return affectations.map((a: any) => ({
+        enseignant: `${a.personnel.prenom} ${a.personnel.nom}`, matiere: a.matiere.libelle, classe: a.classe.libelle,
+      }));
+    },
+  },
+  {
+    nom: "regle_calcul_moyenne",
+    description: "Définit les règles de calcul des moyennes pour un cycle (trimestriel/semestriel, mode chiffres ou compétences, note plancher, arrondi).",
+    permission: "admin.saas",
+    parametres: P({
+      cycle: { type: "string", description: "Cycle (Maternelle, Primaire, Collège ou Lycée)" },
+      mode: { type: "string", enum: ["chiffre", "competences"], description: "Notes chiffrées (secondaire) ou compétences (primaire/maternelle)" },
+      notePlancher: { type: "number", description: "Note plancher 0-20 (optionnel)" },
+      arrondi: { type: "number", description: "Décimales d arrondi 0-4 (défaut 2)" },
+    }, ["cycle", "mode"]),
+    executer: async (ctx, args) => {
+      const cyc = await db.cycle.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.cycle), mode: "insensitive" } } });
+      if (!cyc) return { erreur: `Cycle « ${args.cycle} » introuvable.` };
+      await biz.majModeEvaluationCycleCore(ctx as never, cyc.id, String(args.mode));
+      const regle = await biz.majRegleCalculCore(ctx as never, cyc.id, {
+        ...(args.notePlancher !== undefined ? { notePlancher: Number(args.notePlancher) } : {}),
+        ...(args.arrondi !== undefined ? { arrondi: Number(args.arrondi) } : {}),
+      } as never);
+      return { cycle: cyc.libelle, mode: String(args.mode), regleId: (regle as any).regleId };
+    },
+  },
+];
+
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {

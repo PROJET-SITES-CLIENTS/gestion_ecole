@@ -498,3 +498,69 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
   }, { timeout: 30000, maxWait: 10000 }));
   return resultat;
 }
+
+// --------------------------------------------------------------------
+// CONFIG IA — affectations granulaires enseignant × matière × classe
+// --------------------------------------------------------------------
+
+export type AffectationInput = {
+  personnelId: string;
+  matiereId: string;
+  classeIds: string[];
+  saufClasseIds?: string[];
+};
+
+/** Affecte un enseignant à une matière sur un ensemble de classes, avec
+ *  exceptions (« partout SAUF la 3e ») et retrait propre. */
+export async function affecterEnseignantCore(ctx: Ctx, input: AffectationInput) {
+  assertPermission(ctx, 'edt.gerer');
+  const ecoleId = ctx.ecoleId!;
+  const [pers, matiere] = await Promise.all([
+    db.personnel.findUnique({ where: { id: input.personnelId } }),
+    db.matiere.findUnique({ where: { id: input.matiereId } }),
+  ]);
+  if (!pers || !matiere) throw new ActionError('Personnel ou matière introuvable.', 'INTROUVABLE');
+  assertTenant(pers.ecoleId, ctx, 'Ce personnel');
+  assertTenant(matiere.ecoleId, ctx, 'Cette matière');
+  const exclus = new Set(input.saufClasseIds ?? []);
+  const cibles = input.classeIds.filter((c) => !exclus.has(c));
+  let ajoutees = 0;
+  for (const classeId of cibles) {
+    const classe = await db.classe.findUnique({ where: { id: classeId } });
+    if (!classe || classe.ecoleId !== ecoleId) continue;
+    const existe = await db.affectationEnseignant.findUnique({
+      where: { ecoleId_personnelId_matiereId_classeId: { ecoleId, personnelId: input.personnelId, matiereId: input.matiereId, classeId } },
+    });
+    if (existe) continue;
+    await db.affectationEnseignant.create({ data: { ecoleId, personnelId: input.personnelId, matiereId: input.matiereId, classeId } });
+    ajoutees++;
+  }
+  await logAction(db, ecoleId, ctx.utilisateurId, 'affectation.enseignant', 'affectation_enseignant', undefined, {
+    personnel: `${pers.prenom} ${pers.nom}`, matiere: matiere.libelle, classes: cibles.length, sauf: exclus.size, ajoutees,
+  } as never);
+  return { ajoutees, classes: cibles.length, exclusions: exclus.size };
+}
+
+/** Retire une affectation précise. */
+export async function retirerAffectationCore(ctx: Ctx, affectationId: string) {
+  assertPermission(ctx, 'edt.gerer');
+  const a = await db.affectationEnseignant.findUnique({ where: { id: affectationId } });
+  if (!a) throw new ActionError('Affectation introuvable.', 'INTROUVABLE');
+  assertTenant(a.ecoleId, ctx, 'Cette affectation');
+  await db.affectationEnseignant.delete({ where: { id: affectationId } });
+  await logAction(db, a.ecoleId, ctx.utilisateurId, 'affectation.retrait', 'affectation_enseignant', affectationId, {});
+  return { affectationId };
+}
+
+/** Supprime une classe VIDE uniquement (sécurité : jamais de classe avec élèves). */
+export async function supprimerClasseCore(ctx: Ctx, classeId: string) {
+  assertPermission(ctx, 'admin.saas');
+  const classe = await db.classe.findUnique({ where: { id: classeId }, include: { _count: { select: { eleves: true } } } });
+  if (!classe) throw new ActionError('Classe introuvable.', 'INTROUVABLE');
+  assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  const nb = (classe as any)._count?.eleves ?? 0;
+  if (nb > 0) throw new ActionError(`Impossible : ${nb} élève(s) sont inscrits dans cette classe. Transférez-les d'abord.`, 'CLASSE_NON_VIDE');
+  await db.classe.delete({ where: { id: classeId } });
+  await logAction(db, classe.ecoleId, ctx.utilisateurId, 'classe.suppression', 'classe', classeId, { libelle: classe.libelle });
+  return { classeId };
+}
