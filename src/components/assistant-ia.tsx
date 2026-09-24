@@ -5,13 +5,39 @@
 // Reconnaissance vocale (Web Speech API) + synthèse vocale des réponses.
 // Flottant, accessible depuis tous les portails — le serveur limite
 // l'agent aux permissions réelles de la session.
+// FIX: Le contexte technique (tool_calls) est conservé dans l'historique
+// pour éviter l'amnésie de l'IA lors des conversations multi-tours.
 // ====================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, X, Send, Mic, MicOff, Volume2, VolumeX, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { demanderAssistant } from '@/app/actions/ia';
 
-type Tour = { role: 'user' | 'assistant'; content: string; actions?: Array<{ outil: string; resume: string; ok: boolean }> };
+// Tour affiché à l'écran (le champ outils_ctx est technique, jamais affiché)
+type Tour = {
+  role: 'user' | 'assistant';
+  content: string;
+  actions?: Array<{ outil: string; resume: string; ok: boolean }>;
+  // Contexte technique conservé pour renvoyer au serveur l'historique complet
+  outils_ctx?: Array<{ role: string; content: string; tool_call_id?: string; name?: string; tool_calls?: unknown[] }>;
+};
+
+// Construit la liste de messages à envoyer au serveur (incluant le contexte technique)
+function versMessagesServeur(tours: Tour[]): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (const t of tours) {
+    // Si ce tour assistant a du contexte technique (tool_calls), on l'injecte AVANT le message visible
+    if (t.role === 'assistant' && t.outils_ctx && t.outils_ctx.length > 0) {
+      for (const ctx of t.outils_ctx) {
+        // On passe le contexte brut comme un message encodé JSON pour que le serveur le reconstruise
+        msgs.push({ role: ctx.role as 'user' | 'assistant', content: ctx.content });
+      }
+    } else {
+      msgs.push({ role: t.role, content: t.content });
+    }
+  }
+  return msgs;
+}
 
 export default function AssistantIA({ prenom }: { prenom?: string }) {
   const [ouvert, setOuvert] = useState(false);
@@ -44,7 +70,8 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
     setTours([...nouvelleHistorique, { role: 'assistant', content: '…' }]);
     setEnCours(true);
     try {
-      const r = await demanderAssistant(nouvelleHistorique.map((t) => ({ role: t.role, content: t.content })));
+      // On envoie l'historique COMPLET incluant le contexte technique pour éviter l'amnésie
+      const r = await demanderAssistant(versMessagesServeur(nouvelleHistorique));
       const reponse = r && r.ok
         ? (r as any).reponse ?? ''
         : (r as any)?.error ?? 'Erreur inattendue.';

@@ -140,13 +140,13 @@ async function main() {
       { code: "infirmier", libelle: "Infirmier(ère)" },
     ];
     const MATRICE: Record<string, string[]> = {
-      direction: ["eleves.lire","eleves.ecrire","bulletins.valider","finances.voir","finances.ecrire","finances.valider","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer"],
-      enseignant: ["eleves.lire","notes.saisir","presences.saisir","vie_scolaire.gerer","edt.gerer"],
-      comptabilite: ["finances.voir","finances.ecrire","finances.valider"],
+      direction: ["eleves.lire","eleves.ecrire","notes.saisir","presences.saisir","bulletins.valider","finances.voir","finances.ecrire","finances.valider","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer"],
+      enseignant: ["eleves.lire","notes.saisir","presences.saisir","vie_scolaire.gerer","edt.gerer","communication.envoyer"],
+      comptabilite: ["eleves.lire","finances.voir","finances.ecrire","finances.valider"],
       surveillant: ["eleves.lire","presences.saisir","vie_scolaire.gerer","securite.gerer"],
       rh: ["eleves.lire","rh.gerer","communication.envoyer"],
-      censeur: ["eleves.lire","bulletins.valider","presences.saisir","vie_scolaire.gerer","examens.gerer","edt.gerer","protection.gerer"],
-      secretariat: ["eleves.lire","eleves.ecrire","communication.envoyer"],
+      censeur: ["eleves.lire","bulletins.valider","notes.saisir","presences.saisir","vie_scolaire.gerer","examens.gerer","edt.gerer","protection.gerer"],
+      secretariat: ["eleves.lire","eleves.ecrire","presences.saisir","finances.voir","communication.envoyer"],
       assistant_direction: ["eleves.lire","eleves.ecrire","presences.saisir","vie_scolaire.gerer","communication.envoyer"],
       infirmier: ["eleves.lire","sante.gerer"],
     };
@@ -1678,6 +1678,8 @@ async function main() {
   await db.rolePermission.createMany({ data: [
     { roleId: roleDirection.id, permissionId: byCode("eleves.lire") },
     { roleId: roleDirection.id, permissionId: byCode("eleves.ecrire") },
+    { roleId: roleDirection.id, permissionId: byCode("notes.saisir") },       // FIX: la direction peut noter via IA
+    { roleId: roleDirection.id, permissionId: byCode("presences.saisir") },   // FIX: la direction peut faire l'appel via IA
     { roleId: roleDirection.id, permissionId: byCode("bulletins.valider") },
     { roleId: roleDirection.id, permissionId: byCode("finances.voir") },
     { roleId: roleDirection.id, permissionId: byCode("finances.ecrire") },
@@ -1698,6 +1700,8 @@ async function main() {
     { roleId: roleEnseignant.id, permissionId: byCode("presences.saisir") },
     { roleId: roleEnseignant.id, permissionId: byCode("vie_scolaire.gerer") },
     { roleId: roleEnseignant.id, permissionId: byCode("edt.gerer") },
+    { roleId: roleEnseignant.id, permissionId: byCode("communication.envoyer") },
+    { roleId: roleComptable.id, permissionId: byCode("eleves.lire") },        // FIX: le comptable peut chercher un élève pour encaisser
     { roleId: roleComptable.id, permissionId: byCode("finances.voir") },
     { roleId: roleComptable.id, permissionId: byCode("finances.ecrire") },
     { roleId: roleComptable.id, permissionId: byCode("finances.valider") },
@@ -1709,6 +1713,7 @@ async function main() {
     { roleId: roleRh.id, permissionId: byCode("rh.gerer") },
     { roleId: roleRh.id, permissionId: byCode("communication.envoyer") },
     { roleId: roleCenseur.id, permissionId: byCode("eleves.lire") },
+    { roleId: roleCenseur.id, permissionId: byCode("notes.saisir") },         // FIX: le censeur peut générer les bulletins via IA
     { roleId: roleCenseur.id, permissionId: byCode("presences.saisir") },
     { roleId: roleCenseur.id, permissionId: byCode("vie_scolaire.gerer") },
     { roleId: roleCenseur.id, permissionId: byCode("edt.gerer") },
@@ -1717,6 +1722,8 @@ async function main() {
     { roleId: roleCenseur.id, permissionId: byCode("protection.gerer") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.ecrire") },
+    { roleId: roleSecretariat.id, permissionId: byCode("presences.saisir") },  // FIX: peut consulter les absences du jour
+    { roleId: roleSecretariat.id, permissionId: byCode("finances.voir") },     // FIX: peut voir les impayés d'un élève
     { roleId: roleSecretariat.id, permissionId: byCode("communication.envoyer") },
     { roleId: roleAssistant.id, permissionId: byCode("eleves.lire") },
     { roleId: roleAssistant.id, permissionId: byCode("eleves.ecrire") },

@@ -30,7 +30,7 @@ export async function demanderAssistant(
     const portail = portailDuCompte(session.utilisateur.type, session.permissions, session.roles);
     const r = await invoquerAssistant({
       ctx: ctx as never,
-      messages: messages.slice(-14), // fenêtre de conversation
+      messages: messages.slice(-30), // fenêtre élargie : nécessaire pour les workflows multi-étapes
       nomUtilisateur: `${session.utilisateur.prenom ?? ''} ${session.utilisateur.nom ?? ''}`.trim(),
       portail,
     });
