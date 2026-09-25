@@ -21,7 +21,7 @@ export type ParametreOutil = {
 export type OutilIA = {
   nom: string;
   description: string;
-  permission: string; // permission requise — filtre le catalogue par session
+  permission: string | string[]; // permission requise — filtre le catalogue par session
   parametres: ParametreOutil;
   executer: (ctx: Ctx, args: Record<string, unknown>) => Promise<unknown>;
 };
@@ -36,7 +36,7 @@ const outilsLecture: OutilIA[] = [
   {
     nom: 'statistiques_ecole',
     description: "Vue d'ensemble de l'école : effectifs total/garçons/filles par classe, nombre de classes et de personnels, année scolaire active.",
-    permission: 'eleves.lire',
+    permission: ['eleves.lire', 'finances.voir'],
     parametres: P({}),
     executer: async (ctx) => {
       const ecoleId = ctx.ecoleId!;
@@ -60,7 +60,7 @@ const outilsLecture: OutilIA[] = [
   {
     nom: 'rechercher_eleve',
     description: "Recherche un élève par nom, prénom ou matricule. Retourne identité, classe, statut, et identifiant pour les autres outils.",
-    permission: 'eleves.lire',
+    permission: ['eleves.lire', 'finances.voir', 'finances.ecrire', 'vie_scolaire.voir', 'notes.voir', 'notes.saisir'],
     parametres: P({ q: { type: 'string', description: 'Nom, prénom ou matricule (extrait)' } }, ['q']),
     executer: async (ctx, args) => {
       const q = String(args.q ?? '').trim();
@@ -78,7 +78,7 @@ const outilsLecture: OutilIA[] = [
   {
     nom: 'profil_eleve',
     description: "Profil COMPLET d'un élève : identité, classe, ses notes par évaluation, ses moyennes par matière, ses absences/retards, ses incidents. (Le volet financier n'est inclus que si la session a finances.voir.)",
-    permission: 'eleves.lire',
+    permission: ['eleves.lire', 'finances.voir', 'vie_scolaire.voir'],
     parametres: P({ eleveId: { type: 'string', description: 'Identifiant de l\'élève (via rechercher_eleve)' } }, ['eleveId']),
     executer: async (ctx, args) => {
       const eleveId = String(args.eleveId);
@@ -111,20 +111,27 @@ const outilsLecture: OutilIA[] = [
     },
   },
   {
-    nom: 'impayes_ecole',
-    description: 'Liste des échéances impayées/partielles par classe et par élève, avec restant dû total (relances possibles).',
+    nom: 'suivi_paiements_scolarite',
+    description: "Liste des échéances de frais (scolarité, cantine...) selon leur statut (impayé, payé, etc.) par classe et par élève.",
     permission: 'finances.voir',
-    parametres: P({ classe: { type: 'string', description: 'Filtre optionnel : libellé de classe' } }),
+    parametres: P({
+      classe: { type: 'string', description: 'Filtre optionnel : libellé de classe' },
+      statut: { type: 'string', description: 'Filtre optionnel de statut (ex: payee, impayee, partiel). Par défaut: impayee, partiel' }
+    }),
     executer: async (ctx, args) => {
-      const where: any = { statut: { in: ['impayee', 'partiel'] }, eleve: { ecoleId: ctx.ecoleId, deletedAt: null } };
+      const statutsRecherches = args.statut
+        ? [String(args.statut).toLowerCase()]
+        : ['impayee', 'partiel'];
+      const where: any = { statut: { in: statutsRecherches }, eleve: { ecoleId: ctx.ecoleId, deletedAt: null } };
       if (args.classe) where.eleve.classeActuelle = { libelle: { contains: String(args.classe) } };
       const eches = await db.echeanceFrais.findMany({ where, include: { eleve: { include: { classeActuelle: true } }, frais: true }, orderBy: { dateEcheance: 'asc' }, take: 100 });
       return {
-        totalRestant: eches.reduce((s, e) => s + (e.montant - e.remise - e.montantPaye), 0),
+        totalMontants: eches.reduce((s, e) => s + (e.montant - e.remise - e.montantPaye), 0),
+        totalPaye: eches.reduce((s, e) => s + e.montantPaye, 0),
         nb: eches.length,
         lignes: eches.map((e) => ({
           eleve: `${e.eleve.prenom} ${e.eleve.nom}`, classe: e.eleve.classeActuelle?.libelle ?? '—',
-          frais: e.frais?.libelle, statut: e.statut, restant: e.montant - e.remise - e.montantPaye, echeance: e.dateEcheance,
+          frais: e.frais?.libelle, statut: e.statut, montant_initial: e.montant, restant_du: e.montant - e.remise - e.montantPaye, paye: e.montantPaye, echeance: e.dateEcheance,
         })),
       };
     },
@@ -1024,7 +1031,7 @@ const outilsAction: OutilIA[] = [
     description: "Applique une réduction/remise sur une échéance de scolarité (le montant doit être en centimes !).",
     permission: 'finances.ecrire',
     parametres: P({
-       echeanceId: { type: 'string', description: 'ID de l\'échéance (obtenu via profil_eleve ou impayes_ecole)' },
+       echeanceId: { type: 'string', description: 'ID de l\'échéance (obtenu via profil_eleve ou suivi_paiements_scolarite)' },
        remiseCentimes: { type: 'number', description: 'Montant de la remise en CENTIMES (ex: 5000 FCFA = 500000)' },
        motif: { type: 'string', description: 'Motif de la remise (ex: Bourse au mérite, Fratrie)' }
     }, ['echeanceId', 'remiseCentimes', 'motif']),
@@ -1078,7 +1085,7 @@ const outilsAction: OutilIA[] = [
     description: "Annule purement et simplement une échéance due par un élève (ex: abandon, erreur).",
     permission: 'finances.ecrire',
     parametres: P({
-       echeanceId: { type: 'string', description: 'ID de l\'échéance (obtenu via profil_eleve ou impayes_ecole)' },
+       echeanceId: { type: 'string', description: 'ID de l\'échéance (obtenu via profil_eleve ou suivi_paiements_scolarite)' },
        motif: { type: 'string', description: 'Motif de l\'annulation' }
     }, ['echeanceId', 'motif']),
     executer: async (ctx, args) => {
@@ -1617,7 +1624,12 @@ export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...ou
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
-  return CATALOGUE_IA.filter((t) => permissions.has(t.permission));
+  return CATALOGUE_IA.filter((t) => {
+    if (Array.isArray(t.permission)) {
+      return t.permission.some((p) => permissions.has(p));
+    }
+    return permissions.has(t.permission as string);
+  });
 }
 
 /** Format OpenAI tools. */

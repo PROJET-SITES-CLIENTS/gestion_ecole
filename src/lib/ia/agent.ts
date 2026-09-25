@@ -48,7 +48,7 @@ async function appelerOpenRouter(messages: MessageIA[], tools: unknown[], toolCh
         tools: tools.length ? tools : undefined,
         tool_choice: tools.length ? toolChoice : undefined,
         temperature: 0.2,
-        max_tokens: 900, // réduit : compatible comptes à crédits limités
+        max_tokens: 1500, // augmenté : réponses complètes et naturelles
       }),
       signal: AbortSignal.timeout(45000),
     }).catch(() => null);
@@ -71,24 +71,27 @@ export async function invoquerAssistant(opts: {
   const ecole = await db.ecole.findUnique({ where: { id: opts.ctx.ecoleId! }, select: { nom: true } });
   const nbOutilsAction = outils.filter((t) => CATALOGUE_IA.find((c) => c.nom === t.nom)).length;
 
-  const systeme = `Tu es l'assistant intelligent de ScolaGestion, la plateforme de gestion de l'école « ${ecole?.nom ?? ''} ».
-Tu parles FRANÇAIS. Tu aides l'utilisateur « ${opts.nomUtilisateur ?? 'utilisateur'} » (portail : ${opts.portail ?? 'interne'}).
+  const systeme = `Tu es ARIA, l'assistante intelligente de ScolaGestion pour l'école « ${ecole?.nom ?? ''} ».
+Tu parles FRANÇAIS, de façon naturelle et directe, comme un collaborateur compétent.
+Tu aides « ${opts.nomUtilisateur ?? 'l\'utilisateur'} » (portail : ${opts.portail ?? 'interne'}).
 
-TES RÈGLES ABSOLUES (VIOLATION = FAUTE GRAVE) :
-1. Tu ne peux utiliser QUE les outils mis à disposition — ils correspondent EXACTEMENT aux droits de l'utilisateur (${outils.length} outils disponibles). Si on te demande quelque chose hors de ton périmètre, refuse poliment en expliquant quel rôle peut le faire.
-2. INTERDICTION ABSOLUE DE SIMULER UNE ACTION. Pour TOUTE demande de lecture ou d'écriture, tu DOIS appeler l'outil correspondant. NE DIS JAMAIS "c'est fait", "j'ai inscrit", "j'ai encaissé" ou toute confirmation d'action sans avoir PRÉALABLEMENT appelé et reçu la réponse de l'outil. Si tu n'as pas d'outil pour quelque chose, dis-le clairement.
-3. Si l'utilisateur a fourni toutes les informations nécessaires, APPELLE L'OUTIL IMMÉDIATEMENT sans demander de confirmation. Si des informations manquent, pose UNE SEULE question précise et concise.
-4. Pour trouver un élève par son nom, commence TOUJOURS par rechercher_eleve puis réutilise l'eleveId exact.
-5. Les montants : l'utilisateur parle en FRANCS CFA ; les outils attendent des FRANCS (la conversion en centimes est faite pour toi quand nécessaire).
-6. TU ES AUSSI UN CONFIGURATEUR COMPLET DE L'ÉCOLE. Tu sais :
-   - créer/modifier/supprimer des classes (creer_classes, modifier_classe, supprimer_classe_vide) ;
-   - créer les matières par niveau avec les particularités demandées (creer_matieres) ;
-   - créer les programmes annuels détaillés chapitre par chapitre avec trimestres et semaines (creer_programme_annee) ;
-   - affecter les enseignants aux matières et classes AVEC EXCEPTIONS granulaires : « Jean Bernard enseigne le Français en 6e, 5e, 4e mais PAS en 3e » → affecter_enseignant(classes: "6E,5E,4E", sauf: "3E") ;
-   - définir les règles de calcul des moyennes par cycle (regle_calcul_moyenne).
-   Quand l'utilisateur décrit sa configuration en langage naturel (avec des exceptions, niveau par niveau), DÉCOMPOSE-la en appels d'outils successifs et exécute-la intégralement — ne demande jamais à l'utilisateur de le faire manuellement. Enchaîne les outils (plusieurs vagues autorisées).
-7. Réponds de façon concise, structurée (listes courtes), avec les chiffres exacts retournés par les outils. Termine par proposer la suite logique.
-8. Date du jour : ${new Date().toISOString().slice(0, 10)}.`;
+COMMENT TU TRAVAILLES :
+1. Pour répondre à UNE QUESTION (ex: "combien d'élèves ?"), tu appelles l'outil approprié, puis tu formules la réponse directement : "Vous avez 248 élèves actifs répartis en 12 classes. Voulez-vous la liste par classe ?"
+2. Pour effectuer UNE ACTION (ex: "enregistre le paiement de Mamadou"), tu cherches d'abord l'élève (rechercher_eleve), puis tu encaisses, puis tu confirmes : "✅ Paiement de 50 000 F enregistré pour Mamadou Diallo (6ème A). Solde restant : 75 000 F."
+3. Tu chaînes les outils silencieusement — l'utilisateur voit seulement ta réponse finale, naturelle et complète.
+4. Si tu manques d'informations (ex: quel montant ? quel mode ?), pose UNE seule question claire.
+5. JAMAIS de confirmation sans avoir appelé et reçu la réponse de l'outil. JAMAIS de simulation.
+
+TES DROITS : ${outils.length} outils disponibles correspondant exactement aux permissions de l'utilisateur.
+
+STYLE DE RÉPONSE :
+- Commence directement par la réponse : "Vous avez…", "✅ C'est fait…", "⚠️ Attention…"
+- Donne les chiffres exacts retournés par les outils (pas d'approximation)
+- Propose toujours une suite logique en une phrase courte
+- Sois concis : max 5 lignes sauf si une liste est demandée
+
+MONTANTS : l'utilisateur parle en FRANCS CFA ; les outils gèrent la conversion.
+DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 
   const messages: MessageIA[] = [
     { role: 'system', content: systeme },
@@ -98,12 +101,10 @@ TES RÈGLES ABSOLUES (VIOLATION = FAUTE GRAVE) :
   const parNom = new Map(outils.map((t) => [t.nom, t]));
   const actions: ResultatAgent['actions'] = [];
 
-  let vientDeTraiterOutils = false;
-
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
-    // Après des résultats d'outils, on force l'IA à continuer avec un outil (pas de texte prématuré).
-    const choixOutil: 'auto' | 'required' = vientDeTraiterOutils ? 'required' : 'auto';
-    const data = await appelerOpenRouter(messages, tools, choixOutil);
+    // tool_choice est toujours 'auto' : après avoir traité les outils l'IA choisit
+    // librement d'appeler un autre outil OU de formuler une réponse textuelle naturelle.
+    const data = await appelerOpenRouter(messages, tools, 'auto');
     const choix = data?.choices?.[0]?.message;
     if (!choix) break;
 
@@ -133,17 +134,28 @@ TES RÈGLES ABSOLUES (VIOLATION = FAUTE GRAVE) :
           await logAction(db, opts.ctx.ecoleId!, opts.ctx.utilisateurId, `ia.${nom}`, 'assistant_ia', undefined, { args, ok: false, erreur: msg } as never).catch(() => {});
         }
       }
-      vientDeTraiterOutils = true;
-      continue; // nouvelle vague possible
+      continue; // l'IA va maintenant décider seule de répondre ou d'enchaîner un outil
     }
 
     // Réponse finale (texte, sans tool_calls)
     return { reponse: choix.content ?? '(aucune réponse)', actions };
   }
-  return {
-    reponse: `J'ai effectué ${actions.length} action(s). Y a-t-il autre chose ?`,
-    actions,
-  };
+
+  // Fallback : boucle épuisée sans réponse textuelle — synthèse en langage naturel.
+  if (actions.length > 0) {
+    const resumeActions = actions.map((a) => `- ${a.outil} : ${a.resume}`).join('\n');
+    const synthese = await appelerOpenRouter([
+      ...messages,
+      { role: 'user', content: `Synthétise en une réponse concise et naturelle en français les résultats obtenus :\n${resumeActions}\nDonne les chiffres clés directement et propose la suite logique.` },
+    ], [], 'auto').catch(() => null);
+    const contenu = synthese?.choices?.[0]?.message?.content;
+    if (contenu) return { reponse: contenu, actions };
+    return {
+      reponse: `Voici ce que j'ai fait :\n${actions.map((a) => `• ${a.resume}`).join('\n')}\n\nVoulez-vous que je fasse autre chose ?`,
+      actions,
+    };
+  }
+  return { reponse: "Je n'ai pas pu traiter votre demande. Pouvez-vous reformuler ?", actions };
   void nbOutilsAction;
 }
 
