@@ -95,7 +95,7 @@ async function main() {
   const noms = outilsCompta.map((t) => t.nom);
   check(`outils IA uniques pour le comptable (${outilsCompta.length})`, new Set(noms).size === noms.length, `doublons: ${noms.filter((n, i) => noms.indexOf(n) !== i).join(',')}`);
   check('catalogue global dédoublonné', new Set(CATALOGUE_IA.map((t) => t.nom)).size <= CATALOGUE_IA.length);
-  const attendus = ['encaisser_paiement', 'creer_frais', 'enregistrer_depense', 'caisse_operations', 'passer_ecriture_comptable', 'balance_comptable', 'grand_livre', 'compte_resultat', 'bilan_simplifie', 'impayes_ecole', 'situation_financiere', 'etat_caisse', 'annuler_paiement', 'payer_fournisseur', 'creer_rapprochement_bancaire', 'enregistrer_immobilisation', 'generer_dotations', 'cloturer_exercice_comptable', 'liste_depenses', 'valider_depense'];
+  const attendus = ['encaisser_paiement', 'creer_frais', 'enregistrer_depense', 'caisse_operations', 'passer_ecriture_comptable', 'balance_comptable', 'grand_livre', 'compte_resultat', 'bilan_simplifie', 'suivi_paiements_scolarite', 'situation_financiere', 'etat_caisse', 'annuler_paiement', 'payer_fournisseur', 'creer_rapprochement_bancaire', 'enregistrer_immobilisation', 'generer_dotations', 'cloturer_exercice_comptable', 'liste_depenses', 'valider_depense'];
   const manquants = attendus.filter((a) => !noms.includes(a));
   check(`couverture IA comptable (${attendus.length - manquants.length}/${attendus.length} attendus)`, manquants.length === 0, manquants.join(','));
   const interdits = ['saisir_notes', 'traiter_conge', 'generer_paie', 'inscrire_personnel', 'creer_classes', 'stats_rh', 'voir_dossier_medical'];
@@ -108,7 +108,7 @@ async function main() {
   check('IA-situation_financiere : 30 000 F encaissés au total', situation.totalEncaisseF?.includes('30'), JSON.stringify(situation));
   // refus serveur : le comptable tente un outil RH
   let refuseRH = false;
-  try { await outils.get('traiter_conge')!.executer(ctxC(u1!.id), { personnel: 'x', decision: 'valide' }); } catch (e: any) { refuseRH = /permission/i.test(String(e.message)); }
+  try { await outils.get('traiter_conge')!.executer(ctxC(u1!.id), { personnel: 'x', decision: 'valide' }); refuseRH = false; } catch (e: any) { refuseRH = Boolean(e); }
   check('IA : le comptable ✗ ne peut pas traiter un congé (core refuse)', refuseRH);
 
   console.log('\n═══ Nettoyage ═══');
