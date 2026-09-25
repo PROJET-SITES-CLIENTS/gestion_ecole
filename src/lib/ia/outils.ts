@@ -527,7 +527,36 @@ const outilsAction: OutilIA[] = [
       return { ...r, classe: classe.libelle };
     },
   },
-  {
+    {
+      nom: 'inscrire_personnel',
+      description: "Enregistre un nouvel employ� ou enseignant (personnel) dans l'�tablissement. Ne JAMAIS utiliser inscrire_eleve pour un enseignant.",
+      permission: 'rh.gerer',
+      parametres: P({
+        nom: { type: 'string', description: 'Nom de famille' },
+        prenom: { type: 'string', description: 'Pr�nom' },
+        email: { type: 'string', description: 'Email (optionnel, permet de cr�er un compte)' },
+        telephone: { type: 'string', description: 'T�l�phone (optionnel)' },
+        dateEmbauche: { type: 'string', description: 'Date ISO AAAA-MM-JJ' },
+        typeContrat: { type: 'string', description: 'Type', enum: ['CDI', 'CDD', 'vacataire', 'stagiaire'] },
+        salaireMensuel: { type: 'number', description: 'Salaire brut mensuel en FCFA (optionnel)' },
+        roleCode: { type: 'string', description: 'R�le m�tier', enum: ['enseignant', 'surveillant', 'secretaire', 'comptabilite', 'rh', 'direction'] },
+      }, ['nom', 'prenom', 'dateEmbauche', 'roleCode']),
+      executer: async (ctx, args) => {
+        return biz.creerPersonnelCore(ctx as never, ctx.ecoleId!, {
+          nom: String(args.nom),
+          prenom: String(args.prenom),
+          email: args.email ? String(args.email) : undefined,
+          telephone: args.telephone ? String(args.telephone) : undefined,
+          dateEmbauche: new Date(String(args.dateEmbauche)),
+          typeContrat: args.typeContrat ? String(args.typeContrat) : undefined,
+          salaireBrut: args.salaireMensuel ? Math.round(Number(args.salaireMensuel) * 100) : undefined,
+          roleCode: String(args.roleCode),
+          creerCompte: !!args.email,
+          motDePasseInitial: args.email ? 'Scola' + new Date().getFullYear() + '!' : undefined,
+        } as never);
+      },
+    },
+    {
     nom: 'saisir_notes',
     description: "Enregistre les notes d'une évaluation (copies corrigées). Fournir l'intitulé exact de l'évaluation et la liste élève→note.",
     permission: 'notes.saisir',
