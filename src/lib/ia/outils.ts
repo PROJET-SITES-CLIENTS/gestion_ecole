@@ -35,11 +35,11 @@ const P = (properties: Record<string, { type: string; description?: string; enum
 const outilsLecture: OutilIA[] = [   
     {
       nom: 'liste_tous_personnels',
-      description: "Retourne la liste globale de tout le personnel (enseignants, surveillants, direction, etc.). Tr�s utile quand on demande 'liste moi tous les enseignants'.",
+      description: "Retourne la liste globale de tout le personnel (enseignants, surveillants, direction, etc.). Très utile quand on demande 'liste moi tous les enseignants'.",
       permission: ['rh.gerer', 'eleves.lire'],
-      parametres: { type: 'object', properties: { role: { type: 'string', description: 'Optionnel: filtre par r�le (ex: enseignant)' } } },
+      parametres: { type: 'object', properties: { role: { type: 'string', description: 'Optionnel: filtre par rôle (ex: enseignant)' } } },
       executer: async (ctx, args) => {
-        let where = { ecoleId: ctx.ecoleId, deletedAt: null };
+        let where: any = { ecoleId: ctx.ecoleId, deletedAt: null };
         if (args.role) {
           where.roles = { some: { role: { code: String(args.role) } } };
         }
@@ -60,9 +60,9 @@ const outilsLecture: OutilIA[] = [
     },
     {
     nom: 'liste_tous_eleves',
-    description: "Retourne la liste globale de tous les �l�ves inscrits dans l'�cole (nom, pr�nom, classe, statut, matricule). Tr�s utile quand on demande 'liste moi tous les �l�ves'.",
+    description: "Retourne la liste globale de tous les élèves inscrits dans l'école (nom, prenom, classe, statut, matricule). Très utile quand on demande 'liste moi tous les élèves'.",
     permission: ['eleves.lire', 'finances.voir', 'vie_scolaire.voir'],
-    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Limite de r�sultats, d�faut 100' } } },
+    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Limite de résultats, defaut 100' } } },
     executer: async (ctx, args) => {
       const limit = args.limit ? Number(args.limit) : 100;
       const eleves = await db.eleve.findMany({
@@ -75,13 +75,13 @@ const outilsLecture: OutilIA[] = [
         totalFiltre: eleves.length,
         limite: limit,
         eleves: eleves.map(e => ({
-          id: e.id, matricule: e.matricule, nom: e.nom, prenom: e.prenom, classe: e.classeActuelle?.libelle ?? 'Non affect�', statut: e.statut
+          id: e.id, matricule: e.matricule, nom: e.nom, prenom: e.prenom, classe: e.classeActuelle?.libelle ?? 'Non affecte', statut: e.statut
         }))
       };
     }
   },   {
     nom: 'etat_caisse',
-    description: "Affiche l'�tat actuel de la tr�sorerie et le d�tail des caisses (entr�es, sorties, soldes).",
+    description: "Affiche l'etat actuel de la tresorerie et le detail des caisses (entrees, sorties, soldes).",
     permission: 'finances.voir',
     parametres: { type: 'object', properties: {} },
     executer: async (ctx) => {
@@ -90,45 +90,45 @@ const outilsLecture: OutilIA[] = [
   },
   {
     nom: 'balance_comptable',
-    description: "G�n�re la balance comptable (Totaux D�bit/Cr�dit et Soldes par compte) pour v�rifier l'�quilibre.",
+    description: "Genere la balance comptable (Totaux Debit/Credit et Soldes par compte) pour verifier l'equilibre.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par d�faut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.balanceComptableCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'compte_resultat',
-    description: "G�n�re le compte de r�sultat d�taill� (Charges classe 6, Produits classe 7) et donne le b�n�fice/perte.",
+    description: "Genere le compte de résultat detaille (Charges classe 6, Produits classe 7) et donne le benefice/perte.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par d�faut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.compteResultatCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'bilan_simplifie',
-    description: "G�n�re le Bilan Comptable simplifi� (Actif, Passif, Tr�sorerie, R�sultat de l'exercice).",
+    description: "Genere le Bilan Comptable simplifie (Actif, Passif, Trèsorerie, Resultat de l'exercice).",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par d�faut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.bilanSimplifieCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'grand_livre',
-    description: "Recherche toutes les �critures pass�es sur un num�ro de compte SYSCOHADA pr�cis.",
+    description: "Recherche toutes les ecritures passees sur un numero de compte SYSCOHADA precis.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'Num�ro de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
+    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'Numero de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
     executer: async (ctx, args) => {
       return biz.grandLivreCore(ctx as never, String(args.numeroCompte));
     }
   },
   {
     nom: 'liste_paiements_recus',
-    description: "Liste chronologique des paiements physiques encaiss�s (esp�ces, ch�ques, etc). Pour voir les encaissements.",
+    description: "Liste chronologique des paiements physiques encaisses (especes, cheques, etc). Pour voir les encaissements.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Nombre max (d�faut 20)' } } },
+    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Nombre max (defaut 20)' } } },
     executer: async (ctx, args) => {
       const paiements = await db.paiement.findMany({
         where: { ecoleId: ctx.ecoleId!, annule: false },
@@ -139,7 +139,7 @@ const outilsLecture: OutilIA[] = [
       return {
         totalFiltre: paiements.length,
         paiements: paiements.map(p => ({
-          id: p.id, date: p.datePaiement, mode: p.modePaiement, montant_F: (p.montant/100)+' F', reference: p.referenceTransaction, eleve: p.eleve ? p.eleve.prenom+' '+p.eleve.nom : 'Non rattach�'
+          id: p.id, date: p.datePaiement, mode: p.modePaiement, montant_F: (p.montant/100)+' F', reference: p.referenceTransaction, eleve: p.eleve ? p.eleve.prenom+' '+p.eleve.nom : 'Non rattache'
         }))
       };
     }
@@ -555,17 +555,17 @@ const outilsAction: OutilIA[] = [
   },
     {
       nom: 'inscrire_personnel',
-      description: "Enregistre un nouvel employ� ou enseignant (personnel) dans l'�tablissement. Ne JAMAIS utiliser inscrire_eleve pour un enseignant.",
+      description: "Enregistre un nouvel employe ou enseignant (personnel) dans l'etablissement. Ne JAMAIS utiliser inscrire_eleve pour un enseignant.",
       permission: 'rh.gerer',
       parametres: P({
         nom: { type: 'string', description: 'Nom de famille' },
-        prenom: { type: 'string', description: 'Pr�nom' },
-        email: { type: 'string', description: 'Email (optionnel, permet de cr�er un compte)' },
-        telephone: { type: 'string', description: 'T�l�phone (optionnel)' },
+        prenom: { type: 'string', description: 'Prenom' },
+        email: { type: 'string', description: 'Email (optionnel, permet de creer un compte)' },
+        telephone: { type: 'string', description: 'Telephone (optionnel)' },
         dateEmbauche: { type: 'string', description: 'Date ISO AAAA-MM-JJ' },
         typeContrat: { type: 'string', description: 'Type', enum: ['CDI', 'CDD', 'vacataire', 'stagiaire'] },
         salaireMensuel: { type: 'number', description: 'Salaire brut mensuel en FCFA (optionnel)' },
-        roleCode: { type: 'string', description: 'R�le m�tier', enum: ['enseignant', 'surveillant', 'secretaire', 'comptabilite', 'rh', 'direction'] },
+        roleCode: { type: 'string', description: 'Rele metier', enum: ['enseignant', 'surveillant', 'secretaire', 'comptabilite', 'rh', 'direction'] },
       }, ['nom', 'prenom', 'dateEmbauche', 'roleCode']),
       executer: async (ctx, args) => {
         return biz.creerPersonnelCore(ctx as never, ctx.ecoleId!, {
@@ -1790,11 +1790,16 @@ export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...ou
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
+  // DÉDOUBLONNÉ par nom : les API de function calling exigent des noms UNIQUES
+  const vus = new Set<string>();
   return CATALOGUE_IA.filter((t) => {
-    if (Array.isArray(t.permission)) {
-      return t.permission.some((p) => permissions.has(p));
-    }
-    return permissions.has(t.permission as string);
+    const autorise = Array.isArray(t.permission)
+      ? t.permission.some((p) => permissions.has(p))
+      : permissions.has(t.permission as string);
+    if (!autorise) return false;
+    if (vus.has(t.nom)) return false; // doublon : la 1re définition gagne
+    vus.add(t.nom);
+    return true;
   });
 }
 
