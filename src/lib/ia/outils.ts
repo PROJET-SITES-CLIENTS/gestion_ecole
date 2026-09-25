@@ -32,7 +32,71 @@ const P = (properties: Record<string, { type: string; description?: string; enum
 // LECTURE ‚Äî information (permissions en lecture)
 // --------------------------------------------------------------------
 
-const outilsLecture: OutilIA[] = [
+const outilsLecture: OutilIA[] = [   {
+    nom: 'etat_caisse',
+    description: "Affiche l'Ètat actuel de la trÈsorerie et le dÈtail des caisses (entrÈes, sorties, soldes).",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: {} },
+    executer: async (ctx) => {
+      return biz.etatCaisseCore(ctx as never);
+    }
+  },
+  {
+    nom: 'balance_comptable',
+    description: "GÈnËre la balance comptable (Totaux DÈbit/CrÈdit et Soldes par compte) pour vÈrifier l'Èquilibre.",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dÈfaut) ou ID section' } } },
+    executer: async (ctx, args) => {
+      return biz.balanceComptableCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
+    }
+  },
+  {
+    nom: 'compte_resultat',
+    description: "GÈnËre le compte de rÈsultat dÈtaillÈ (Charges classe 6, Produits classe 7) et donne le bÈnÈfice/perte.",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dÈfaut) ou ID section' } } },
+    executer: async (ctx, args) => {
+      return biz.compteResultatCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
+    }
+  },
+  {
+    nom: 'bilan_simplifie',
+    description: "GÈnËre le Bilan Comptable simplifiÈ (Actif, Passif, TrÈsorerie, RÈsultat de l'exercice).",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dÈfaut) ou ID section' } } },
+    executer: async (ctx, args) => {
+      return biz.bilanSimplifieCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
+    }
+  },
+  {
+    nom: 'grand_livre',
+    description: "Recherche toutes les Ècritures passÈes sur un numÈro de compte SYSCOHADA prÈcis.",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'NumÈro de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
+    executer: async (ctx, args) => {
+      return biz.grandLivreCore(ctx as never, String(args.numeroCompte));
+    }
+  },
+  {
+    nom: 'liste_paiements_recus',
+    description: "Liste chronologique des paiements physiques encaissÈs (espËces, chËques, etc). Pour voir les encaissements.",
+    permission: 'finances.voir',
+    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Nombre max (dÈfaut 20)' } } },
+    executer: async (ctx, args) => {
+      const paiements = await db.paiement.findMany({
+        where: { ecoleId: ctx.ecoleId!, annule: false },
+        orderBy: { datePaiement: 'desc' },
+        take: args.limit ? Number(args.limit) : 20,
+        include: { eleve: { include: { classeActuelle: true } } }
+      });
+      return {
+        totalFiltre: paiements.length,
+        paiements: paiements.map(p => ({
+          id: p.id, date: p.datePaiement, mode: p.modePaiement, montant_F: (p.montant/100)+' F', reference: p.referenceTransaction, eleve: p.eleve ? p.eleve.prenom+' '+p.eleve.nom : 'Non rattachÈ'
+        }))
+      };
+    }
+  },
   {
     nom: 'statistiques_ecole',
     description: "Vue d'ensemble de l'√©cole : effectifs total/gar√ßons/filles par classe, nombre de classes et de personnels, ann√©e scolaire active.",
@@ -230,7 +294,7 @@ const outilsLecture: OutilIA[] = [
   {
     nom: 'liste_eleves_classe',
     description: "Affiche la liste compl√®te des √©l√®ves d'une classe.",
-    permission: 'eleves.lire',
+    permission: ['eleves.lire', 'finances.voir', 'vie_scolaire.voir'],
     parametres: P({ classe: { type: 'string', description: 'Libell√© de la classe' } }, ['classe']),
     executer: async (ctx, args) => {
       const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: 'insensitive' } }, include: { eleves: { where: { statut: 'actif', deletedAt: null }, orderBy: [{ nom: 'asc' }, { prenom: 'asc' }] } } });
@@ -1153,6 +1217,32 @@ const outilsAction: OutilIA[] = [
     }
   },
   {
+    nom: 'liste_depenses',
+    description: "Liste les d√©penses de l'√©cole (r√©centes, en attente de validation, ou valid√©es). Utiliser pour chercher des d√©penses en attente.",
+    permission: 'finances.voir',
+    parametres: P({
+      statut: { type: 'string', description: 'Filtre: "en_attente", "validee", "annulee". Si vide, liste les 50 derni√®res.' },
+    }),
+    executer: async (ctx, args) => {
+      let where: any = { ecoleId: ctx.ecoleId };
+      if (args.statut === 'en_attente') where = { ...where, validee: false, annulee: false };
+      else if (args.statut === 'validee') where = { ...where, validee: true, annulee: false };
+      else if (args.statut === 'annulee') where = { ...where, annulee: true };
+      const deps = await db.depense.findMany({ where, orderBy: { dateDepense: 'desc' }, take: 50 });
+      return {
+        totalFiltre: deps.length,
+        depenses: deps.map(d => ({
+          id: d.id,
+          date: d.dateDepense,
+          categorie: d.categorie,
+          description: d.description,
+          montant_F: (d.montant / 100) + ' F',
+          statut: d.annulee ? 'Annul√©e' : (d.validee ? 'Valid√©e' : 'En attente'),
+        }))
+      };
+    }
+  },
+  {
     nom: 'traiter_bulletin_paie',
     description: "Valide ou paie un bulletin de salaire (pour le marquer comme r√©gl√©).",
     permission: 'rh.gerer',
@@ -1639,3 +1729,4 @@ export function versOutilsOpenAI(outils: OutilIA[]) {
     function: { name: t.nom, description: t.description, parameters: t.parametres as object },
   }));
 }
+
