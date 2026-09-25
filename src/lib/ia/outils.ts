@@ -34,7 +34,7 @@ const P = (properties: Record<string, { type: string; description?: string; enum
 
 const outilsLecture: OutilIA[] = [   {
     nom: 'etat_caisse',
-    description: "Affiche l'état actuel de la trésorerie et le détail des caisses (entrées, sorties, soldes).",
+    description: "Affiche l'ï¿½tat actuel de la trï¿½sorerie et le dï¿½tail des caisses (entrï¿½es, sorties, soldes).",
     permission: 'finances.voir',
     parametres: { type: 'object', properties: {} },
     executer: async (ctx) => {
@@ -43,45 +43,45 @@ const outilsLecture: OutilIA[] = [   {
   },
   {
     nom: 'balance_comptable',
-    description: "Génère la balance comptable (Totaux Débit/Crédit et Soldes par compte) pour vérifier l'équilibre.",
+    description: "Gï¿½nï¿½re la balance comptable (Totaux Dï¿½bit/Crï¿½dit et Soldes par compte) pour vï¿½rifier l'ï¿½quilibre.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par défaut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dï¿½faut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.balanceComptableCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'compte_resultat',
-    description: "Génère le compte de résultat détaillé (Charges classe 6, Produits classe 7) et donne le bénéfice/perte.",
+    description: "Gï¿½nï¿½re le compte de rï¿½sultat dï¿½taillï¿½ (Charges classe 6, Produits classe 7) et donne le bï¿½nï¿½fice/perte.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par défaut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dï¿½faut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.compteResultatCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'bilan_simplifie',
-    description: "Génère le Bilan Comptable simplifié (Actif, Passif, Trésorerie, Résultat de l'exercice).",
+    description: "Gï¿½nï¿½re le Bilan Comptable simplifiï¿½ (Actif, Passif, Trï¿½sorerie, Rï¿½sultat de l'exercice).",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par défaut) ou ID section' } } },
+    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par dï¿½faut) ou ID section' } } },
     executer: async (ctx, args) => {
       return biz.bilanSimplifieCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
     }
   },
   {
     nom: 'grand_livre',
-    description: "Recherche toutes les écritures passées sur un numéro de compte SYSCOHADA précis.",
+    description: "Recherche toutes les ï¿½critures passï¿½es sur un numï¿½ro de compte SYSCOHADA prï¿½cis.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'Numéro de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
+    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'Numï¿½ro de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
     executer: async (ctx, args) => {
       return biz.grandLivreCore(ctx as never, String(args.numeroCompte));
     }
   },
   {
     nom: 'liste_paiements_recus',
-    description: "Liste chronologique des paiements physiques encaissés (espèces, chèques, etc). Pour voir les encaissements.",
+    description: "Liste chronologique des paiements physiques encaissï¿½s (espï¿½ces, chï¿½ques, etc). Pour voir les encaissements.",
     permission: 'finances.voir',
-    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Nombre max (défaut 20)' } } },
+    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Nombre max (dï¿½faut 20)' } } },
     executer: async (ctx, args) => {
       const paiements = await db.paiement.findMany({
         where: { ecoleId: ctx.ecoleId!, annule: false },
@@ -92,7 +92,7 @@ const outilsLecture: OutilIA[] = [   {
       return {
         totalFiltre: paiements.length,
         paiements: paiements.map(p => ({
-          id: p.id, date: p.datePaiement, mode: p.modePaiement, montant_F: (p.montant/100)+' F', reference: p.referenceTransaction, eleve: p.eleve ? p.eleve.prenom+' '+p.eleve.nom : 'Non rattaché'
+          id: p.id, date: p.datePaiement, mode: p.modePaiement, montant_F: (p.montant/100)+' F', reference: p.referenceTransaction, eleve: p.eleve ? p.eleve.prenom+' '+p.eleve.nom : 'Non rattachï¿½'
         }))
       };
     }
