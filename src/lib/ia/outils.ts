@@ -32,7 +32,33 @@ const P = (properties: Record<string, { type: string; description?: string; enum
 // LECTURE — information (permissions en lecture)
 // --------------------------------------------------------------------
 
-const outilsLecture: OutilIA[] = [   {
+const outilsLecture: OutilIA[] = [   
+    {
+      nom: 'liste_tous_personnels',
+      description: "Retourne la liste globale de tout le personnel (enseignants, surveillants, direction, etc.). Tr�s utile quand on demande 'liste moi tous les enseignants'.",
+      permission: ['rh.gerer', 'eleves.lire'],
+      parametres: { type: 'object', properties: { role: { type: 'string', description: 'Optionnel: filtre par r�le (ex: enseignant)' } } },
+      executer: async (ctx, args) => {
+        let where = { ecoleId: ctx.ecoleId, deletedAt: null };
+        if (args.role) {
+          where.roles = { some: { role: { code: String(args.role) } } };
+        }
+        const personnels = await db.personnel.findMany({
+          where,
+          include: { roles: { include: { role: true } } },
+          orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+          take: 100
+        });
+        return {
+          totalFiltre: personnels.length,
+          personnels: personnels.map(p => ({
+            id: p.id, matricule: p.matricule, nom: p.nom, prenom: p.prenom,
+            roles: p.roles.map(r => r.role.libelle).join(', '), statut: p.statut
+          }))
+        };
+      }
+    },
+    {
     nom: 'liste_tous_eleves',
     description: "Retourne la liste globale de tous les �l�ves inscrits dans l'�cole (nom, pr�nom, classe, statut, matricule). Tr�s utile quand on demande 'liste moi tous les �l�ves'.",
     permission: ['eleves.lire', 'finances.voir', 'vie_scolaire.voir'],
