@@ -33,6 +33,27 @@ const P = (properties: Record<string, { type: string; description?: string; enum
 // --------------------------------------------------------------------
 
 const outilsLecture: OutilIA[] = [   {
+    nom: 'liste_tous_eleves',
+    description: "Retourne la liste globale de tous les �l�ves inscrits dans l'�cole (nom, pr�nom, classe, statut, matricule). Tr�s utile quand on demande 'liste moi tous les �l�ves'.",
+    permission: ['eleves.lire', 'finances.voir', 'vie_scolaire.voir'],
+    parametres: { type: 'object', properties: { limit: { type: 'number', description: 'Limite de r�sultats, d�faut 100' } } },
+    executer: async (ctx, args) => {
+      const limit = args.limit ? Number(args.limit) : 100;
+      const eleves = await db.eleve.findMany({
+        where: { ecoleId: ctx.ecoleId!, deletedAt: null },
+        include: { classeActuelle: true },
+        orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+        take: limit
+      });
+      return {
+        totalFiltre: eleves.length,
+        limite: limit,
+        eleves: eleves.map(e => ({
+          id: e.id, matricule: e.matricule, nom: e.nom, prenom: e.prenom, classe: e.classeActuelle?.libelle ?? 'Non affect�', statut: e.statut
+        }))
+      };
+    }
+  },   {
     nom: 'etat_caisse',
     description: "Affiche l'�tat actuel de la tr�sorerie et le d�tail des caisses (entr�es, sorties, soldes).",
     permission: 'finances.voir',
@@ -131,7 +152,7 @@ const outilsLecture: OutilIA[] = [   {
       const eleves = await db.eleve.findMany({
         where: {
           ecoleId: ctx.ecoleId!, deletedAt: null,
-          OR: [{ nom: { contains: q, mode: 'insensitive' } }, { prenom: { contains: q, mode: 'insensitive' } }, { matricule: { contains: q } } as any],
+          AND: String(q).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })),
         },
         include: { classeActuelle: true },
         take: 10,
@@ -390,7 +411,7 @@ const outilsLecture: OutilIA[] = [   {
       permission: 'eleves.lire',
       parametres: P({ eleve: { type: 'string', description: 'Nom de l\'élève' } }, ['eleve']),
       executer: async (ctx, args) => {
-        const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+        const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
         if (!el) return { erreur: "Élève introuvable." };
         const pieces = await db.pieceDossier.findMany({ where: { eleveId: el.id } });
         return { eleve: `${el.prenom} ${el.nom}`, pieces: pieces.map(p => ({ pieceId: p.id, type: p.type, statut: p.statut, remarque: p.remarque })) };
@@ -526,7 +547,7 @@ const outilsAction: OutilIA[] = [
         const nom = m[1].trim();
         const valeur = parseFloat(m[2].replace(',', '.'));
         const el = await db.eleve.findFirst({
-          where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: nom.split(' ')[0], mode: 'insensitive' } }, { prenom: { contains: nom.split(' ')[0], mode: 'insensitive' } }] },
+          where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(nom.split(' ')[0]).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) },
           include: { classeActuelle: true },
         });
         if (!el || (evaluation.classeId && el.classeActuelleId !== evaluation.classeId)) { introuvables.push(nom); continue; }
@@ -582,7 +603,7 @@ const outilsAction: OutilIA[] = [
       description: { type: 'string', description: 'Description des faits' }, gravite: { type: 'string', description: '', enum: ['leger', 'serieux', 'grave'] },
     }, ['eleve', 'description', 'gravite']),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: 'insensitive' } }, { prenom: { contains: String(args.eleve), mode: 'insensitive' } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: `Élève « ${args.eleve} » introuvable.` };
       return biz.declarerIncidentCore(ctx as never, {
         eleveId: el.id, dateHeure: new Date(), type: String(args.type ?? 'comportement'),
@@ -599,7 +620,7 @@ const outilsAction: OutilIA[] = [
       mode: { type: 'string', description: '', enum: ['espece', 'cheque', 'virement', 'carte', 'mobile_money'] }, reference: { type: 'string', description: 'Référence (optionnel)' },
     }, ['eleve', 'montant', 'mode']),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: 'insensitive' } }, { prenom: { contains: String(args.eleve), mode: 'insensitive' } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: `Élève « ${args.eleve} » introuvable.` };
       const montantCentimes = Math.round(Number(args.montant) * 100);
       return biz.encaisserPaiementCore(ctx as never, { eleveId: el.id, montant: montantCentimes, modePaiement: String(args.mode), ...(args.reference ? { reference: String(args.reference) } : {}) } as never);
@@ -696,7 +717,7 @@ const outilsAction: OutilIA[] = [
     permission: 'eleves.ecrire',
     parametres: P({ eleve: { type: 'string', description: 'Nom de l\'élève' }, classeDestination: { type: 'string', description: 'Libellé classe' }, motif: { type: 'string', description: 'Motif' } }, ['eleve', 'classeDestination']),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: 'insensitive' } }, { prenom: { contains: String(args.eleve), mode: 'insensitive' } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classeDestination), mode: 'insensitive' } } });
       if (!el || !classe) return { erreur: 'Élève ou classe introuvable.' };
       return biz.transfererClasseCore(ctx as never, el.id, classe.id, args.motif ? String(args.motif) : undefined) as never;
@@ -931,7 +952,7 @@ const outilsAction: OutilIA[] = [
        appreciation: { type: 'string', description: 'Texte de l\'appréciation' }
     }, ['eleve', 'periode', 'matiere', 'appreciation']),
     executer: async (ctx, args) => {
-       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
        if (!el) return { erreur: "Élève introuvable." };
        const per = await db.periode.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.periode), mode: 'insensitive' } } });
        if (!per) return { erreur: "Période introuvable." };
@@ -957,7 +978,7 @@ const outilsAction: OutilIA[] = [
        commentaire: { type: 'string', description: 'Commentaire (optionnel)' }
     }, ['eleve', 'competence', 'periode', 'niveau']),
     executer: async (ctx, args) => {
-       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
        if (!el) return { erreur: "Élève introuvable." };
        const comp = await db.competence.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.competence), mode: "insensitive" } } });
        if (!comp) return { erreur: "Compétence introuvable." };
@@ -980,7 +1001,7 @@ const outilsAction: OutilIA[] = [
        dateFin: { type: 'string', description: 'Date de fin ISO (optionnelle)' }
     }, ['eleve', 'matiere', 'motif', 'description', 'dateDebut']),
     executer: async (ctx, args) => {
-       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
        if (!el) return { erreur: "Élève introuvable." };
        const mat = await db.matiere.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
        if (!mat) return { erreur: "Matière introuvable." };
@@ -1017,7 +1038,7 @@ const outilsAction: OutilIA[] = [
       description: { type: 'string', description: 'Détails supplémentaires (optionnel)' }
     }, ['eleve', 'motif', 'dateAbsence']),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: "Élève introuvable." };
       return biz.justifierAbsenceCore(ctx as never, {
          eleveId: el.id,
@@ -1073,7 +1094,7 @@ const outilsAction: OutilIA[] = [
        type: { type: 'string', description: 'Type de pièce (ex: Jugement de tutelle)' }
     }, ['eleve', 'type']),
     executer: async (ctx, args) => {
-       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
        if (!el) return { erreur: "Élève introuvable." };
        return biz.ajouterPieceExigeeCore(ctx as never, el.id, String(args.type));
     }
@@ -1359,7 +1380,7 @@ const outilsProfonds: OutilIA[] = [
     executer: async (ctx, args) => {
       const q = String(args.q ?? "").trim();
       const pers = await db.personnel.findMany({
-        where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: q, mode: "insensitive" } }, { prenom: { contains: q, mode: "insensitive" } }] },
+        where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(q).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) },
         include: { contrats: { where: { actif: true } }, soldeConges: true },
         take: 8,
       });
@@ -1381,7 +1402,7 @@ const outilsProfonds: OutilIA[] = [
       commentaire: { type: "string", description: "Commentaire (optionnel)" },
     }, ["personnel", "decision"]),
     executer: async (ctx, args) => {
-      const pers = await db.personnel.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.personnel), mode: "insensitive" } }, { prenom: { contains: String(args.personnel), mode: "insensitive" } }] } });
+      const pers = await db.personnel.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.personnel)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!pers) return { erreur: "Personnel introuvable." };
       const conge = await db.conge.findFirst({ where: { personnelId: pers.id, statut: "demande" }, orderBy: { dateDebut: "asc" } });
       if (!conge) return { erreur: `Aucune demande de congé en attente pour ${pers.prenom} ${pers.nom}.` };
@@ -1456,7 +1477,7 @@ const outilsProfonds: OutilIA[] = [
       type: { type: "string", enum: ["certificat_scolarite", "attestation_inscription"] },
     }, ["eleve", "type"]),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: "Élève introuvable." };
       return biz.genererAttestationCore(ctx as never, el.id, String(args.type) as "certificat_scolarite" | "attestation_inscription");
     },
@@ -1471,7 +1492,7 @@ const outilsProfonds: OutilIA[] = [
       fraisPayes: { type: "boolean", description: "Frais de réinscription payés ?" },
     }, ["eleve"]),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, statut: "actif", OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, statut: "actif", AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: "Élève actif introuvable." };
       let classeVoulueId: string | undefined;
       if (args.classe) {
@@ -1491,7 +1512,7 @@ const outilsProfonds: OutilIA[] = [
       motif: { type: "string", description: "Motif (optionnel)" },
     }, ["eleve"]),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
+      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!el) return { erreur: "Élève introuvable." };
       return biz.enregistrerRetardCore(ctx as never, { eleveId: el.id, dateHeure: new Date(), dureeMinutes: Number(args.dureeMinutes ?? 15), motif: args.motif ? String(args.motif) : undefined } as never);
     },
@@ -1645,7 +1666,7 @@ const outilsConfiguration: OutilIA[] = [
     }, ["enseignant", "matiere", "classes"]),
     executer: async (ctx, args) => {
       const ecoleId = ctx.ecoleId!;
-      const pers = await db.personnel.findFirst({ where: { ecoleId, deletedAt: null, OR: [{ nom: { contains: String(args.enseignant), mode: "insensitive" } }, { prenom: { contains: String(args.enseignant), mode: "insensitive" } }] } });
+      const pers = await db.personnel.findFirst({ where: { ecoleId, deletedAt: null, AND: String(String(args.enseignant)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
       if (!pers) return { erreur: `Enseignant « ${args.enseignant} » introuvable.` };
       const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
       if (!mat) return { erreur: `Matière « ${args.matiere} » introuvable (créez-la avec creer_matieres).` };
@@ -1729,4 +1750,5 @@ export function versOutilsOpenAI(outils: OutilIA[]) {
     function: { name: t.nom, description: t.description, parameters: t.parametres as object },
   }));
 }
+
 
