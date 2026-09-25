@@ -16,8 +16,15 @@ import { Badge } from '@/components/ui/badge';
 import * as actions from '@/app/actions';
 import * as actionsExt from '@/app/actions/extensions';
 import { formatDate, formatDateTime, formatMontant, initiales } from '@/lib/format';
-import { LIBELLES_PIECES } from '@/lib/business/secretariat';
 import * as ext from '@/app/actions/completions';
+
+const LIBELLES_PIECES: Record<string, string> = {
+  acte_naissance: "Acte de naissance",
+  certificat_medical: 'Certificat médical',
+  photos_identite: "Photos d'identité",
+  carnet_vaccination: "Carnet de vaccination",
+  dernier_bulletin: "Dernier bulletin",
+};
 
 export default function ElevesModule({ initialData }: { initialData: any }) {
   const eleves = initialData.eleves ?? [];

@@ -422,12 +422,19 @@ export default function AppShell({ initialData }: { initialData: any }) {
               <button
                 key={m.id}
                 onClick={() => { setActive(m.id); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${
                   isActive ? 'bg-emerald-50 text-emerald-700 font-medium border-r-2 border-emerald-600' : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                <span className="truncate">{m.label}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{m.label}</span>
+                </div>
+                {m.id === 'eleves' && initialData?.totaux?.eleves != null && (
+                  <Badge variant="outline" className={`ml-2 flex-shrink-0 text-[10px] h-5 px-1.5 ${isActive ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                    {initialData.totaux.eleves}
+                  </Badge>
+                )}
               </button>
             );
           })}
