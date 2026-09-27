@@ -1636,13 +1636,38 @@ const outilsConfiguration: OutilIA[] = [
     },
   },
   {
+    nom: "supprimer_matiere",
+    description: "Supprime une matière si elle n est utilisée nulle part. Refuse si des programmes, évaluations ou affectations l utilisent.",
+    permission: "admin.saas",
+    parametres: P({ matiere: { type: "string", description: "Nom de la matière" } }, ["matiere"]),
+    executer: async (ctx, args) => {
+      const ecoleId = ctx.ecoleId!;
+      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
+      if (!mat) return { erreur: `Matiété "${args.matiere}" introuvable.` };
+      const nbProgs = await db.programme.count({ where: { matiereId: mat.id } });
+      const nbEvals = await db.evaluation.count({ where: { matiereId: mat.id } });
+      const nbAff = await db.affectationEnseignant.count({ where: { matiereId: mat.id } });
+      if (nbProgs + nbEvals + nbAff > 0) {
+        return { erreur: `Impossible : "${mat.libelle}" a ${nbProgs} programme(s), ${nbEvals} évaluation(s), ${nbAff} affectation(s).` };
+      }
+      await db.matiere.delete({ where: { id: mat.id } });
+      return { supprimee: mat.libelle };
+    },
+  },
+  {
     nom: "supprimer_classe_vide",
     description: "Supprime une classe UNIQUEMENT si elle est vide (refus si des élèves y sont inscrits).",
     permission: "admin.saas",
     parametres: P({ classe: { type: "string", description: "Nom de la classe" } }, ["classe"]),
     executer: async (ctx, args) => {
-      const c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: "insensitive" } } });
-      if (!c) return { erreur: "Classe introuvable." };
+      const q = String(args.classe ?? "").trim();
+      let c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, code: { equals: q.toUpperCase() } } });
+      if (!c) c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: q, mode: "insensitive" } } });
+      if (!c) c = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, code: { contains: q.toUpperCase() } } });
+      if (!c) {
+        const liste = await db.classe.findMany({ where: { ecoleId: ctx.ecoleId! }, select: { libelle: true } });
+        return { erreur: `Classe "${q}" introuvable. Classes existantes : ${liste.map((x: any) => x.libelle).join(", ")}` };
+      }
       return biz.supprimerClasseCore(ctx as never, c.id);
     },
   },
