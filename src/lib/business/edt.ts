@@ -579,7 +579,7 @@ export async function supprimerClasseCore(ctx: Ctx, classeId: string) {
     await tx.personnelRole.deleteMany({ where: { classeId } });
     // Supprimer la classe
     await tx.classe.delete({ where: { id: classeId } });
-  });
+  }, { timeout: 30000, maxWait: 10000 });
   await logAction(db, classe.ecoleId, ctx.utilisateurId, 'classe.suppression', 'classe', classeId, { libelle: classe.libelle });
   return { classeId, libelle: classe.libelle };
 }
