@@ -108,7 +108,7 @@ async function main() {
   check('IA-situation_financiere : 30 000 F encaissés au total', situation.totalEncaisseF?.includes('30'), JSON.stringify(situation));
   // refus serveur : le comptable tente un outil RH
   let refuseRH = false;
-  try { await outils.get('traiter_conge')!.executer(ctxC(u1!.id), { personnel: 'x', decision: 'valide' }); refuseRH = false; } catch (e: any) { refuseRH = Boolean(e); }
+  const resRH: any = await outils.get('traiter_conge')!.executer(ctxC(u1!.id), { personnel: 'Comptable', decision: 'valide' }).catch((e: any) => ({ erreur: e.message })); refuseRH = resRH?.erreur ? true : false;
   check('IA : le comptable ✗ ne peut pas traiter un congé (core refuse)', refuseRH);
 
   console.log('\n═══ Nettoyage ═══');
