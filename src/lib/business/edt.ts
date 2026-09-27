@@ -560,7 +560,26 @@ export async function supprimerClasseCore(ctx: Ctx, classeId: string) {
   assertTenant(classe.ecoleId, ctx, 'Cette classe');
   const nb = (classe as any)._count?.eleves ?? 0;
   if (nb > 0) throw new ActionError(`Impossible : ${nb} élève(s) sont inscrits dans cette classe. Transférez-les d'abord.`, 'CLASSE_NON_VIDE');
-  await db.classe.delete({ where: { id: classeId } });
+  // Nettoyer TOUTES les références FK avant suppression (16 tables liées)
+  await db.$transaction(async (tx) => {
+    await tx.affectationEnseignant.deleteMany({ where: { classeId } });
+    await tx.eleveHistoriqueClasse.deleteMany({ where: { classeId } });
+    await tx.avancementProgramme.deleteMany({ where: { classeId } });
+    await tx.seance.deleteMany({ where: { classeId } });
+    await tx.evaluation.deleteMany({ where: { classeId } });
+    await tx.bulletin.deleteMany({ where: { classeId } });
+    await tx.reunionCollective.deleteMany({ where: { classeId } });
+    await tx.emploiTemps.deleteMany({ where: { classeId } });
+    await tx.creneauHebdo.deleteMany({ where: { classeId } });
+    await tx.devoir.deleteMany({ where: { classeId } });
+    await tx.cahierTexte.deleteMany({ where: { classeId } });
+    await tx.conseilClasse.deleteMany({ where: { classeId } });
+    await tx.reservationLabo.deleteMany({ where: { classeId } });
+    await tx.occupationSport.deleteMany({ where: { classeId } });
+    await tx.personnelRole.deleteMany({ where: { classeId } });
+    // Supprimer la classe
+    await tx.classe.delete({ where: { id: classeId } });
+  });
   await logAction(db, classe.ecoleId, ctx.utilisateurId, 'classe.suppression', 'classe', classeId, { libelle: classe.libelle });
-  return { classeId };
+  return { classeId, libelle: classe.libelle };
 }

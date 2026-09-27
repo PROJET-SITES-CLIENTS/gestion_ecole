@@ -1650,6 +1650,7 @@ const outilsConfiguration: OutilIA[] = [
       if (nbProgs + nbEvals + nbAff > 0) {
         return { erreur: `Impossible : "${mat.libelle}" a ${nbProgs} programme(s), ${nbEvals} évaluation(s), ${nbAff} affectation(s).` };
       }
+      await db.competence.deleteMany({ where: { matiereId: mat.id } });
       await db.matiere.delete({ where: { id: mat.id } });
       return { supprimee: mat.libelle };
     },
