@@ -382,6 +382,17 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
     ]);
     v.niveaux = niveaux; v.classes = classes; v.matieres = matieres;
     if (!v.periodes) v.periodes = periodesStructure;
+    // CONFIG PÉDAGOGIQUE — affectations enseignant × matière × classe
+    if (portal !== 'eleve' && portal !== 'parent') {
+      v.affectationsEnseignant = await db.affectationEnseignant.findMany({
+        where: { ecoleId },
+        include: {
+          personnel: { select: { id: true, prenom: true, nom: true, matricule: true } },
+          matiere: { select: { id: true, libelle: true } },
+          classe: { select: { id: true, libelle: true, code: true } },
+        },
+      });
+    }
   })());
 
   // ---- Élèves (base : identité, pas de santé) ----

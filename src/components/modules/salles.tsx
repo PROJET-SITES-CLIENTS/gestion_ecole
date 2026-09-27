@@ -25,6 +25,7 @@ export default function SallesModule({ initialData }: { initialData: any }) {
   const niveaux = initialData.niveaux ?? [];
   const personnels = initialData.personnels ?? [];
   const periodes = initialData.periodes ?? [];
+  const affectationsEnseignant = initialData.affectationsEnseignant ?? [];
   const anneeScolaire = initialData.anneeScolaire ?? null;
   const [messageAnnee, setMessageAnnee] = useState<string | null>(null);
   const retourEdt = useActionFeedback();
@@ -210,6 +211,48 @@ export default function SallesModule({ initialData }: { initialData: any }) {
           ]}
           rows={periodes}
           emptyLabel="Aucune période — elles sont créées automatiquement à l'ouverture de l'école"
+        />
+      </SectionBlock>
+
+      {/* CONFIG PÉDAGOGIQUE — Qui enseigne quoi, où */}
+      <SectionBlock
+        title="Affectations enseignants — qui enseigne quoi, où"
+        description="Affectez chaque enseignant à ses matières et classes. Un même enseignant peut enseigner plusieurs matières, ou une matière dans plusieurs classes."
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Affecter un enseignant" />}
+            title="Nouvelle affectation"
+            fields={[
+              { name: 'personnelId', label: 'Enseignant', type: 'select', required: true,
+                options: personnels.map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })) },
+              { name: 'matiereId', label: 'Matière', type: 'select', required: true,
+                options: matieres.map((m: any) => ({ value: m.id, label: m.libelle })) },
+              { name: 'classeId', label: 'Classe', type: 'select', required: true,
+                options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
+            ]}
+            action={async (fd: FormData) => {
+              const r = await fetch('/api/affectations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  personnelId: fd.get('personnelId'),
+                  matiereId: fd.get('matiereId'),
+                  classeIds: [fd.get('classeId')],
+                }),
+              }).then((res) => res.json()).catch(() => ({ ok: false }));
+              return r;
+            }}
+          />
+        }
+      >
+        <DataTable
+          columns={[
+            { key: 'enseignant', label: 'Enseignant', render: (a: any) => `${a.personnel?.prenom ?? ''} ${a.personnel?.nom ?? ''}` },
+            { key: 'matiere', label: 'Matière', render: (a: any) => a.matiere?.libelle ?? '—' },
+            { key: 'classe', label: 'Classe', render: (a: any) => a.classe?.libelle ?? '—' },
+          ]}
+          rows={affectationsEnseignant}
+          emptyLabel="Aucune affectation — les enseignants ne sont pas encore liés aux classes"
         />
       </SectionBlock>
 

@@ -1039,6 +1039,7 @@ export async function assignerRemplacement(formData: FormData): Promise<ActionRe
 
 const PersonnelSchema = z.object({
   perimetreSecretariat: z.enum(['primaire', 'secondaire']).optional().or(z.literal('')),
+  roleCode: z.string().optional().or(z.literal('')),
   nom: strReq, prenom: strReq, email: z.string().trim().email('email invalide').optional().or(z.literal('')),
   telephone: str.optional(), dateEmbauche: dateReq,
   typeContrat: z.enum(['CDI', 'CDD', 'vacataire', 'stagiaire']).optional(),
@@ -1060,6 +1061,7 @@ export async function creerPersonnel(formData: FormData): Promise<ActionResult> 
       salaireBrut: d.salaireBrut !== undefined ? versCentimes(d.salaireBrut) : undefined,
       creerCompte: estCoche(d.creerCompte),
       motDePasseInitial: d.motDePasseInitial || undefined,
+      roleCode: d.roleCode || undefined,
       perimetreSecretariat: (d.perimetreSecretariat === 'primaire' || d.perimetreSecretariat === 'secondaire') ? d.perimetreSecretariat : undefined,
     });
     revalidatePath('/');
