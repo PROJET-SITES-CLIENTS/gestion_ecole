@@ -71,7 +71,7 @@ async function main() {
   const classeAnnee = await db.classe.findFirst({ where: { id: classe6!.id }, select: { anneeScolaireId: true } });
   check('2e. la classe de l\'élève est dans l\'année ACTIVE', classeAnnee?.anneeScolaireId === anneeActive?.id);
   console.log('     • matricule avec caractères spéciaux ?');
-  check('2f. matricule lisible (EL-####)', /^EL-\d+$/.test(e1db?.matricule ?? ''), e1db?.matricule);
+  check('2f. matricule lisible (EL-####)', /^EL-\d+$/.test(e1db?.matricule ?? ''), e1db?.matricule ?? '');
 
   console.log('\n═══ 3. LE BUG « prof enregistré comme élève » ═══');
   // Cause possible : le secrétariat voit le module Élèves mais PAS le module Personnel
