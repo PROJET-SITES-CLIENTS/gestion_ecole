@@ -278,17 +278,27 @@ export const outilsCRUD: OutilIA[] = [
       classe: { type: "string", description: "Classe" },
     }, ["enseignant", "matiere", "classe"]),
     executer: async (ctx, args) => {
+      const q = String(args.classe ?? "").trim().toUpperCase();
+      // Chercher par nom, prénom, code de classe OU libellé
       const aff = await db.affectationEnseignant.findFirst({
         where: {
           ecoleId: ctx.ecoleId!,
           personnel: { OR: [{ nom: { contains: String(args.enseignant), mode: "insensitive" } }, { prenom: { contains: String(args.enseignant), mode: "insensitive" } }] },
           matiere: { libelle: { contains: String(args.matiere), mode: "insensitive" } },
-          classe: { libelle: { contains: String(args.classe), mode: "insensitive" } },
+          OR: [
+            { classe: { libelle: { contains: String(args.classe), mode: "insensitive" } } },
+            { classe: { code: { contains: q } } },
+          ],
         },
+        include: { personnel: true, matiere: true, classe: true },
       });
-      if (!aff) return { erreur: "Affectation introuvable." };
+      if (!aff) {
+        // Lister les affectations existantes pour aider
+        const toutes = await db.affectationEnseignant.findMany({ where: { ecoleId: ctx.ecoleId! }, include: { personnel: true, matiere: true, classe: true } });
+        return { erreur: `Affectation introuvable. Affectations existantes : ${toutes.map((a: any) => `${a.personnel?.nom}/${a.matiere?.libelle}/${a.classe?.libelle}`).join('; ') || 'aucune'}` };
+      }
       await db.affectationEnseignant.delete({ where: { id: aff.id } });
-      return { retiree: true };
+      return { retiree: true, detail: `${aff.personnel?.nom} / ${aff.matiere?.libelle} / ${aff.classe?.libelle}` };
     },
   },
 

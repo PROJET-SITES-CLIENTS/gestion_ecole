@@ -565,7 +565,7 @@ const outilsAction: OutilIA[] = [
         dateEmbauche: { type: 'string', description: 'Date ISO AAAA-MM-JJ' },
         typeContrat: { type: 'string', description: 'Type', enum: ['CDI', 'CDD', 'vacataire', 'stagiaire'] },
         salaireMensuel: { type: 'number', description: 'Salaire brut mensuel en FCFA (optionnel)' },
-        roleCode: { type: 'string', description: 'Rele metier', enum: ['enseignant', 'surveillant', 'secretaire', 'comptabilite', 'rh', 'direction'] },
+        roleCode: { type: 'string', description: 'Rôle métier', enum: ['enseignant', 'surveillant', 'secretariat', 'comptabilite', 'rh', 'censeur', 'infirmier', 'assistant_direction', 'direction'] },
       }, ['nom', 'prenom', 'dateEmbauche', 'roleCode']),
       executer: async (ctx, args) => {
         return biz.creerPersonnelCore(ctx as never, ctx.ecoleId!, {
@@ -896,17 +896,35 @@ const outilsAction: OutilIA[] = [
   },
   {
     nom: 'archiver_eleve',
-    description: "Change le statut d'un élève : sorti (quitte l'école), exclu, diplome, ou décédé. La date de sortie et le motif sont obligatoires. L'historique de classe est automatiquement clôturé.",
+    description: "Change le statut d'un élève : sorti (quitte l'école), exclu, diplome. Accepte le nom OU l'ID de l'élève.",
     permission: 'eleves.ecrire',
     parametres: P({
-      eleveId:     { type: 'string', description: 'Identifiant de l\'élève (via rechercher_eleve)' },
+      eleveId:     { type: 'string', description: 'Nom, prénom ou ID de l\'élève' },
       statut:      { type: 'string', description: 'Nouveau statut', enum: ['sorti', 'exclu', 'diplome', 'decede'] },
       dateSortie:  { type: 'string', description: 'Date de sortie ISO (AAAA-MM-JJ)' },
       motif:       { type: 'string', description: 'Motif obligatoire (ex: départ à l\'étranger, renvoi définitif, diplômé en juin…)' },
     }, ['eleveId', 'statut', 'dateSortie', 'motif']),
     executer: async (ctx, args) => {
+      // Résoudre l'élève : par ID direct OU par nom
+      let eleveId = String(args.eleveId ?? '');
+      const eleveExiste = eleveId ? await db.eleve.findFirst({ where: { id: eleveId, ecoleId: ctx.ecoleId!, deletedAt: null } }) : null;
+      if (!eleveExiste) {
+        const q = eleveId; // le paramètre contient probablement un nom
+        const found = await db.eleve.findFirst({
+          where: {
+            ecoleId: ctx.ecoleId!, deletedAt: null,
+            OR: [
+              { nom: { contains: q, mode: 'insensitive' } },
+              { prenom: { contains: q, mode: 'insensitive' } },
+              { matricule: { contains: q } },
+            ],
+          },
+        });
+        if (!found) return { erreur: `Élève « ${q} » introuvable. Utilisez rechercher_eleve d'abord.` };
+        eleveId = found.id;
+      }
       return biz.changerStatutEleveCore(ctx as never, {
-        eleveId:    String(args.eleveId),
+        eleveId,
         statut:     String(args.statut),
         dateSortie: new Date(String(args.dateSortie)),
         motif:      String(args.motif),

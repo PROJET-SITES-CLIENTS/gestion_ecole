@@ -55,7 +55,7 @@ async function main() {
   await outils.get('supprimer_matiere')!.executer(ctx, { matiere: 'Histoire Test' });
 
   console.log('\n=== 4. ENSEIGNANTS : CRUD ===');
-  const ens: any = await outils.get('inscrire_personnel')!.executer(ctx, { nom: 'CRUDTest', prenom: 'Prof', email: `crudprof-${S}@test.sn`, dateEmbauche: '2026-09-01', role: 'enseignant', motDePasse: 'Test12345!' });
+  const ens: any = await outils.get('inscrire_personnel')!.executer(ctx, { nom: 'CRUDTest', prenom: 'Prof', email: `crudprof-${S}@test.sn`, dateEmbauche: '2026-09-01', roleCode: 'enseignant' });
   check('4a. CREER enseignant', !!ens?.personnelId, JSON.stringify(ens).slice(0, 80));
   const uEns = await db.utilisateur.findFirst({ where: { email: `crudprof-${S}@test.sn` }, include: { roles: { include: { role: true } } } });
   check('4b. role enseignant ASSIGNE', uEns?.roles?.some((x: any) => x.role?.code === 'enseignant') === true, uEns?.roles?.map((x: any) => x.role?.code).join(',') ?? 'aucun');
@@ -71,7 +71,7 @@ async function main() {
   check('5a. CREER eleve', !!el?.eleveId, JSON.stringify(el).slice(0, 60));
   const rech: any = await outils.get('rechercher_eleve')!.executer(ctx, { q: 'CRUDEleve' });
   check('5b. LIRE eleve', rech?.length >= 1);
-  const arch: any = await outils.get('archiver_eleve')!.executer(ctx, { eleve: 'CRUDEleve', motif: 'test' }).catch((e: any) => ({ erreur: e.message }));
+  const arch: any = await outils.get('archiver_eleve')!.executer(ctx, { eleveId: 'CRUDEleve', statut: 'sorti', dateSortie: '2026-09-28', motif: 'test' }).catch((e: any) => ({ erreur: e.message }));
   check('5c. SUPPRIMER eleve', arch !== undefined && !arch?.erreur, JSON.stringify(arch).slice(0, 60));
 
   console.log('\n=== 6. AFFECTATIONS : CRUD ===');
@@ -79,7 +79,7 @@ async function main() {
   await outils.get('creer_matieres')!.executer(ctx, { matieres: 'Sport Test' });
   const aff: any = await outils.get('affecter_enseignant')!.executer(ctx, { enseignant: 'AffTest', matiere: 'Sport Test', classes: '5E' });
   check('6a. CREER affectation', (aff?.affectationsCreees ?? 0) >= 1, JSON.stringify(aff).slice(0, 80));
-  const affRet: any = await outils.get('retirer_affectation')!.executer(ctx, { enseignant: 'AffTest', matiere: 'Sport Test', classe: '5E' });
+  const affRet: any = await outils.get('retirer_affectation')!.executer(ctx, { enseignant: 'AffTest', matiere: 'Sport Test', classe: 'Cinquième A' });
   check('6b. SUPPRIMER affectation', affRet?.retiree === true, JSON.stringify(affRet).slice(0, 60));
 
   console.log('\n=== 7. NOTES + EVALUATIONS : CRUD ===');
