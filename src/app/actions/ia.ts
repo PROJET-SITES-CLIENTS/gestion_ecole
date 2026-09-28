@@ -39,6 +39,13 @@ export async function demanderAssistant(
   } catch (e) {
     if (e instanceof AuthError || e instanceof ActionError) return { ok: false, error: e.message };
     console.error('[assistant-ia]', e);
-    return { ok: false, error: 'Assistant momentanément indisponible. Réessayez.' };
+    const msg = String((e as any)?.message ?? '');
+    if (/OPENROUTER|401|402|429/.test(msg)) {
+      return { ok: false, error: `Problème de clé IA (${msg.slice(0, 80)}). Vérifiez OPENROUTER_API_KEY dans Vercel.` };
+    }
+    if (/database|connect|timeout|P1001|P2024/i.test(msg)) {
+      return { ok: false, error: 'La base de données se réveille — réessayez dans 10 secondes.' };
+    }
+    return { ok: false, error: `Assistant indisponible : ${msg.slice(0, 100)}` };
   }
 }

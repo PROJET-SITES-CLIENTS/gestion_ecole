@@ -8,9 +8,9 @@ function urlDurcie(url) {
   if (!url) return url;
   const sep = url.includes('?') ? '&' : '?';
   const manquants = [
-    !/connect_timeout=/.test(url) && 'connect_timeout=30',
-    !/pool_timeout=/.test(url) && 'pool_timeout=60',
-    !/connection_limit=/.test(url) && 'connection_limit=10',
+    !/connect_timeout=/.test(url) && 'connect_timeout=60',
+    !/pool_timeout=/.test(url) && 'pool_timeout=120',
+    !/connection_limit=/.test(url) && 'connection_limit=3',
   ].filter(Boolean);
   if (manquants.length === 0) return url;
   return url + sep + manquants.join('&');

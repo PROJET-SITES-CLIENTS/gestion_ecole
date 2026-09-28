@@ -35,7 +35,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ a
   try {
     // 3 tentatives avec backoff : absorbe le réveil du serveur de base
     // de données (autosuspend Neon) et les échauffements serverless.
-    initialData = await avecRetryBdd(() => chargerDonneesPortail(portal, session, anneeCibleId), 3, 500);
+    initialData = await avecRetryBdd(() => chargerDonneesPortail(portal, session, anneeCibleId), 5, 1500);
   } catch {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
