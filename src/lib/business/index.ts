@@ -27,3 +27,8 @@ export * from './secretariat';
 export * from './compta-plus';
 export * from './viescolaire-plus';
 export * from './rh-suite';
+// AUDIT — dossier élève (import numérique), configuration (CRUD structurel),
+// statistiques d'absentéisme complètes
+export * from './dossier';
+export * from './configuration';
+export * from './stats-absences';

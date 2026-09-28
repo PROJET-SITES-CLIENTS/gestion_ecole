@@ -457,6 +457,10 @@ model Classe {
   libelle               String
   capaciteMax           Int?
   enseignantPrincipalId String?
+  // AUDIT CONFIG — salle principale attribuée à la classe (affectation fixe ;
+  // l'EDT peut la surcharger créneau par créneau)
+  salleId               String?
+  salle                 Salle?            @relation("ClasseSallePrincipale", fields: [salleId], references: [id], onDelete: SetNull)
 
   eleves                Eleve[]
   seances               Seance[]
@@ -728,10 +732,16 @@ model DocumentEleve {
   eleveId      String
   eleve        Eleve    @relation(fields: [eleveId], references: [id])
   type         String // acte_naissance/cv/certificat_medical/diplome
-  fichierUrl   String
+  fichierUrl   String?
   confidentiel Boolean  @default(false)
   dateAjout    DateTime @default(now())
   ajouteParId  String
+  // AUDIT DOSSIER — import numérique réel de la pièce (stockée en base,
+  // téléchargeable via /api/fichiers/[id]). Limite conseillée : 5 Mo.
+  nomFichier     String?
+  mimeType       String?
+  tailleOctets   Int?
+  contenu        Bytes?
 }
 
 model BesoinSpecifique {
@@ -981,6 +991,10 @@ model Chapitre {
   volumeHorairePrevu Int?
   contenu            String?
   ressources         String? // JSON
+  // AUDIT CONFIG — programmation granulaire : le chapitre est planifié sur une
+  // période (trimestre) de l'année ; l'ordre affine la séquence intra-période.
+  periodeId          String?
+  periode            Periode?  @relation(fields: [periodeId], references: [id], onDelete: SetNull)
 
   avancements AvancementProgramme[]
   seances     Seance[] // F17
@@ -1051,6 +1065,7 @@ model Periode {
   appreciationsBulletin BulletinAppreciation[] // M10
   cahierTextes          CahierTexte[] // F17
   conseils              ConseilClasse[] // F17
+  chapitres             Chapitre[] // AUDIT CONFIG — programmation par trimestre
 
   // F19 — le code (T1, S1…) est unique PAR ANNÉE, pas pour toute l'école
   @@unique([ecoleId, anneeScolaireId, code])
@@ -1420,8 +1435,9 @@ model Salle {
   capacite    Int
   equipements String @default("[]") // JSON list
 
-  reservations     ReservationSalle[]
-  batiment         Batiment?          @relation(fields: [batimentId], references: [id])
+  reservations      ReservationSalle[]
+  classesAttribuees Classe[]           @relation("ClasseSallePrincipale") // AUDIT CONFIG
+  batiment          Batiment?          @relation(fields: [batimentId], references: [id])
   batimentId       String?
   etage            Etage?             @relation(fields: [etageId], references: [id])
   etageId          String?

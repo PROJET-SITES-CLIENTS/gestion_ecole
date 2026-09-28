@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import * as actions from '@/app/actions';
 import { formatDate, formatDateTime, initiales } from '@/lib/format';
+import PresencesStats from './presences-stats';
 
 // Classes statiques EXPLICITES : les classes dynamiques `bg-${color}-100`
 // ne sont pas compilées par Tailwind (le scanner ne résout pas les templates).
@@ -64,8 +65,14 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
     <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Présences — Appel de classe"
-        subtitle="Saisie rapide par séance · confirmation immédiate"
+        subtitle="Saisie rapide par séance · statistiques d'absentéisme consolidées"
       />
+
+      {/* AUDIT PRÉSENCES — tableau de bord statistique (courbes, tops, H/F,
+          par classe) alimenté par le cumul de tous les appels */}
+      <div className="mb-6">
+        <PresencesStats initialData={initialData} />
+      </div>
 
       <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <StatCard title="Taux de présence" value={`${taux}%`} icon={Users} color="emerald" />

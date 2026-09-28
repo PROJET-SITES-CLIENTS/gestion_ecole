@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { useState } from 'react';
-import { KeyRound, Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2 } from 'lucide-react';
+import { KeyRound, Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2, Upload, Paperclip } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, InfoRow, EmptyState, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,9 +26,28 @@ const LIBELLES_PIECES: Record<string, string> = {
   dernier_bulletin: "Dernier bulletin",
 };
 
+// AUDIT DOSSIER — types de fichiers importables (mis en cohérence avec le
+// suivi de pièces : déposer le fichier marque automatiquement la pièce reçue)
+const TYPES_DOCUMENT_IMPORT: Array<{ value: string; label: string }> = [
+  { value: 'acte_naissance', label: 'Acte de naissance' },
+  { value: 'certificat_medical', label: 'Certificat médical' },
+  { value: 'photos_identite', label: "Photos d'identité" },
+  { value: 'carnet_vaccination', label: 'Carnet de vaccination' },
+  { value: 'dernier_bulletin', label: 'Dernier bulletin' },
+  { value: 'certificat_transfert', label: 'Certificat de transfert' },
+  { value: 'autre', label: 'Autre document' },
+];
+
+// AUDIT — périmètres RÉELS du portail connecté (les onglets distinguent
+// « hors périmètre » de « aucune donnée » au lieu d'un message trompeur)
+const PORTEES_FINANCES = ['direction', 'comptabilite', 'super_admin'];
+const PORTEES_PEDAGOGIE = ['direction', 'enseignant', 'super_admin'];
+const PORTEES_DOSSIER = ['direction', 'secretariat', 'super_admin'];
+
 export default function ElevesModule({ initialData }: { initialData: any }) {
   const eleves = initialData.eleves ?? [];
   const classes = initialData.classes ?? [];
+  const niveaux = initialData.niveaux ?? [];
   const besoinsSpecifiques = initialData.besoinsSpecifiques ?? [];
   const amenagements = initialData.amenagements ?? [];
   const documents = initialData.documents ?? [];
@@ -43,11 +62,44 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const portal = initialData.session?.portal;
   const accesRgpd = portal === 'direction' || portal === 'secretariat';
   const peutEcrire = ['direction', 'secretariat', 'super_admin', 'assistant'].includes(portal ?? '');
+  // AUDIT — périmètres réels pour des onglets honnêtes
+  const peutVoirFinances = PORTEES_FINANCES.includes(portal ?? '');
+  const peutVoirPedagogie = PORTEES_PEDAGOGIE.includes(portal ?? '') || portal === 'vie_scolaire';
+  const peutVoirDossier = PORTEES_DOSSIER.includes(portal ?? '') || portal === 'vie_scolaire';
   const [selectedEleveId, setSelectedEleveId] = useState<string | null>(eleves[0]?.id ?? null);
   const [rechercheAncien, setRechercheAncien] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
   const consentementFb = useActionFeedback();
   const rgpdFb = useActionFeedback();
+  const uploadFb = useActionFeedback();
+
+  // ===== AUDIT NAVIGATION — organisation cycle → classe → élèves =====
+  // Les classes sont rangées par cycle pédagogique (Maternelle, Primaire,
+  // Collège, Lycée) puis par niveau ; l'utilisateur choisit une classe et
+  // voit sa liste d'élèves — plus une recherche globale en secours.
+  const [cycleActif, setCycleActif] = useState<string>('tous');
+  const [classeActive, setClasseActive] = useState<string>('toutes');
+  const [recherche, setRecherche] = useState('');
+  const niveauParClasse = new Map<string, any>(niveaux.map((n: any) => [n.id, n]));
+  const cycleDeClasse = (c: any): string => {
+    const niv = niveauParClasse.get(c.niveauId);
+    const cycle = niv?.section?.cycle;
+    return cycle?.libelle ?? niv?.section?.libelle ?? 'Autre';
+  };
+  const cyclesDisponibles: string[] = ['tous', ...[...new Set<string>(classes.map((c: any) => cycleDeClasse(c)))].sort()];
+  const classesDuCycle = cycleActif === 'tous' ? classes : classes.filter((c: any) => cycleDeClasse(c) === cycleActif);
+  const elevesFiltres = eleves.filter((e: any) => {
+    if (classeActive !== 'toutes' && e.classeActuelleId !== classeActive) return false;
+    if (classeActive === 'toutes' && cycleActif !== 'tous' && e.classeActuelleId) {
+      const c = classes.find((x: any) => x.id === e.classeActuelleId);
+      if (c && cycleDeClasse(c) !== cycleActif) return false;
+    }
+    if (recherche.trim()) {
+      const q = recherche.trim().toLowerCase();
+      return `${e.prenom} ${e.nom} ${e.matricule ?? ''}`.toLowerCase().includes(q);
+    }
+    return true;
+  });
 
   const eleve = eleves.find((e: any) => e.id === selectedEleveId);
   const classeEleve = classes.find((c: any) => c.id === eleve?.classeActuelleId);
@@ -207,9 +259,63 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
             </SectionBlock>
           )}
 
-          <SectionBlock title="Liste des élèves" description={`${eleves.length} au total`}>
-            <div className="max-h-[60vh] overflow-y-auto -mx-2">
-              {eleves.map((e: any) => (
+          <SectionBlock
+            title="Répertoire des élèves"
+            description="Parcourir par cycle → classe, ou rechercher directement"
+          >
+            {/* Filtres de cycle — Maternelle / Primaire / Collège / Lycée */}
+            <div className="flex gap-1 flex-wrap mb-2">
+              {cyclesDisponibles.map((cy: string) => (
+                <button
+                  key={cy}
+                  onClick={() => { setCycleActif(cy); setClasseActive('toutes'); }}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                    cycleActif === cy
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+                  }`}
+                >
+                  {cy === 'tous' ? `Tous (${eleves.length})` : cy}
+                </button>
+              ))}
+            </div>
+            {/* Classes du cycle sélectionné */}
+            <div className="flex gap-1 flex-wrap mb-2 pb-2 border-b border-gray-100">
+              <button
+                onClick={() => setClasseActive('toutes')}
+                className={`px-2 py-0.5 rounded text-xs border ${
+                  classeActive === 'toutes' ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium' : 'bg-white text-gray-500 border-gray-200 hover:border-emerald-200'
+                }`}
+              >
+                Toutes les classes
+              </button>
+              {classesDuCycle.map((c: any) => (
+                <button
+                  key={c.id}
+                  onClick={() => setClasseActive(c.id)}
+                  className={`px-2 py-0.5 rounded text-xs border ${
+                    classeActive === c.id ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium' : 'bg-white text-gray-500 border-gray-200 hover:border-emerald-200'
+                  }`}
+                  title={`${c.libelle}${niveauParClasse.get(c.niveauId)?.libelle ? ` — ${niveauParClasse.get(c.niveauId).libelle}` : ''}`}
+                >
+                  {c.libelle} · {eleves.filter((e: any) => e.classeActuelleId === c.id).length}
+                </button>
+              ))}
+            </div>
+            <input
+              value={recherche}
+              onChange={(e) => setRecherche(e.target.value)}
+              placeholder="Rechercher un élève (nom, prénom, matricule)…"
+              className="w-full h-9 border rounded-md px-3 text-sm mb-2"
+            />
+            <div className="max-h-[55vh] overflow-y-auto -mx-2">
+              {elevesFiltres.length === 0 ? (
+                <p className="text-sm text-gray-500 p-4 text-center">
+                  {eleves.length === 0
+                    ? "Aucun élève inscrit — utilisez « Inscrire un élève » pour commencer."
+                    : 'Aucun élève pour ce filtre.'}
+                </p>
+              ) : elevesFiltres.map((e: any) => (
                 <button
                   key={e.id}
                   onClick={() => setSelectedEleveId(e.id)}
@@ -259,10 +365,13 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   </TabsList>
 
                   <TabsContent value="dossier" className="space-y-4">
-                    {piecesDossier.length === 0 ? (
-                      <p className="text-sm text-gray-500">Suivi de dossier non disponible pour votre portail.</p>
+                    {!peutVoirDossier ? (
+                      <p className="text-sm text-gray-500">Suivi de dossier réservé à la direction et au secrétariat.</p>
                     ) : piecesEleve.length === 0 ? (
-                      <p className="text-sm text-gray-500">Aucune pièce suivie pour cet élève.</p>
+                      <div className="p-3 bg-amber-50 rounded text-sm text-amber-700 space-y-1">
+                        <div className="font-medium">Aucune pièce suivie pour cet élève.</div>
+                        <div className="text-xs">Importez un premier fichier ci-dessous — la pièce correspondante sera suivie automatiquement (reçue dès dépôt).</div>
+                      </div>
                     ) : (
                       <>
                         <div className={`p-3 rounded ${piecesManquantes === 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
@@ -272,26 +381,40 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                           {piecesManquantes > 0 && <div className="text-xs text-amber-700 mt-1">Relancez la famille pour compléter le dossier avant la rentrée.</div>}
                         </div>
                         <div className="space-y-2">
-                          {piecesEleve.map((p: any) => (
-                            <div key={p.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                              <div>
-                                <div className="text-sm font-medium">{LIBELLES_PIECES[p.type] ?? p.type}</div>
-                                {p.remarque && <div className="text-xs text-gray-500">{p.remarque}</div>}
-                                {p.dateReception && <div className="text-xs text-gray-500">Reçue le {formatDate(p.dateReception)}</div>}
+                          {piecesEleve.map((p: any) => {
+                            const fichierImporte = eleveDocuments.find((d: any) => d.type === p.type && d.nomFichier);
+                            return (
+                              <div key={p.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium">{LIBELLES_PIECES[p.type] ?? p.type}</div>
+                                  {p.remarque && <div className="text-xs text-gray-500 truncate">{p.remarque}</div>}
+                                  {p.dateReception && <div className="text-xs text-gray-500">Reçue le {formatDate(p.dateReception)}</div>}
+                                  {fichierImporte && (
+                                    <a
+                                      href={`/api/fichiers/${fichierImporte.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-emerald-700 hover:underline inline-flex items-center gap-1 mt-0.5"
+                                    >
+                                      <Paperclip className="h-3 w-3" /> {fichierImporte.nomFichier}
+                                      {fichierImporte.tailleOctets ? ` (${(fichierImporte.tailleOctets / 1024).toFixed(0)} Ko)` : ''}
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <StatusBadge statut={p.statut === 'recue' ? 'valide' : 'absent'} />
+                                  {peutEcrire && (
+                                    <Button
+                                      variant="outline" size="sm"
+                                      onClick={() => actionsExt.basculerPieceDossier(p.id, p.statut === 'recue' ? 'manquante' : 'recue')}
+                                    >
+                                      {p.statut === 'recue' ? 'Retirer' : 'Marquer reçue'}
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <StatusBadge statut={p.statut === 'recue' ? 'valide' : 'absent'} />
-                                {peutEcrire && (
-                                  <Button
-                                    variant="outline" size="sm"
-                                    onClick={() => actionsExt.basculerPieceDossier(p.id, p.statut === 'recue' ? 'manquante' : 'recue')}
-                                  >
-                                    {p.statut === 'recue' ? 'Retirer' : 'Marquer reçue'}
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         {peutEcrire && (
                           <details className="text-sm">
@@ -302,20 +425,84 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                             </form>
                           </details>
                         )}
-                        {reinscritEleve && (
-                          <div className="p-2 bg-emerald-50 rounded text-xs text-emerald-700">
-                            ✓ Réinscrit·e pour {reinscritEleve.anneeScolaire?.libelle} {reinscritEleve.classeVoulue ? `→ ${reinscritEleve.classeVoulue.libelle}` : ''} {reinscritEleve.fraisPayes ? '· frais payés' : '· frais en attente'}
+                      </>
+                    )}
+
+                    {/* AUDIT DOSSIER — import numérique réel du fichier (PDF/photo),
+                        stocké de façon confidentielle ; marque la pièce « reçue » */}
+                    {peutEcrire && (
+                      <div className="border-t border-gray-200 pt-3">
+                        <div className="text-sm font-medium mb-1">Importer un fichier au dossier</div>
+                        <p className="text-xs text-gray-500 mb-2">PDF, JPEG, PNG ou Word — 5 Mo max. Le dépôt marque automatiquement la pièce correspondante comme reçue.</p>
+                        <form
+                          className="flex flex-col sm:flex-row gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const form = e.currentTarget;
+                            const fd = new FormData(form);
+                            fd.set('eleveId', eleve.id);
+                            uploadFb.run(async () => {
+                              const r = await actionsExt.televerserDocumentEleve(fd);
+                              if (r?.ok) form.reset();
+                              return r;
+                            }, 'Fichier importé — pièce marquée reçue.');
+                          }}
+                        >
+                          <select name="type" className="h-9 rounded-md border border-gray-200 bg-transparent px-3 text-sm sm:w-56" required defaultValue="">
+                            <option value="" disabled>Type de pièce…</option>
+                            {TYPES_DOCUMENT_IMPORT.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                          <input
+                            type="file"
+                            name="fichier"
+                            required
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx"
+                            className="flex-1 text-sm border rounded-md px-2 py-1.5 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:text-emerald-700 file:px-2 file:py-1"
+                          />
+                          <Button type="submit" size="sm" disabled={uploadFb.pending} className="bg-emerald-600 hover:bg-emerald-700">
+                            <Upload className="h-4 w-4 mr-1" /> {uploadFb.pending ? 'Import…' : 'Importer'}
+                          </Button>
+                        </form>
+                        {uploadFb.Message}
+                        {eleveDocuments.filter((d: any) => d.nomFichier).length > 0 && (
+                          <div className="mt-3 space-y-1">
+                            <div className="text-xs font-medium text-gray-600 uppercase">Fichiers importés ({eleveDocuments.filter((d: any) => d.nomFichier).length})</div>
+                            {eleveDocuments.filter((d: any) => d.nomFichier).map((d: any) => (
+                              <div key={d.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                                <a href={`/api/fichiers/${d.id}`} target="_blank" rel="noopener noreferrer" className="text-emerald-700 hover:underline flex items-center gap-1.5 min-w-0">
+                                  <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="truncate">{d.nomFichier}</span>
+                                  <span className="text-xs text-gray-400 flex-shrink-0">{TYPES_DOCUMENT_IMPORT.find((t) => t.value === d.type)?.label ?? d.type}{d.tailleOctets ? ` · ${(d.tailleOctets / 1024).toFixed(0)} Ko` : ''}</span>
+                                </a>
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="text-rose-600 hover:text-rose-700 h-7"
+                                  disabled={uploadFb.pending}
+                                  onClick={() => uploadFb.run(() => actionsExt.supprimerDocumentEleve(d.id), 'Fichier supprimé du dossier.')}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ))}
                           </div>
                         )}
-                      </>
+                      </div>
+                    )}
+                    {reinscritEleve && (
+                      <div className="p-2 bg-emerald-50 rounded text-xs text-emerald-700">
+                        ✓ Réinscrit·e pour {reinscritEleve.anneeScolaire?.libelle} {reinscritEleve.classeVoulue ? `→ ${reinscritEleve.classeVoulue.libelle}` : ''} {reinscritEleve.fraisPayes ? '· frais payés' : '· frais en attente'}
+                      </div>
                     )}
                   </TabsContent>
 
                   <TabsContent value="pedagogie" className="space-y-4">
-                    {notes.length === 0 ? (
-                      <p className="text-sm text-gray-500">Profil pédagogique non disponible pour votre portail.</p>
+                    {!peutVoirPedagogie ? (
+                      <p className="text-sm text-gray-500">Profil pédagogique réservé aux portails pédagogiques (direction, enseignants).</p>
                     ) : moyennesMatiere.length === 0 ? (
-                      <p className="text-sm text-gray-500">Aucune note enregistrée pour cet élève sur la période.</p>
+                      <div className="p-3 bg-amber-50 rounded text-sm text-amber-700 space-y-1">
+                        <div className="font-medium">Aucune note enregistrée pour cet élève.</div>
+                        <div className="text-xs">Le profil se construit automatiquement : créez une évaluation dans le module <strong>Pédagogie</strong> (ou demandez à l'enseignant de la matière) puis saisissez les notes — moyennes par matière, points forts et axes de renforcement apparaîtront ici.</div>
+                      </div>
                     ) : (
                       <>
                         <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -352,10 +539,13 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   </TabsContent>
 
                   <TabsContent value="finances" className="space-y-4">
-                    {echeances.length === 0 ? (
-                      <p className="text-sm text-gray-500">Suivi financier non disponible pour votre portail.</p>
+                    {!peutVoirFinances ? (
+                      <p className="text-sm text-gray-500">Suivi financier réservé aux portails financiers (direction, comptabilité).</p>
                     ) : eleveEcheances.length === 0 ? (
-                      <p className="text-sm text-gray-500">Aucune échéance — les frais seront générés à la configuration de la scolarité de la classe.</p>
+                      <div className="p-3 bg-amber-50 rounded text-sm text-amber-700 space-y-1">
+                        <div className="font-medium">Aucune échéance pour cet élève.</div>
+                        <div className="text-xs">Les échéances naissent des frais de scolarité : définissez un <strong>frais rattaché au niveau de sa classe</strong> dans le module Finances, puis générez les échéances de la classe — le suivi (dû, payé, restant) s'affichera ici.</div>
+                      </div>
                     ) : (
                       <>
                         <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

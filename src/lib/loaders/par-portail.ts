@@ -424,6 +424,23 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       orderBy: { nom: 'asc' },
       select: rh ? SELECT_PERSONNEL_RESTREINT : SELECT_PERSONNEL_PUBLIC,
     });
+    // AUDIT PERSONNEL — rôles par personne (groupement par service :
+    // direction, secrétariat, comptabilité, RH, censeur, surveillant…)
+    if (rh) {
+      const [liensRole, rolesListe] = await Promise.all([
+        db.personnelRole.findMany({
+          where: { personnel: { ecoleId, deletedAt: null } },
+          select: { personnelId: true, role: { select: { code: true, libelle: true } } },
+        }),
+        db.role.findMany({ where: { ecoleId }, select: { code: true, libelle: true } }),
+      ]);
+      const rolesParPersonnel: Record<string, Array<{ code: string; libelle: string }>> = {};
+      for (const l of liensRole) {
+        (rolesParPersonnel[l.personnelId] ??= []).push(l.role);
+      }
+      v.rolesParPersonnel = rolesParPersonnel;
+      v.rolesListe = rolesListe;
+    }
   })());
 
   if (rh) {
@@ -596,7 +613,15 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
             eleves: { select: { eleve: { select: { id: true, nom: true, prenom: true } } } },
           },
         }),
-        db.documentEleve.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
+        // AUDIT DOSSIER — métadonnées des pièces importées SANS le binaire
+        // (le contenu est servi à la demande par /api/fichiers/[id])
+        db.documentEleve.findMany({
+          where: { eleve: { ecoleId } },
+          select: {
+            id: true, eleveId: true, type: true, confidentiel: true, dateAjout: true,
+            nomFichier: true, mimeType: true, tailleOctets: true,
+          },
+        }),
         db.eleveHistoriqueClasse.findMany({ where: { eleve: { ecoleId } }, include: { classe: true, eleve: true } }),
         db.besoinSpecifique.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
         db.amenagement.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
@@ -831,5 +856,6 @@ function vide(): Record<string, unknown> & { totaux: Record<string, number> } {
     demandesCompte: [],
     ecoles: [], plans: [], facturesSaas: [], totalElevesGeres: 0,
     avoirsSaas: [],
+    rolesParPersonnel: {}, rolesListe: [],
   };
 }

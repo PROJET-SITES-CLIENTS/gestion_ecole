@@ -34,6 +34,8 @@ export default function SallesModule({ initialData }: { initialData: any }) {
     <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Salles & Calendrier scolaire" subtitle="Ressources physiques et calendrier officiel" />
 
+      <div className="mb-4">{retourEdt.Message}</div>
+
       <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Salles" value={salles.length} icon={Building} color="emerald" />
         <StatCard title="Réservations" value={reservations.length} icon={CalendarDays} color="blue" />
@@ -62,6 +64,37 @@ export default function SallesModule({ initialData }: { initialData: any }) {
             { key: 'code', label: 'Code' },
             { key: 'libelle', label: 'Libellé' },
             { key: 'coefficient', label: 'Coefficient', render: (m: any) => String(m.coefficient ?? '—') },
+            { key: 'usage', label: 'Utilisation', render: (m: any) => {
+              const nbEval = (initialData.evaluations ?? []).filter((e: any) => e.matiereId === m.id).length;
+              const nbProg = (initialData.programmes ?? []).filter((p: any) => p.matiereId === m.id).length;
+              const nbAff = affectationsEnseignant.filter((a: any) => a.matiereId === m.id).length;
+              return <span className="text-xs text-gray-500">{nbEval} éval. · {nbProg} prog. · {nbAff} affect.</span>;
+            } },
+            { key: 'actions', label: 'Actions', render: (m: any) => (
+              <div className="flex gap-1">
+                <ModalForm
+                  trigger={<Button variant="outline" size="sm" className="h-7 text-xs">Modifier</Button>}
+                  title={`Modifier — ${m.libelle}`}
+                  fields={[
+                    { name: 'matiereId', type: 'hidden', label: 'ID', defaultValue: m.id },
+                    { name: 'libelle', label: 'Libellé', required: true },
+                    { name: 'coefficient', label: 'Coefficient', type: 'number', step: '0.5' },
+                    { name: 'couleur', label: 'Couleur (hex)', placeholder: '#059669' },
+                  ]}
+                  defaultValues={{ matiereId: m.id, libelle: m.libelle, coefficient: String(m.coefficient ?? 1), couleur: m.couleur ?? '' }}
+                  action={actionsExt.modifierMatiere}
+                />
+                <Button
+                  variant="ghost" size="sm" className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                  onClick={() => {
+                    if (!window.confirm(`Supprimer la matière « ${m.libelle} » ?\n\nRefusé si des évaluations, programmes, affectations ou séances l'utilisent.`)) return;
+                    retourEdt.run(() => actionsExt.supprimerMatiere(m.id), 'Matière supprimée.');
+                  }}
+                >
+                  Supprimer
+                </Button>
+              </div>
+            ) },
           ]}
           rows={matieres}
           emptyLabel="Aucune matière — ajoutez le référentiel de votre établissement"
@@ -98,6 +131,33 @@ export default function SallesModule({ initialData }: { initialData: any }) {
               const t = personnels.find((p: any) => p.id === c.enseignantPrincipalId);
               return t ? `${t.prenom} ${t.nom}` : '—';
             } },
+            // AUDIT CONFIG — salle principale attribuée à la classe
+            { key: 'salle', label: 'Salle principale', render: (c: any) => {
+              const salle = salles.find((s: any) => s.id === c.salleId);
+              const effectif = (initialData.eleves ?? []).filter((e: any) => e.classeActuelleId === c.id).length;
+              return (
+                <div className="flex items-center gap-1">
+                  <select
+                    defaultValue={c.salleId ?? ''}
+                    disabled={salles.length === 0}
+                    onChange={(e) => retourEdt.run(
+                      () => actionsExt.affecterSalleClasse(c.id, e.target.value || null),
+                      'Salle principale mise à jour.',
+                    )}
+                    className="h-7 rounded border border-gray-200 bg-transparent px-1 text-xs max-w-[130px]"
+                    title={salles.length === 0 ? 'Créez d\'abord des salles' : 'Affecter une salle principale'}
+                  >
+                    <option value="">— aucune —</option>
+                    {salles.map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.nom}{salle && s.id === salle.id && effectif > s.capacite ? ' ⚠' : ''}</option>
+                    ))}
+                  </select>
+                  {salle && effectif > salle.capacite && (
+                    <span className="text-amber-600 text-xs" title={`Capacité ${salle.capacite} < effectif ${effectif}`}>⚠</span>
+                  )}
+                </div>
+              );
+            } },
           ]}
           rows={classes}
           emptyLabel="Aucune classe pour l'année active"
@@ -132,7 +192,42 @@ export default function SallesModule({ initialData }: { initialData: any }) {
             { key: 'nom', label: 'Nom' },
             { key: 'type', label: 'Type' },
             { key: 'capacite', label: 'Capacité' },
-            { key: 'equipements', label: 'Équipements', render: (s) => JSON.parse(s.equipements || '[]').join(', ') || '—' },
+            { key: 'equipements', label: 'Équipements', render: (s) => { try { return JSON.parse(s.equipements || '[]').join(', ') || '—'; } catch { return '—'; } } },
+            { key: 'classe', label: 'Classe attribuée', render: (s: any) => {
+              const cs = classes.filter((c: any) => c.salleId === s.id);
+              return cs.length > 0 ? cs.map((c: any) => c.libelle).join(', ') : <span className="text-gray-400">—</span>;
+            } },
+            { key: 'actions', label: 'Actions', render: (s: any) => (
+              <div className="flex gap-1">
+                <ModalForm
+                  trigger={<Button variant="outline" size="sm" className="h-7 text-xs">Modifier</Button>}
+                  title={`Modifier la salle — ${s.nom}`}
+                  fields={[
+                    { name: 'salleId', type: 'hidden', label: 'ID', defaultValue: s.id },
+                    { name: 'nom', label: 'Nom', required: true },
+                    { name: 'type', label: 'Type', type: 'select', required: true, options: [
+                      { value: 'classe', label: 'Classe' },
+                      { value: 'labo', label: 'Laboratoire' },
+                      { value: 'informatique', label: 'Salle informatique' },
+                      { value: 'sport', label: 'Gymnase / Sport' },
+                      { value: 'polyvalente', label: 'Polyvalente' },
+                    ] },
+                    { name: 'capacite', label: 'Capacité', type: 'number', required: true },
+                  ]}
+                  defaultValues={{ salleId: s.id, nom: s.nom, type: s.type, capacite: String(s.capacite) }}
+                  action={actionsExt.modifierSalle}
+                />
+                <Button
+                  variant="ghost" size="sm" className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                  onClick={() => {
+                    if (!window.confirm(`Supprimer la salle « ${s.nom} » ?\n\nRefusé si des réservations, séances ou créneaux d'EDT l'utilisent.`)) return;
+                    retourEdt.run(() => actionsExt.supprimerSalle(s.id), 'Salle supprimée.');
+                  }}
+                >
+                  Supprimer
+                </Button>
+              </div>
+            ) },
           ]}
           rows={salles}
           emptyLabel="Aucune salle enregistrée"

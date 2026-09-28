@@ -69,6 +69,80 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
 
   const rolesParPersonnel = (pid: string) => roles.filter((r: any) => r.ecoleId !== null && personnels.find((p: any) => p.id === pid)?.utilisateurId);
 
+  // ===== AUDIT PERSONNEL — répertoire organisé par service, enseignants
+  // regroupés par cycle d'enseignement (via leurs affectations matière × classe)
+  const rolesMap: Record<string, Array<{ code: string; libelle: string }>> = initialData.rolesParPersonnel ?? {};
+  const affectations = initialData.affectationsEnseignant ?? [];
+  const classes = initialData.classes ?? [];
+  const niveaux = initialData.niveaux ?? [];
+  const niveauParClasse = new Map<string, any>(niveaux.map((n: any) => [n.id, n]));
+  const cycleDeClasseId = (classeId: string): string => {
+    const c = classes.find((x: any) => x.id === classeId);
+    if (!c) return 'Non affecté';
+    const niv = niveauParClasse.get(c.niveauId);
+    return niv?.section?.cycle?.libelle ?? niv?.section?.libelle ?? 'Autre';
+  };
+  const SERVICES: Array<{ code: string; libelle: string; icone: string }> = [
+    { code: 'direction', libelle: 'Direction', icone: '🎓' },
+    { code: 'assistant_direction', libelle: 'Assistanat de direction', icone: '💼' },
+    { code: 'secretariat', libelle: 'Secrétariat', icone: '📝' },
+    { code: 'comptabilite', libelle: 'Comptabilité', icone: '💰' },
+    { code: 'rh', libelle: 'RH', icone: '👥' },
+    { code: 'censeur', libelle: 'Censure', icone: '🛡️' },
+    { code: 'surveillant', libelle: 'Surveillance', icone: '👀' },
+    { code: 'infirmier', libelle: 'Infirmerie', icone: '🏥' },
+    { code: 'enseignant', libelle: 'Enseignants', icone: '👩‍🏫' },
+    { code: 'sans_role', libelle: 'Sans rôle défini', icone: '❓' },
+  ];
+  const codesRoles = (p: any): string[] => (rolesMap[p.id] ?? []).map((r: any) => r.code);
+  const servicePrincipal = (p: any): string => {
+    const codes = codesRoles(p);
+    for (const s of SERVICES) if (codes.includes(s.code)) return s.code;
+    return codes.length > 0 ? codes[0] : 'sans_role';
+  };
+  const cyclesEnseignant = (p: any): string[] => {
+    const cycles = new Set<string>(
+      affectations.filter((a: any) => a.personnelId === p.id && a.classeId).map((a: any) => cycleDeClasseId(a.classeId)),
+    );
+    return [...cycles].sort();
+  };
+  const libelleService = (code: string) => SERVICES.find((s) => s.code === code);
+  const [filtreService, setFiltreService] = useState<string>('tous');
+  const [recherchePers, setRecherchePers] = useState('');
+  const persFiltres = personnels.filter((p: any) => {
+    if (filtreService !== 'tous') {
+      if (filtreService === 'enseignant') {
+        if (!codesRoles(p).includes('enseignant')) return false;
+      } else if (servicePrincipal(p) !== filtreService) return false;
+    }
+    if (recherchePers.trim()) {
+      const q = recherchePers.trim().toLowerCase();
+      return `${p.prenom} ${p.nom} ${p.matricule ?? ''}`.toLowerCase().includes(q);
+    }
+    return true;
+  });
+  // Groupes ordonnés : services d'abord, enseignants par cycle ensuite
+  const groupes: Array<{ titre: string; icone: string; personnes: any[] }> = [];
+  for (const s of SERVICES) {
+    if (s.code === 'enseignant' || s.code === 'sans_role') continue;
+    const membres = persFiltres.filter((p: any) => servicePrincipal(p) === s.code && codesRoles(p).includes(s.code));
+    if (membres.length > 0) groupes.push({ titre: s.libelle, icone: s.icone, personnes: membres });
+  }
+  const enseignants = persFiltres.filter((p: any) => codesRoles(p).includes('enseignant') && !SERVICES.slice(0, 8).some((s) => codesRoles(p).includes(s.code)));
+  if (enseignants.length > 0) {
+    const parCycle = new Map<string, any[]>();
+    for (const e of enseignants) {
+      const cycles = cyclesEnseignant(e);
+      const cle = cycles.length > 0 ? cycles.join(' + ') : 'Non affectés à une classe';
+      (parCycle.get(cle) ?? parCycle.set(cle, []).get(cle)!).push(e);
+    }
+    for (const [cycle, membres] of [...parCycle.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      groupes.push({ titre: `Enseignants — ${cycle}`, icone: '👩‍🏫', personnes: membres });
+    }
+  }
+  const sansRole = persFiltres.filter((p: any) => servicePrincipal(p) === 'sans_role');
+  if (sansRole.length > 0) groupes.push({ titre: 'Sans rôle défini', icone: '❓', personnes: sansRole });
+
   return (
     <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
@@ -127,32 +201,83 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
 
       <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">
-          <SectionBlock title="Liste du personnel">
+          <SectionBlock title="Répertoire du personnel" description="Organisé par service — les enseignants par cycle d'enseignement">
+            {/* Filtres par service */}
+            <div className="flex gap-1 flex-wrap mb-2">
+              <button
+                onClick={() => setFiltreService('tous')}
+                className={`px-2.5 py-1 rounded-full text-xs border ${filtreService === 'tous' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}
+              >
+                Tous ({personnels.length})
+              </button>
+              {SERVICES.map((s) => {
+                const nb = s.code === 'enseignant'
+                  ? personnels.filter((p: any) => codesRoles(p).includes('enseignant')).length
+                  : personnels.filter((p: any) => servicePrincipal(p) === s.code).length;
+                if (nb === 0) return null;
+                return (
+                  <button
+                    key={s.code}
+                    onClick={() => setFiltreService(s.code)}
+                    className={`px-2.5 py-1 rounded-full text-xs border ${filtreService === s.code ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}
+                  >
+                    {s.icone} {s.libelle} ({nb})
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={recherchePers}
+              onChange={(e) => setRecherchePers(e.target.value)}
+              placeholder="Rechercher (nom, prénom, matricule)…"
+              className="w-full h-9 border rounded-md px-3 text-sm mb-2"
+            />
             <div className="max-h-[60vh] overflow-y-auto -mx-2">
-              {personnels.map((p: any) => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedId(p.id)}
-                  className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm hover:bg-gray-50 ${selectedId === p.id ? 'bg-emerald-50 border border-emerald-200' : ''}`}
-                >
-                  <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-medium flex-shrink-0">
-                    {initiales(p.nom, p.prenom)}
+              {groupes.length === 0 ? (
+                <p className="text-sm text-gray-500 p-4 text-center">
+                  {personnels.length === 0 ? 'Aucun personnel enregistré — créez la première fiche avec « Nouveau personnel ».' : 'Aucun personnel pour ce filtre.'}
+                </p>
+              ) : groupes.map((g) => (
+                <div key={g.titre} className="mb-2">
+                  <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide px-2 py-1 border-b border-gray-100 sticky top-0 bg-white">
+                    {g.icone} {g.titre} · {g.personnes.length}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{p.prenom} {p.nom}</div>
-                    <div className="text-xs text-gray-500">{p.matricule} · {p.typeContrat ?? '—'}</div>
-                  </div>
-                  {afficheSoldes && (soldeParPersonnel.get(p.id) ? (
-                    <span className="text-[11px] text-gray-500 flex-shrink-0" title="Congés — jours restants / droits acquis">
-                      {Math.round(soldeParPersonnel.get(p.id).joursRestants ?? 0)}/{Math.round(soldeParPersonnel.get(p.id).droitsAcquis ?? 0)} j
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-gray-300 flex-shrink-0" title="Aucun solde de congés enregistré">—</span>
+                  {g.personnes.map((p: any) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm hover:bg-gray-50 ${selectedId === p.id ? 'bg-emerald-50 border border-emerald-200' : ''}`}
+                    >
+                      <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-medium flex-shrink-0">
+                        {initiales(p.nom, p.prenom)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{p.prenom} {p.nom}</div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {p.matricule} · {p.typeContrat ?? '—'}
+                          {codesRoles(p).includes('enseignant') && affectations.filter((a: any) => a.personnelId === p.id).length > 0 && (
+                            <span title={`${affectations.filter((a: any) => a.personnelId === p.id).length} affectation(s) matière × classe`}>
+                              {' '}· {affectations.filter((a: any) => a.personnelId === p.id).length} affect.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {afficheSoldes && (soldeParPersonnel.get(p.id) ? (
+                        <span className="text-[11px] text-gray-500 flex-shrink-0" title="Congés — jours restants / droits acquis">
+                          {Math.round(soldeParPersonnel.get(p.id).joursRestants ?? 0)}/{Math.round(soldeParPersonnel.get(p.id).droitsAcquis ?? 0)} j
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-300 flex-shrink-0" title="Aucun solde de congés enregistré">—</span>
+                      ))}
+                      <StatusBadge statut={p.statut} />
+                    </button>
                   ))}
-                  <StatusBadge statut={p.statut} />
-                </button>
+                </div>
               ))}
             </div>
+            {rolesMap && Object.keys(rolesMap).length === 0 && personnels.length > 0 && (
+              <p className="text-xs text-gray-400 mt-2">Les services sont déduits des rôles attribués — un personnel sans rôle apparaît dans « Sans rôle défini ».</p>
+            )}
           </SectionBlock>
         </div>
 
@@ -223,7 +348,71 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Salaire</div><div className="text-sm font-medium">{formatXOF(personnel.salaireBrut, 'XOF')}</div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Statut</div><StatusBadge statut={personnel.statut} /></CardContent></Card>
                 </div>
-                <button className="text-sm text-emerald-700 hover:underline" onClick={() => setSheetOpen(true)}>Voir la fiche complète →</button>
+                {/* Services de la personne (déduits des rôles) + affectations enseignant */}
+                <div className="flex flex-wrap gap-1.5">
+                  {(rolesMap[personnel.id] ?? []).map((r: any) => (
+                    <Badge key={r.code} variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{r.libelle}</Badge>
+                  ))}
+                  {(rolesMap[personnel.id] ?? []).length === 0 && (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">Aucun rôle — accès non définis</Badge>
+                  )}
+                  {affectations.filter((a: any) => a.personnelId === personnel.id).slice(0, 6).map((a: any) => (
+                    <Badge key={a.id} variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 text-xs">
+                      {a.matiere?.libelle} · {a.classe?.libelle}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className="text-sm text-emerald-700 hover:underline" onClick={() => setSheetOpen(true)}>Voir la fiche complète →</button>
+                  {estDirection || portal === 'rh' ? (
+                    <>
+                      <ModalForm
+                        trigger={<Button variant="outline" size="sm">Modifier</Button>}
+                        title={`Modifier — ${personnel.prenom} ${personnel.nom}`}
+                        fields={[
+                          { name: 'personnelId', type: 'hidden', label: 'ID', defaultValue: personnel.id },
+                          { name: 'nom', label: 'Nom', required: true },
+                          { name: 'prenom', label: 'Prénom', required: true },
+                          { name: 'sexe', label: 'Sexe', type: 'select', options: [{ value: 'M', label: 'M' }, { value: 'F', label: 'F' }] },
+                          { name: 'telephone', label: 'Téléphone' },
+                          { name: 'email', label: 'Email' },
+                          { name: 'dateEmbauche', label: "Date d'embauche", type: 'date' },
+                          { name: 'typeContrat', label: 'Type de contrat', type: 'select', options: [
+                            { value: 'CDI', label: 'CDI' }, { value: 'CDD', label: 'CDD' },
+                            { value: 'vacataire', label: 'Vacataire' }, { value: 'stagiaire', label: 'Stagiaire' },
+                          ] },
+                          { name: 'salaireBrut', label: 'Salaire brut (XOF)', type: 'number' },
+                          { name: 'diplomePrincipal', label: 'Diplôme principal' },
+                          { name: 'contactUrgence', label: "Contact d'urgence" },
+                        ]}
+                        defaultValues={{
+                          personnelId: personnel.id,
+                          nom: personnel.nom,
+                          prenom: personnel.prenom,
+                          sexe: personnel.sexe ?? 'M',
+                          telephone: personnel.telephone ?? '',
+                          email: personnel.email ?? '',
+                          dateEmbauche: personnel.dateEmbauche ? String(personnel.dateEmbauche).slice(0, 10) : '',
+                          typeContrat: personnel.typeContrat ?? 'CDI',
+                          salaireBrut: personnel.salaireBrut != null ? String(Math.round(personnel.salaireBrut / 100)) : '',
+                          diplomePrincipal: personnel.diplomePrincipal ?? '',
+                          contactUrgence: personnel.contactUrgence ?? '',
+                        }}
+                        action={actionsExt.modifierPersonnel}
+                      />
+                      <Button
+                        variant="outline" size="sm" className="text-rose-600 hover:text-rose-700"
+                        disabled={pending}
+                        onClick={() => {
+                          if (!window.confirm(`Supprimer définitivement la fiche de ${personnel.prenom} ${personnel.nom} ?\n\nLe compte d'accès sera désactivé. Refusé si un historique de paie ou de contrats existe (utilisez alors « Sortie formelle »).`)) return;
+                          run(() => actionsExt.supprimerPersonnel(personnel.id), 'Fiche personnel supprimée.');
+                        }}
+                      >
+                        Supprimer
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
               </div>
             ) : <EmptyState title="Aucun personnel sélectionné" />}
           </SectionBlock>

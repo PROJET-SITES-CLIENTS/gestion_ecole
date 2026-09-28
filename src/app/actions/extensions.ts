@@ -55,6 +55,14 @@ import {
   // SECRETARIAT — checklist dossier, courrier, réinscriptions
   basculerPieceDossierCore, ajouterPieceExigeeCore,
   enregistrerCourrierCore, traiterCourrierCore, enregistrerReinscriptionCore,
+  // AUDIT — dossier élève (import numérique réel des pièces)
+  televerserDocumentEleveCore, supprimerDocumentEleveCore,
+  // AUDIT — configuration : CRUD matières, salles, personnel, programmes
+  modifierMatiereCore, supprimerMatiereCore, modifierSalleCore, supprimerSalleCore,
+  affecterSalleClasseCore, modifierPersonnelCore, supprimerPersonnelCore,
+  modifierProgrammeCore, supprimerProgrammeCore, modifierChapitreCore, supprimerChapitreCore,
+  // AUDIT — statistiques d'absentéisme complètes
+  statsAbsencesCore, notifierFamillesAbsencesCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -1210,5 +1218,194 @@ export async function renouvelerContrat(formData: FormData): Promise<ActionResul
 
 export async function statsRh(): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await statsRhCore(ctx); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT — DOSSIER ÉLÈVE : import numérique réel des pièces
+// ====================================================================
+
+export async function televerserDocumentEleve(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const eleveId = String(formData.get('eleveId') ?? '');
+    const type = String(formData.get('type') ?? '');
+    const confidentiel = formData.get('confidentiel') !== 'false'; // défaut : confidentiel (mineur)
+    if (!eleveId || !type) return { ok: false, error: 'Élève et type de pièce obligatoires.' };
+    const fichier = formData.get('fichier');
+    if (!fichier || typeof fichier === 'string' || fichier.size === 0) {
+      return { ok: false, error: 'Aucun fichier sélectionné.' };
+    }
+    const r = await televerserDocumentEleveCore(ctx, {
+      eleveId, type,
+      nomFichier: fichier.name,
+      mimeType: fichier.type || 'application/octet-stream',
+      taille: fichier.size,
+      contenu: new Uint8Array(await fichier.arrayBuffer()),
+      confidentiel,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerDocumentEleve(documentId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerDocumentEleveCore(ctx, documentId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT — CONFIGURATION : CRUD complet matières / salles / personnel
+// ====================================================================
+
+export async function modifierMatiere(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      matiereId: idReq,
+      libelle: strReq,
+      coefficient: z.coerce.number().min(0.5).max(20).optional(),
+      couleur: str,
+    }).parse(Object.fromEntries(formData));
+    const r = await modifierMatiereCore(ctx, d.matiereId, { libelle: d.libelle, coefficient: d.coefficient, couleur: d.couleur || undefined });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerMatiere(matiereId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerMatiereCore(ctx, matiereId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function modifierSalle(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      salleId: idReq,
+      nom: strReq,
+      type: strReq,
+      capacite: z.coerce.number().int().positive(),
+    }).parse(Object.fromEntries(formData));
+    const r = await modifierSalleCore(ctx, d.salleId, { nom: d.nom, type: d.type, capacite: d.capacite });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerSalle(salleId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerSalleCore(ctx, salleId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function affecterSalleClasse(classeId: string, salleId: string | null): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await affecterSalleClasseCore(ctx, classeId, salleId);
+    revalidatePath('/');
+    return {
+      ok: true, ...r,
+      message: r.avertissement.length > 0
+        ? `Salle affectée — attention : ${r.avertissement.join(' ; ')}.`
+        : 'Salle principale affectée à la classe.',
+    };
+  } catch (e) { return echec(e); }
+}
+
+export async function modifierPersonnel(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const brut = Object.fromEntries(formData);
+    const d = z.object({
+      personnelId: idReq,
+      nom: strReq,
+      prenom: strReq,
+      sexe: str,
+      telephone: str,
+      email: z.union([z.literal(''), z.string().email('email invalide')]).optional(),
+      dateEmbauche: str,
+      typeContrat: str,
+      salaireBrut: z.coerce.number().optional(), // en FCFA (converti en centimes)
+      diplomePrincipal: str,
+      contactUrgence: str,
+    }).parse(brut);
+    const r = await modifierPersonnelCore(ctx, d.personnelId, {
+      nom: d.nom, prenom: d.prenom, sexe: d.sexe || undefined,
+      telephone: d.telephone, email: d.email || undefined,
+      dateEmbauche: d.dateEmbauche || undefined,
+      typeContrat: d.typeContrat || undefined,
+      salaireBrut: d.salaireBrut !== undefined && d.salaireBrut > 0 ? versCentimes(d.salaireBrut) : undefined,
+      diplomePrincipal: d.diplomePrincipal, contactUrgence: d.contactUrgence,
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerPersonnel(personnelId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerPersonnelCore(ctx, personnelId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT — PROGRAMMES : modification / suppression / période trimestre
+// ====================================================================
+
+export async function modifierProgramme(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      programmeId: idReq,
+      titre: strReq,
+      objectifs: str,
+      volumeHorairePrevu: z.coerce.number().int().positive().optional(),
+      publie: coche,
+    }).parse(Object.fromEntries(formData));
+    const r = await modifierProgrammeCore(ctx, d.programmeId, {
+      titre: d.titre, objectifs: d.objectifs,
+      volumeHorairePrevu: d.volumeHorairePrevu,
+      publie: estCoche(d.publie),
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerProgramme(programmeId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerProgrammeCore(ctx, programmeId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function modifierChapitre(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      chapitreId: idReq,
+      titre: strReq,
+      ordre: z.coerce.number().int().min(1),
+      periodeId: str, // '' = non planifié
+      volumeHorairePrevu: z.coerce.number().int().positive().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await modifierChapitreCore(ctx, d.chapitreId, {
+      titre: d.titre, ordre: d.ordre,
+      periodeId: d.periodeId || null,
+      volumeHorairePrevu: d.volumeHorairePrevu,
+    });
+    revalidatePath('/'); return { ok: true, ...r };
+  } catch (e) { return echec(e); }
+}
+
+export async function supprimerChapitre(chapitreId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await supprimerChapitreCore(ctx, chapitreId); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT — STATISTIQUES D'ABSENTÉISME COMPLÈTES (dashboard présences)
+// ====================================================================
+
+export async function statsAbsences(fenetreJours = 30): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await statsAbsencesCore(ctx, fenetreJours); return { ok: true, stats: r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function notifierFamillesAbsences(seuilAbsences: number, fenetreJours: number): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await notifierFamillesAbsencesCore(ctx, seuilAbsences, fenetreJours); return { ok: true, ...r, message: `${r.famillesNotifiées} famille(s) notifiée(s).` }; }
   catch (e) { return echec(e); }
 }

@@ -498,6 +498,45 @@ export async function validerDepenseCore(ctx: Ctx, depenseId: string) {
     where: { id: depenseId },
     data: { validee: true, valideeParId: ctx.utilisateurId, dateValidation: new Date() },
   });
+  // AUDIT COMPTA — écriture SYSCOHADA en TEMPS RÉEL à la validation de la
+  // dépense : débit du compte de charge (catégorie mappée sur le plan),
+  // crédit de la trésorerie (571 Caisse par défaut, sinon 521 Banque).
+  // Journal ACH. Silencieux si le plan comptable n'est pas initialisé.
+  try {
+    const [charges, treso] = await Promise.all([
+      db.compteComptable.findMany({ where: { ecoleId: d.ecoleId, type: 'charge' } }),
+      db.compteComptable.findMany({ where: { ecoleId: d.ecoleId, numero: { in: ['571', '521'] } } }),
+    ]);
+    const cat = d.categorie.toLowerCase();
+    const compteCharge =
+      charges.find((c) => c.libelle?.toLowerCase().includes(cat)) ?? // correspondance catégorie
+      charges.find((c) => c.numero === '601') ?? // achats
+      charges.find((c) => c.numero?.startsWith('6')) ?? // première charge 6xx
+      charges[0];
+    const compteTreso = treso.find((c) => c.numero === '571') ?? treso.find((c) => c.numero === '521');
+    const journalACH = await db.journalComptable.findFirst({ where: { ecoleId: d.ecoleId, code: 'ACH' } })
+      ?? await db.journalComptable.findFirst({ where: { ecoleId: d.ecoleId, code: 'OD' } });
+    if (compteCharge && compteTreso && journalACH) {
+      await db.ecritureComptable.create({
+        data: {
+          ecoleId: d.ecoleId, journalId: journalACH.id, date: new Date(),
+          numeroPiece: `DEP-${d.id.slice(-10)}`,
+          libelle: `Dépense ${d.categorie} — ${d.description.slice(0, 50)}`,
+          statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+          lignes: {
+            create: [
+              { compteId: compteCharge.id, libelle: compteCharge.libelle ?? 'Charges', debit: d.montant, credit: 0 },
+              { compteId: compteTreso.id, libelle: compteTreso.numero === '571' ? 'Caisse' : 'Banque', debit: 0, credit: d.montant },
+            ],
+          },
+        },
+      });
+      const deltaCharge = compteCharge.type === 'charge' ? d.montant : -d.montant;
+      const deltaTreso = ['actif', 'charge'].includes(compteTreso.type) ? -d.montant : d.montant;
+      await db.compteComptable.update({ where: { id: compteCharge.id }, data: { solde: { increment: deltaCharge } } });
+      await db.compteComptable.update({ where: { id: compteTreso.id }, data: { solde: { increment: deltaTreso } } });
+    }
+  } catch { /* plan absent : comptabilité non activée — flux métier prioritaire */ }
   await logAction(db, d.ecoleId, ctx.utilisateurId, 'depense.validation', 'depense', depenseId);
   return { depenseId };
 }

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import * as actions from '@/app/actions';
@@ -658,6 +659,11 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
               { name: 'programmeId', label: 'Programme', type: 'select', options: programmes.map((p: any) => ({ value: p.id, label: `${p.titre} (${p.matiere?.libelle ?? ''})` })), required: true },
               { name: 'titre', label: 'Intitulé du chapitre', required: true, placeholder: 'Chapitre 3 : Les fractions' },
               { name: 'ordre', label: 'Ordre', type: 'number', defaultValue: '1', required: true },
+              // AUDIT CONFIG — planification du chapitre sur un trimestre
+              { name: 'periodeId', label: 'Trimestre / Semestre (planification)', type: 'select', options: [
+                { value: '', label: '— Non planifié —' },
+                ...periodes.map((p: any) => ({ value: p.id, label: p.libelle })),
+              ] },
               { name: 'objectifs', label: 'Objectifs', type: 'textarea' },
             ]}
             action={actionsExt.ajouterChapitre}
@@ -674,17 +680,103 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             action={actionsExt.majAvancement}
           />
         </div>
-        <SectionBlock title="Programmes pédagogiques" description="Programmes par matière et niveau">
+        <SectionBlock title="Programmes pédagogiques" description="Programme par matière et par niveau — le même contenu est réutilisable par toutes les classes du niveau">
           <DataTable
             columns={[
               { key: 'titre', label: 'Titre' },
               { key: 'matiere', label: 'Matière', render: (p) => matieres.find((m: any) => m.id === p.matiereId)?.libelle ?? '—' },
-              { key: 'niveau', label: 'Niveau', render: (p) => p.niveauId },
+              { key: 'niveau', label: 'Niveau', render: (p) => p.niveau?.libelle ?? niveaux.find((n: any) => n.id === p.niveauId)?.libelle ?? p.niveauId },
               { key: 'chapitres', label: 'Chapitres', render: (p) => `${(p.chapitres ?? []).length} chapitre(s)` },
               { key: 'publie', label: 'Statut', render: (p) => p.publie ? <StatusBadge statut="publie" /> : <StatusBadge statut="planifie" /> },
+              { key: 'actions', label: 'Actions', render: (p: any) => (
+                <div className="flex gap-1">
+                  <ModalForm
+                    trigger={<Button variant="outline" size="sm" className="h-7 text-xs">Modifier</Button>}
+                    title={`Modifier — ${p.titre}`}
+                    fields={[
+                      { name: 'programmeId', type: 'hidden', label: 'ID', defaultValue: p.id },
+                      { name: 'titre', label: 'Intitulé', required: true },
+                      { name: 'objectifs', label: 'Objectifs', type: 'textarea' },
+                      { name: 'volumeHorairePrevu', label: 'Volume horaire prévu (h)', type: 'number' },
+                      { name: 'publie', label: 'Publié aux enseignants et familles', type: 'checkbox' },
+                    ]}
+                    defaultValues={{
+                      programmeId: p.id,
+                      titre: p.titre,
+                      objectifs: p.objectifs ?? '',
+                      volumeHorairePrevu: p.volumeHorairePrevu != null ? String(p.volumeHorairePrevu) : '',
+                      publie: p.publie ? 'on' : '',
+                    }}
+                    action={actionsExt.modifierProgramme}
+                  />
+                  <Button
+                    variant="ghost" size="sm" className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                    onClick={() => {
+                      if (!window.confirm(`Supprimer le programme « ${p.titre} » et ses ${(p.chapitres ?? []).length} chapitre(s) ?\n\nLes séances rattachées sont conservées (détachées du chapitre).`)) return;
+                      retourProgrammes.run(() => actionsExt.supprimerProgramme(p.id), 'Programme supprimé.');
+                    }}
+                  >
+                    Supprimer
+                  </Button>
+                </div>
+              ) },
             ]}
             rows={programmes}
             emptyLabel="Aucun programme défini"
+          />
+        </SectionBlock>
+        <SectionBlock
+          title="Chapitres & planification par trimestre"
+          description="Chaque chapitre est planifié sur une période (trimestre) ; l'ordre définit la séquence au sein de la période"
+        >
+          <DataTable
+            columns={[
+              { key: 'programme', label: 'Programme', render: (c) => c.programmeTitre },
+              { key: 'titre', label: 'Chapitre' },
+              { key: 'ordre', label: 'Ordre' },
+              { key: 'periode', label: 'Planifié sur', render: (c) => {
+                const per = periodes.find((p: any) => p.id === c.periodeId);
+                return per ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{per.libelle}</Badge> : <span className="text-gray-400 text-xs">—</span>;
+              } },
+              { key: 'volume', label: 'Volume (h)', render: (c) => c.volumeHorairePrevu ?? '—' },
+              { key: 'actions', label: 'Actions', render: (c: any) => (
+                <div className="flex gap-1">
+                  <ModalForm
+                    trigger={<Button variant="outline" size="sm" className="h-7 text-xs">Modifier</Button>}
+                    title={`Modifier — ${c.titre}`}
+                    fields={[
+                      { name: 'chapitreId', type: 'hidden', label: 'ID', defaultValue: c.id },
+                      { name: 'titre', label: 'Intitulé', required: true },
+                      { name: 'ordre', label: 'Ordre', type: 'number', required: true },
+                      { name: 'periodeId', label: 'Trimestre / Semestre', type: 'select', options: [
+                        { value: '', label: '— Non planifié —' },
+                        ...periodes.map((p: any) => ({ value: p.id, label: p.libelle })),
+                      ] },
+                      { name: 'volumeHorairePrevu', label: 'Volume horaire (h)', type: 'number' },
+                    ]}
+                    defaultValues={{
+                      chapitreId: c.id,
+                      titre: c.titre,
+                      ordre: String(c.ordre),
+                      periodeId: c.periodeId ?? '',
+                      volumeHorairePrevu: c.volumeHorairePrevu != null ? String(c.volumeHorairePrevu) : '',
+                    }}
+                    action={actionsExt.modifierChapitre}
+                  />
+                  <Button
+                    variant="ghost" size="sm" className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                    onClick={() => {
+                      if (!window.confirm(`Supprimer le chapitre « ${c.titre} » ?\n\nLes séances rattachées sont conservées (détachées).`)) return;
+                      retourProgrammes.run(() => actionsExt.supprimerChapitre(c.id), 'Chapitre supprimé.');
+                    }}
+                  >
+                    Supprimer
+                  </Button>
+                </div>
+              ) },
+            ]}
+            rows={chapitres.sort((a: any, b: any) => (a.programmeTitre ?? '').localeCompare(b.programmeTitre ?? '') || (a.ordre ?? 0) - (b.ordre ?? 0))}
+            emptyLabel="Aucun chapitre défini"
           />
         </SectionBlock>
         <SectionBlock title="Avancement par classe" description="Suivi des chapitres enseignés">
