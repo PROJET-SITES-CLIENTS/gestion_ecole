@@ -486,7 +486,7 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
   const sortiesExceptionnelles = sorties.filter((s: any) => s.validationExceptionnelle).length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Sécurité du site & du compte"
         subtitle="Registre visiteurs, autorisations de sortie, sauvegardes, sessions, RGPD et multi-écoles"
@@ -504,7 +504,7 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Visiteurs présents" value={visiteursPresents} icon={UserCheck} color="emerald" />
         <StatCard title="Total visiteurs" value={visiteurs.length} icon={Shield} color="blue" />
         <StatCard title="Autorisations actives" value={autorisations.filter((a: any) => a.active).length} icon={UserCheck} color="purple" />
@@ -692,7 +692,7 @@ export default function SecuriteModule({ initialData }: { initialData: any }) {
         description="Sessions actives (8 h max, cookie HttpOnly) et tentatives de connexion (succès et échecs) — révocation immédiate possible"
       >
         {retourSessions.Message}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
             <h4 className="text-sm font-medium mb-2">Sessions actives</h4>
             <DataTable
@@ -837,7 +837,7 @@ function Section2FA() {
       {message && (
         <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm" role="status">{message}</div>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Activation */}
         <div className="space-y-3">
           <h4 className="text-sm font-medium flex items-center gap-2">

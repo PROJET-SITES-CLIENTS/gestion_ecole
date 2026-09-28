@@ -44,7 +44,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
-        {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+        {subtitle && <p className="hidden sm:block text-sm text-gray-500 mt-1">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -100,7 +100,7 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
   const plafonne = typeof total === 'number' && rows.length < total;
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-      <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 max-h-[60vh] overflow-y-auto">
         <Table>
           <TableHeader className="sticky top-0 bg-gray-50 z-10">
             <TableRow>
@@ -197,7 +197,7 @@ export function ModalForm({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

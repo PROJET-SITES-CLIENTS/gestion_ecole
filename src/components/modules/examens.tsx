@@ -36,10 +36,10 @@ export default function ExamensModule({ initialData }: { initialData: any }) {
   const [message, setMessage] = useState<string | null>(null);
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Examens officiels" subtitle="Sessions nationales (CEPE, BEPC, BAC), inscriptions, convocations, résultats" />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Sessions" value={examens.length} icon={FileCheck} color="emerald" />
         <StatCard title="Inscriptions" value={inscriptions.length} icon={Award} color="blue" />
         <StatCard title="Convoqués" value={inscriptions.filter((i: any) => i.statut === 'convoque').length} sub="convocations envoyées" icon={BellRing} color="purple" />

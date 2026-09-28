@@ -38,7 +38,7 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
   const tauxResiliation = ecoles.length > 0 ? `${Math.round((ecolesResiliees / ecoles.length) * 100)}%` : '—';
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Back-Office Éditeur SaaS"
         subtitle="Supervision des écoles clientes, plans tarifaires, facturation éditeur"
@@ -61,7 +61,7 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
       {Message}
 
       {/* KPIs globaux */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Écoles actives" value={ecolesActives} sub={`${ecolesEssai} en essai`} icon={Building2} color="emerald" />
         <StatCard title="MRR (revenu récurrent)" value={formatXOF(mrr)} sub="par mois" icon={TrendingUp} color="blue" />
         <StatCard title="Élèves gérés (total)" value={totalElevesGeres.toLocaleString('fr-FR')} sub="sur la plateforme" icon={Users} color="purple" />
@@ -149,7 +149,7 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
               />
             }
           />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             {plans.map((p: any) => {
               const ecolesSurPlan = ecoles.filter((e: any) => e.planCourantId === p.id).length;
               return (

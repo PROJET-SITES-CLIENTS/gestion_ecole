@@ -147,12 +147,12 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Services complémentaires" subtitle="Vie quotidienne (cantine, transport, garderie), inscriptions, bibliothèque et manuels scolaires" />
 
       {Message}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Inscriptions cantine" value={cantine.length} icon={Utensils} color="emerald" />
         <StatCard title="Inscriptions transport" value={transports.length} sub={`${lignesTransport.length} lignes`} icon={Bus} color="blue" />
         <StatCard title="Inscriptions garderie" value={garderieInscriptions.length} sub={`${sessionsOuvertes.length} session(s) en cours`} icon={Baby} color="purple" />
@@ -160,7 +160,7 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
       </div>
 
       <Tabs defaultValue="cantine-jour">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 mb-4 h-auto">
+        <TabsList className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 mb-4 h-auto">
           <TabsTrigger value="cantine-jour" className="text-xs">Cantine du jour</TabsTrigger>
           <TabsTrigger value="transport-jour" className="text-xs">Transport du jour</TabsTrigger>
           <TabsTrigger value="garderie" className="text-xs">Garderie</TabsTrigger>
@@ -191,7 +191,7 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
               }}
               className="space-y-3"
             >
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="overflow-x-auto grid sm:grid-cols-2 gap-3">
                 <FormField label="Date" required>
                   <Input type="date" name="date" defaultValue={menuDuJour ? String(menuDuJour.date).slice(0, 10) : JOUR_ISO} required />
                 </FormField>
@@ -235,7 +235,7 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
                 className="space-y-3"
               >
                 <input type="hidden" name="date" value={JOUR_ISO} />
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="overflow-x-auto grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {inscritsJour.map((c: any) => {
                     const existante = cantinePresences.find((p: any) => p.eleveId === c.eleveId);
                     const present = existante ? Boolean(existante.present) : true;
@@ -602,7 +602,7 @@ export default function ServicesModule({ initialData }: { initialData: any }) {
               </div>
             }
           >
-            <div className="grid md:grid-cols-2 gap-3">
+            <div className="overflow-x-auto grid md:grid-cols-2 gap-3">
               <div>
                 <h4 className="text-sm font-medium mb-2">Lignes</h4>
                 <DataTable

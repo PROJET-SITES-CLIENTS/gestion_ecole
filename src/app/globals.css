@@ -120,3 +120,32 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+/* ═══ SCROLLBAR MOBILE — masquer sur tactile pour un look natif ═══ */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    scrollbar-width: none;
+  }
+}
+
+/* ═══ TOUCH TARGETS — minimum 44px pour l'accessibilité tactile ═══ */
+@media (pointer: coarse) {
+  button, a, input, select, textarea {
+    min-height: 44px;
+  }
+  button[class*="h-8"], button[class*="h-7"], button[class*="h-6"] {
+    min-height: 44px;
+  }
+}
+
+/* ═══ ANIMATIONS MOBILE — fluidité ═══ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

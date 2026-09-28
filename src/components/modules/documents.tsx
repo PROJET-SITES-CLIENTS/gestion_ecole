@@ -110,7 +110,7 @@ export default function DocumentsModule() {
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide">{domaine}</h3>
             <span className="text-xs text-gray-400">{modeles.length} document(s)</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {modeles.map((m) => (
               <button key={m.code} onClick={() => ouvrir(m)}
                 className="text-left p-4 rounded-xl border border-gray-200 bg-white hover:border-emerald-400 hover:shadow-sm transition-all group">

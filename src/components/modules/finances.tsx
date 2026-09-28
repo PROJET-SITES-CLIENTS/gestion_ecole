@@ -73,12 +73,12 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
   const solde = totalEncaisse - totalDepenses;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Finances & Comptabilité" subtitle="Encaissement, échéances, dépenses, stocks" />
 
       {Message}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Total encaissé" value={formatXOF(totalEncaisse, devise)} sub={`${paiements.length} paiements`} icon={TrendingUp} color="emerald" />
         <StatCard title="Impayés restant dus" value={formatXOF(totalImpayes, devise)} sub={`${echeances.filter((e: any) => e.statut !== 'payee').length} échéances`} icon={TrendingDown} color="rose" />
         <StatCard title="Dépenses validées" value={formatXOF(totalDepenses, devise)} sub={`${depenses.filter((d: any) => d.validee).length} dépenses`} icon={Wallet} color="amber" />
@@ -86,7 +86,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
       </div>
 
       <Tabs defaultValue="encaissement">
-        <TabsList className="grid grid-cols-2 md:grid-cols-6 mb-4 h-auto">
+        <TabsList className="overflow-x-auto grid grid-cols-2 md:grid-cols-6 mb-4 h-auto">
           <TabsTrigger value="encaissement" className="text-xs">Encaissement</TabsTrigger>
           <TabsTrigger value="echeances" className="text-xs">Échéances</TabsTrigger>
           <TabsTrigger value="frais" className="text-xs">Frais</TabsTrigger>
@@ -394,7 +394,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
 
         {/* B2 — COMPTABILITÉ EN PARTIE DOUBLE : écritures, plan comptable, génération auto */}
         <TabsContent value="comptabilite" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3">
             <StatCard title="Écritures" value={ecritures.length} sub={`${ecrituresValides.length} validée(s) · ${ecritures.filter((e: any) => e.statut === 'brouillon').length} brouillon(s)`} icon={BookOpen} color="blue" />
             <StatCard title="Total débit (valides)" value={formatXOF(totalDebitValide, devise)} sub="débit = crédit (partie double)" icon={Landmark} color="emerald" />
             <StatCard title="Comptes actifs" value={comptesComptables.filter((c: any) => c.actif !== false).length} sub="issus des écritures du journal" icon={Calculator} color="purple" />
@@ -506,7 +506,7 @@ function SaisieEcriture({ comptes, journaux }: { comptes: any[]; journaux: any[]
 
   return (
     <form onSubmit={soumettre} className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-gray-700 block">Journal <span className="text-rose-500">*</span></label>
           {journaux.length > 0 ? (
@@ -528,7 +528,7 @@ function SaisieEcriture({ comptes, journaux }: { comptes: any[]; journaux: any[]
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="rounded-lg border border-gray-200 p-3 space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wider text-gray-600">Ligne 1 — Compte à débiter</div>
           {comptes.length > 0 ? (

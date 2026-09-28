@@ -98,7 +98,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
       {/* ═══ ACTIVATION ═══ */}
       {onglet === 'activation' && (
         <SectionBlock title="Options de l'établissement" description="Activez uniquement les infrastructures que possède votre école. Chaque option est complète : configuration, suivi quotidien et facturation le cas échéant.">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-3">
             {INFOS_FLAGS.map((f) => {
               const actif = !!flags[f.code];
               return (
@@ -124,7 +124,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
       {/* ═══ INTERNAT ═══ */}
       {onglet === 'internat' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard title="Taux d'occupation" value={`${ta.taux}%`} sub={`${ta.occupes}/${ta.totalLits} lits`} icon={BedDouble} color="emerald" />
             <StatCard title="Lits libres" value={ta.libres} sub={`${ta.maintenance} en maintenance`} icon={CheckCircle2} color="blue" />
             <StatCard title="Permissions en cours" value={(data.permissions ?? []).length} sub="demandes et approuvées" icon={Clock} color="amber" />
@@ -149,7 +149,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
               rows={data.chambres ?? []} emptyLabel="Aucune chambre — commencez par en créer" />
           </SectionBlock>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="overflow-x-auto grid grid-cols-1 xl:grid-cols-2 gap-4">
             <SectionBlock title="Inscriptions à l'internat" description="Attribution automatique d'un lit libre.">
               <form className="flex flex-wrap items-end gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); run('Inscription', () => ext.inscrireInternat(fd)); }}>
                 <Champ label="Élève *"><select name="eleveId" className={select + ' w-52'} required><option value="">— Choisir —</option>{eleves.map((e: any) => <option key={e.valeur} value={e.valeur}>{e.libelle}</option>)}</select></Champ>
@@ -236,7 +236,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
           </div>
 
           <SectionBlock title="Cuisine centrale (intégrée à l'internat)" description="Plans de production et contrôles HACCP — chaîne du froid et points critiques.">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="overflow-x-auto grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div>
                 <form className="flex flex-wrap items-end gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); run('Production', () => ext.productionRepas(fd)); }}>
                   <Champ label="Service"><select name="service" className={select + ' w-36'}><option value="petit_dejeuner">Petit-déjeuner</option><option value="dejeuner">Déjeuner</option><option value="diner">Dîner</option><option value="collation">Collation</option></select></Champ>
@@ -278,7 +278,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
       {/* ═══ LABORATOIRE ═══ */}
       {onglet === 'laboratoire' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3">
             {(data.laboratoires ?? []).map((l: any) => (
               <StatCard key={l.id} title={l.nom} value={`${(l.equipements ?? []).reduce((s: number, e: any) => s + e.quantite, 0)} équip.`}
                 sub={`${(l.consommables ?? []).filter((c: any) => c.quantite <= c.seuilAlerte).length} consommable(s) sous seuil`} icon={FlaskConical} color="emerald" />
@@ -295,7 +295,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
             {(data.laboratoires ?? []).map((l: any) => (
               <div key={l.id} className="border rounded-lg p-4 mb-3">
                 <div className="font-semibold text-sm mb-2">{l.nom} <span className="text-xs text-gray-400 font-normal">({l.type}{l.capacite ? ` · ${l.capacite} places` : ''})</span></div>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="overflow-x-auto grid grid-cols-1 xl:grid-cols-2 gap-4">
                   <div>
                     <div className="text-xs font-semibold text-gray-500 uppercase mb-1.5">Équipements</div>
                     <form className="flex gap-2 mb-2" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); fd.set('laboratoireId', l.id); run('Équipement ajouté', () => ext.equipementLabo(fd)); }}>
@@ -344,7 +344,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
       {/* ═══ BOUTIQUE ═══ */}
       {onglet === 'boutique' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-3 gap-3">
             <StatCard title="Produits en vente" value={(data.produits ?? []).filter((p: any) => p.actif).length} icon={ShoppingBag} color="emerald" />
             <StatCard title="Ventes du jour" value={((data.ventesJour ?? []).reduce((s: number, v: any) => s + v.montantTotal, 0) / 100).toLocaleString('fr-FR') + ' F'} sub={`${(data.ventesJour ?? []).length} transaction(s)`} icon={CheckCircle2} color="blue" />
             <StatCard title="Sous le seuil d'alerte" value={(data.produits ?? []).filter((p: any) => p.stock <= p.seuilAlerte).length} sub="à réapprovisionner" icon={AlertTriangle} color="rose" />
@@ -393,7 +393,7 @@ export default function InfrastructuresModule({ initialData }: { initialData?: a
       {/* ═══ PARC INFO ═══ */}
       {onglet === 'parc_info' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols:4 gap-3 grid-cols-2">
+          <div className="overflow-x-auto grid grid-cols-2 md:grid-cols:4 gap-3 grid-cols-2">
             <StatCard title="Équipements" value={(data.equipementsInfo ?? []).length} icon={Monitor} color="emerald" />
             <StatCard title="En prêt" value={(data.pretsActifs ?? []).length} icon={UserCheck} color="blue" />
             <StatCard title="En panne" value={(data.equipementsInfo ?? []).filter((e: any) => e.etat === 'panne').length} icon={AlertTriangle} color="rose" />

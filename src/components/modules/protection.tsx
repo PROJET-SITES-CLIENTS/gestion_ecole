@@ -386,7 +386,7 @@ export default function ProtectionModule({ initialData }: { initialData: any }) 
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Protection de l'enfance"
         subtitle="Recueil et traitement des informations préoccupantes — accès restreint aux personnels habilités"
@@ -425,7 +425,7 @@ export default function ProtectionModule({ initialData }: { initialData: any }) 
 
       {Message}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="À traiter (reçus)" value={kpi.recus} icon={Inbox} color="amber" />
         <StatCard title="En cours" value={kpi.enCours} sub="incl. transmis à un partenaire" icon={Clock} color="blue" />
         <StatCard title="Traités" value={kpi.traites} icon={CheckCircle2} color="emerald" />

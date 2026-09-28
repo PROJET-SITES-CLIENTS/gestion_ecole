@@ -631,14 +631,14 @@ export default function V4ModulesModule({ initialData }: { initialData: any }) {
   const totalEnregistrementsV4 = failles.reduce((sum, f) => sum + f.data.length, 0);
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Catalogue complémentaire"
         subtitle="Vue d'inspection des tables spécialisées (lecture) — les actions métier vivent dans les modules dédiés"
       />
 
       {/* KPIs globaux */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Tables inspectées" value={`${totalFailles}/37`} sub="couverture du cahier des charges V4" icon={CheckCircle2} color="emerald" />
         <StatCard title="Tables alimentées" value={faillesAvecDonnees} sub="avec données en base" icon={CheckCircle2} color="blue" />
         <StatCard title="Enregistrements affichés" value={totalEnregistrementsV4.toLocaleString('fr-FR')} sub="en lecture seule" icon={Layers} color="purple" />

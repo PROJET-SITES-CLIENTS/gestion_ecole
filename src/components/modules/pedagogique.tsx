@@ -165,7 +165,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             if (r && r.ok === false) setErreurNotes(r.error);
           }} className="space-y-3">
             <input type="hidden" name="evaluationId" value={evalSelectionnee.id} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {elevesDeLaClasse.map((e: any) => {
                 const n = notesPourEval.find((x: any) => x.eleveId === e.id);
                 return (
@@ -234,7 +234,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                 </div>
                 {synthese?.ok && (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       <div className="p-3 bg-emerald-50 rounded text-center">
                         <div className="text-xs text-emerald-700">Moyenne annuelle</div>
                         <div className="text-lg font-semibold text-emerald-700">{synthese.moyenneAnnuelle?.toFixed(2) ?? '—'}/20</div>
@@ -780,7 +780,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Pédagogique"
         subtitle="Évaluations, notes, bulletins, compétences, programmes"
@@ -804,7 +804,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Évaluations" value={evaluations.length} icon={BookOpen} color="emerald" />
         <StatCard title="Notes saisies" value={notes.length} icon={ClipboardCheck} color="blue" />
         <StatCard title="Bulletins générés" value={bulletins.length} icon={Award} color="purple" />
@@ -812,7 +812,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
       </div>
 
       <Tabs defaultValue="notes">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 mb-4 h-auto">
+        <TabsList className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 mb-4 h-auto">
           <TabsTrigger value="notes" className="text-xs">Saisie notes</TabsTrigger>
           <TabsTrigger value="evaluations" className="text-xs">Évaluations</TabsTrigger>
           <TabsTrigger value="devoirs" className="text-xs">Devoirs</TabsTrigger>
@@ -824,7 +824,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
         </TabsList>
 
         <TabsContent value="notes" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-3">
             <Card className="lg:col-span-1">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Évaluations</CardTitle></CardHeader>
               <CardContent className="p-2 max-h-[60vh] overflow-y-auto">
@@ -947,7 +947,7 @@ function SaisieCompetenceSimple({ eleves, competences, periodes }: { eleves: any
   return (
     <div className="space-y-3">
       {retour.Message}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-3 gap-3">
         <FormField label="Période" required>
           <select className={classeSelect} value={periodeId} onChange={(e) => setPeriodeId(e.target.value)}>
             <option value="">— Choisir —</option>

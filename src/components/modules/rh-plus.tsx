@@ -49,7 +49,7 @@ export default function RhPlusModule({ initialData }: { initialData?: any }) {
       <PageHeader title="RH — Formations, discipline, congés" subtitle="Derniers compléments RH : formations continues, registre des sanctions et acquisition automatique des soldes de congés." />
       {ret.Message}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Formations" value={formations.length} sub={`${formations.filter((f: any) => f.statut === 'terminee').length} terminée(s)`} icon={GraduationCap} color="emerald" />
         <StatCard title="Certificats obtenus" value={formations.filter((f: any) => f.certificatObtenu).length} icon={Award} color="blue" />
         <StatCard title="Sanctions (registre)" value={sanctions.length} icon={Gavel} color="amber" />

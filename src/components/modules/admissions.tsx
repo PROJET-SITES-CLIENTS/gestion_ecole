@@ -105,7 +105,7 @@ export default function AdmissionsModule({ initialData }: { initialData: any }) 
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Admissions"
         subtitle="Candidatures, tests d'entrée, entretiens et inscription des admis"
@@ -136,7 +136,7 @@ export default function AdmissionsModule({ initialData }: { initialData: any }) 
 
       {Message}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Dossiers soumis" value={kpi.soumis} icon={UserPlus} color="gray" />
         <StatCard title="En phase de test" value={kpi.test} icon={ClipboardCheck} color="blue" />
         <StatCard title="Admis (à inscrire)" value={kpi.admis} icon={UserCheck} color="amber" />

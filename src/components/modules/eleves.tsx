@@ -105,7 +105,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const elevesAvecBesoin = eleves.filter((e: any) => besoinsSpecifiques.some((b: any) => b.eleveId === e.id)).length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Élèves"
         subtitle={`${eleves.length} élèves · ${classes.length} classes`}
@@ -129,7 +129,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
       />
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Élèves actifs" value={eleves.length} icon={Users} color="emerald" />
         <StatCard title="Besoins spécifiques" value={elevesAvecBesoin} sub="élèves concernés" icon={Accessibility} color="amber" />
         <StatCard title="Consentements en attente" value={consentementsEnAttente} sub="portail élève mineur" icon={FileCheck} color="rose" />
@@ -139,7 +139,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Liste des élèves */}
         <div className="lg:col-span-1">
           {(reinscriptions.length > 0 || peutEcrire) && initialData.session?.portal !== 'enseignant' && (
@@ -248,7 +248,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   </SheetTitle>
                 </SheetHeader>
                 <Tabs defaultValue="identite" className="mt-4">
-                  <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-2 h-auto">
+                  <TabsList className="overflow-x-auto grid grid-cols-2 md:grid-cols-5 mb-2 h-auto">
                     <TabsTrigger value="identite" className="text-xs">Identité</TabsTrigger>
                     <TabsTrigger value="finances" className="text-xs">Finances</TabsTrigger>
                     <TabsTrigger value="pedagogie" className="text-xs">Pédagogie</TabsTrigger>
@@ -318,7 +318,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                       <p className="text-sm text-gray-500">Aucune note enregistrée pour cet élève sur la période.</p>
                     ) : (
                       <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-2">
                           <div className="p-3 bg-emerald-50 rounded text-center">
                             <div className="text-xs text-emerald-700">Moyenne générale</div>
                             <div className="text-lg font-semibold text-emerald-700">{moyenneGeneraleEleve?.toFixed(2) ?? '—'}/20</div>
@@ -358,7 +358,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                       <p className="text-sm text-gray-500">Aucune échéance — les frais seront générés à la configuration de la scolarité de la classe.</p>
                     ) : (
                       <>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           <div className="p-3 bg-gray-50 rounded text-center">
                             <div className="text-xs text-gray-500">Total dû</div>
                             <div className="text-lg font-semibold">{formatMontant(totalDu)}</div>
@@ -665,14 +665,14 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
           >
             {eleve ? (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-2">
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Naissance</div><div className="text-sm font-medium">{formatDate(eleve.dateNaissance)}</div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Statut</div><div><StatusBadge statut={eleve.statut} /></div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Portail élève</div><div>{eleve.consentementPortailEleve ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700">Activé</Badge> : <Badge variant="outline" className="bg-amber-50 text-amber-700">En attente</Badge>}</div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Besoins</div><div className="text-sm font-medium">{eleveBesoinSpec.length > 0 ? `${eleveBesoinSpec.length} déclaré(s)` : 'Aucun'}</div></CardContent></Card>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Card>
                     <CardContent className="p-3">
                       <div className="text-xs text-gray-500 mb-1">Aménagements actifs</div>

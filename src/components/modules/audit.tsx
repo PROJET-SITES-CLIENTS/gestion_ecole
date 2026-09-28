@@ -28,10 +28,10 @@ export default function AuditModule({ initialData }: { initialData: any }) {
   }, [logs]);
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Journal d'audit" subtitle="Traçabilité exhaustive, immuable, de toutes les actions sensibles" />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Total actions" value={logs.length} icon={Activity} color="emerald" />
         <StatCard title="Actions sensibles" value={actionsSensibles} sub="paiements, notes, bulletins" icon={ShieldAlert} color="rose" />
         <StatCard title="Connexions support" value={supportConnexions} sub="tracées et visibles par la direction" icon={ShieldAlert} color="amber" />
@@ -57,7 +57,7 @@ export default function AuditModule({ initialData }: { initialData: any }) {
       </SectionBlock>
 
       <SectionBlock title="Principes de conformité" description="Règles non négociables de la plateforme">
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="overflow-x-auto grid md:grid-cols-2 gap-3">
           {[
             { titre: 'Traçabilité intégrale', desc: 'Toute action sensible est horodatée, attribuée et historisée de façon immuable dans le journal d\'audit.' },
             { titre: 'Transparence vis-à-vis des écoles', desc: 'Toute connexion du support éditeur "en tant que" une école est tracée dans le journal d\'audit de cette école, visible par la direction.' },

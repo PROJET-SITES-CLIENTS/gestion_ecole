@@ -70,7 +70,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
   const rolesParPersonnel = (pid: string) => roles.filter((r: any) => r.ecoleId !== null && personnels.find((p: any) => p.id === pid)?.utilisateurId);
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Personnel & RH"
         subtitle={`${personnels.length} personnels · ${conges.length} demandes de congé · ${evaluationsRh.length} évaluations RH`}
@@ -118,14 +118,14 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
 
       <div className="mb-4">{Message}</div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Personnels actifs" value={personnels.filter((p: any) => p.statut === 'actif').length} icon={Users} color="emerald" />
         <StatCard title="Congés en cours" value={personnelConges.filter((c: any) => c.statut === 'demande' || c.statut === 'valide').length} icon={CalendarOff} color="amber" />
         <StatCard title="Remplacements" value={remplacements.length} icon={FileText} color="blue" />
         <StatCard title="Évaluations RH" value={evaluationsRh.length} icon={GraduationCap} color="purple" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">
           <SectionBlock title="Liste du personnel">
             <div className="max-h-[60vh] overflow-y-auto -mx-2">
@@ -217,7 +217,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
           <SectionBlock title={personnel ? `Fiche personnel — ${personnel.prenom} ${personnel.nom}` : 'Sélectionnez un personnel'}>
             {personnel ? (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-2">
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Embauche</div><div className="text-sm font-medium">{formatDate(personnel.dateEmbauche)}</div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Contrat</div><div className="text-sm font-medium">{personnel.typeContrat ?? '—'}</div></CardContent></Card>
                   <Card><CardContent className="p-3"><div className="text-[10px] uppercase text-gray-500">Salaire</div><div className="text-sm font-medium">{formatXOF(personnel.salaireBrut, 'XOF')}</div></CardContent></Card>
@@ -325,7 +325,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               />
             }
           >
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
               <StatCard title="Bulletins de paie" value={bulletinsDernierePeriode.length} sub={dernierePeriode ? `dernière période : ${dernierePeriode}` : 'aucune paie générée'} icon={FileText} color="blue" />
               <StatCard title="Net à payer (total)" value={formatXOF(totalNetDernierePeriode)} sub={dernierePeriode ? `période ${dernierePeriode}` : undefined} icon={Banknote} color="emerald" />
               {afficheSoldes && (
@@ -439,7 +439,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
       >
         {statsRh?.ok ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-5 gap-2">
               <StatCard title="Actifs" value={statsRh.actifs} sub={`${statsRh.sortis} sortis`} color="emerald" />
               <StatCard title="Masse salariale/mois" value={fmtMontant(statsRh.masseSalarialeMensuelle)} sub={`patronal ≈ ${fmtMontant(statsRh.cotisationPatronaleEstimee)}`} color="blue" />
               <StatCard title="Ancienneté moy." value={`${statsRh.ancienneteMoyenneAnnees} ans`} color="purple" />
@@ -543,7 +543,7 @@ function SectionRecrutement({ initialData, run, pending }: {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="overflow-x-auto grid grid-cols-2 gap-3 mb-4">
         <StatCard title="Offres ouvertes" value={offresOuvertes.length} sub={`${offres.length} offre(s) au total`} icon={Briefcase} color="emerald" />
         <StatCard title="Candidatures reçues" value={candidatures.length} sub={`${candidatures.filter((c: any) => c.statut === 'retenu').length} retenu(s)`} icon={UserPlus} color="blue" />
       </div>

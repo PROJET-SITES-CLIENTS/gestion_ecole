@@ -231,7 +231,7 @@ function SectionTheme() {
       description="Personnalisation par école : couleurs de la charte et nom du produit — l'aperçu s'applique en direct, l'enregistrement vaut pour toute l'école"
     >
       {message && <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm" role="status">{message}</div>}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {champs.map(({ cle, label }) => (
           <div key={cle} className="space-y-1.5">
             <Label className="text-xs font-medium text-gray-700">{label}</Label>
@@ -401,13 +401,13 @@ export default function IntegrationsModule({ initialData }: { initialData: any }
   const domaines = initialData.domainePersonnalises ?? [];
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Intégrations"
         subtitle="Webhooks sortants, API & jetons, thème white-label, domaines personnalisés et feature flags"
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Webhooks actifs" value={webhooks.filter((w: any) => w.actif).length} icon={Webhook} color="emerald" />
         <StatCard title="Jetons API actifs" value={apiTokens.filter((t: any) => t.actif).length} icon={KeyRound} color="blue" />
         <StatCard title="Domaines vérifiés" value={domaines.filter((d: any) => d.verifie).length} icon={Globe} color="purple" />

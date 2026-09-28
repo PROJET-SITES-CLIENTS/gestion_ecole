@@ -63,7 +63,7 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
       {/* ═══ ACCUEIL : sections + plan ═══ */}
       {onglet === 'accueil' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard title="Structure" value={separees ? 'Séparée' : 'Unique'} sub={separees ? 'Primaire + Secondaire' : 'Une comptabilité'} icon={Split} color="emerald" />
             <StatCard title="Comptes au plan" value={data.plan?.length ?? 0} sub={data.planInitialise ? 'SYSCOHADA école' : 'à initialiser'} icon={Calculator} color="blue" />
             <StatCard title="Dû clients" value={fmt(data.ageeClients?.total ?? 0)} sub={`${data.ageeClients?.lignes?.length ?? 0} échéance(s)`} icon={AlertTriangle} color="amber" />
@@ -92,9 +92,9 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             </SectionBlock>
           )}
           {/* Balances âgées */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="overflow-x-auto grid grid-cols-1 xl:grid-cols-2 gap-4">
             <SectionBlock title="Balance âgée clients (dûs)" description="Échéances impayées par ancienneté.">
-              <div className="grid grid-cols-4 gap-2 mb-3 text-center text-xs">
+              <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3 text-center text-xs">
                 {Object.entries({ non_echu: 'Non échu', '1_30': '1-30 j', '31_60': '31-60 j', '60_plus': '+60 j' }).map(([k, l]) => (
                   <div key={k} className={`rounded-lg border p-2 ${k === '60_plus' && (data.ageeClients?.totaux?.[k] ?? 0) > 0 ? 'border-rose-300 bg-rose-50' : 'border-gray-200'}`}>
                     <div className="text-gray-500">{l}</div>
@@ -109,7 +109,7 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
               ]} rows={(data.ageeClients?.lignes ?? []).slice(0, 30)} emptyLabel="Aucun impayé" />
             </SectionBlock>
             <SectionBlock title="Balance âgée fournisseurs (dettes)" description="Factures dues par ancienneté.">
-              <div className="grid grid-cols-3 gap-2 mb-3 text-center text-xs">
+              <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3 text-center text-xs">
                 {Object.entries({ '1_30': '1-30 j', '31_60': '31-60 j', '60_plus': '+60 j' }).map(([k, l]) => (
                   <div key={k} className="rounded-lg border border-gray-200 p-2">
                     <div className="text-gray-500">{l}</div>
@@ -137,7 +137,7 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             </form>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <StatCard title="Solde théorique" value={fmt(session.soldeTheorique)} sub={`fond ${fmt(session.fondCaisse)}`} icon={Wallet} color="emerald" />
                 <StatCard title="Entrées" value={fmt(session.operations.filter((o: any) => o.type === 'entree').reduce((s: number, o: any) => s + o.montant, 0))} icon={CheckCircle2} color="blue" />
                 <StatCard title="Sorties" value={fmt(session.operations.filter((o: any) => o.type === 'sortie').reduce((s: number, o: any) => s + o.montant, 0))} icon={AlertTriangle} color="amber" />
@@ -254,7 +254,7 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
                 <tr className="font-bold border-t-2"><td colSpan={2}>TOTAL {rapport.equilibree ? '✓ équilibrée' : '⚠ DÉSÉQUILIBRE'}</td><td className="text-right">{fmt(rapport.totalDebit)}</td><td className="text-right">{fmt(rapport.totalCredit)}</td></tr></tbody></table>
           )}
           {rapport?.type === 'resultat' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><div className="font-semibold text-sm mb-1">Charges</div>{(rapport.charges ?? []).map((c: any) => <div key={c.numero} className="flex justify-between text-sm border-b py-1"><span>{c.numero} {c.libelle}</span><span>{fmt(c.debit - c.credit)}</span></div>)}
                 <div className="flex justify-between font-bold pt-1"><span>Total charges</span><span>{fmt(rapport.totalCharges)}</span></div></div>
               <div><div className="font-semibold text-sm mb-1">Produits</div>{(rapport.produits ?? []).map((c: any) => <div key={c.numero} className="flex justify-between text-sm border-b py-1"><span>{c.numero} {c.libelle}</span><span>{fmt(c.credit - c.debit)}</span></div>)}
@@ -265,7 +265,7 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             </div>
           )}
           {rapport?.type === 'bilan' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><div className="font-semibold text-sm mb-1">Actif</div>{(rapport.actif ?? []).map((c: any) => <div key={c.numero} className="flex justify-between text-sm border-b py-1"><span>{c.numero} {c.libelle}</span><span>{fmt(c.debit - c.credit)}</span></div>)}
                 <div className="flex justify-between font-bold pt-1"><span>Total actif</span><span>{fmt(rapport.totalActif)}</span></div></div>
               <div><div className="font-semibold text-sm mb-1">Passif + capitaux + résultat</div>

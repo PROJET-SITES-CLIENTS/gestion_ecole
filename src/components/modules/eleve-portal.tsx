@@ -49,7 +49,7 @@ export default function ElevePortalModule({ initialData, mode = 'full' }: { init
       />
 
       {/* KPI — calculés côté SERVEUR */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Ma moyenne"
           value={kpi.moyenneGenerale !== null && kpi.moyenneGenerale !== undefined ? `${Number(kpi.moyenneGenerale).toFixed(2)}/20` : '—'}

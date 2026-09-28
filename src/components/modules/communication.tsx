@@ -327,7 +327,7 @@ function SectionTickets({ tickets }: { tickets: any[] }) {
         />
       }
     >
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="overflow-x-auto grid grid-cols-2 gap-3 mb-3">
         <StatCard title="Tickets ouverts" value={ticketsOuverts} icon={LifeBuoy} color="blue" />
         <StatCard title="SLA dépassé" value={slaDepasses} sub="échéance dépassée, non résolus" icon={AlertTriangle} color={slaDepasses > 0 ? 'rose' : 'emerald'} />
       </div>
@@ -493,7 +493,7 @@ export default function CommunicationModule({ initialData }: { initialData: any 
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Communication & Notifications"
         subtitle="Messagerie interne, annonces, tickets support et moteur de notifications multi-canaux"
@@ -511,7 +511,7 @@ export default function CommunicationModule({ initialData }: { initialData: any 
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Notifications envoyées" value={notifEnvoyees} icon={Send} color="emerald" />
         <StatCard title="Notifications lues" value={notifLues} sub={`${notifEnvoyees > 0 ? Math.round(notifLues / notifEnvoyees * 100) : 0}% de taux de lecture`} icon={MessageSquare} color="blue" />
         <StatCard title="Modèles actifs" value={modeles.filter((m: any) => m.actif).length} icon={FileText} color="purple" />

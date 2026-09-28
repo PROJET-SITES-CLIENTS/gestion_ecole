@@ -67,7 +67,7 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
           )}
 
           {/* KPI serveur */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Restant dû" value={formatXOF(kpi.totalDu ?? 0)} sub="tous enfants" icon={<Wallet className="h-4 w-4" />} />
             <StatCard title="Bulletins publiés" value={String(mesBulletins.length)} sub="année en cours" icon={<BookOpen className="h-4 w-4" />} />
             <StatCard title="Rendez-vous" value={String(mesRdvs.length)} sub="avec les enseignants" icon={<CalendarDays className="h-4 w-4" />} />

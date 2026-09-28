@@ -121,9 +121,9 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const budgetLignes = budgets.flatMap((b: any) => (b.lignes ?? []).map((l: any) => ({ ...l, budget: b.libelle })));
 
     return (
-      <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · Année ${initialData.anneeScolaire?.libelle ?? '—'}`} />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard title={`Encaissé ${moisActif ?? '—'}`} value={formatXOF(encaisseMois, devise)} sub={`${paiements.length} paiements au total`} icon={TrendingUp} color="emerald" />
           <StatCard title={`Dépenses ${moisActif ?? '—'}`} value={formatXOF(depensesMois, devise)} sub={aValider.length ? `${aValider.length} à valider` : 'toutes validées'} icon={TrendingDown} color="amber" />
           <StatCard title="Restant dû scolarité" value={formatXOF(restantDu, devise)} sub={`${retardataires.length} échéance(s) en retard`} icon={PiggyBank} color={retardataires.length ? 'rose' : 'emerald'} />
@@ -142,7 +142,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             emptyLabel="Aucun retard — toutes les échéances échues sont couvertes"
           />
         </SectionBlock>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Derniers paiements encaissés" description="Activité de caisse">
             <DataTable
               columns={[
@@ -196,9 +196,9 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const derniersPaies = [...bulletinsPaie].sort((a: any, b: any) => (b.periode ?? '').localeCompare(a.periode ?? ''));
 
     return (
-      <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · ${actifs.length} personnels actifs`} />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard title="Effectif actif" value={actifs.length} sub={`${personnels.length} au total`} icon={Users} color="emerald" />
           <StatCard title="Congés à valider" value={aValider.length} sub="demandes en attente" icon={ClipboardList} color={aValider.length ? 'amber' : 'gray'} />
           <StatCard title="En congé" value={enCours.length} sub="actuellement absents" icon={CalendarDays} color="blue" />
@@ -218,7 +218,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             emptyLabel="Aucun congé à traiter"
           />
         </SectionBlock>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Bulletins de paie" description={`${bulletinsPaie.length} bulletin(s)`}>
             <DataTable
               columns={[
@@ -260,7 +260,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const taux = presencesJour.length ? Math.round(presentsJour.length / presencesJour.length * 100) : null;
 
     return (
-      <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · ${jourActif ? formatDate(jourActif) : '—'}`} />
         {appels && appels.manquants.length > 0 && (
           <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-4 flex items-start gap-3">
@@ -273,13 +273,13 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             </div>
           </div>
         )}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard title="Présents" value={presentsJour.length} sub={`${seancesJour.length} séance(s) · ${presencesJour.length} pointages`} icon={UserCheck} color="emerald" />
           <StatCard title="Absents" value={absentsJour.length} sub={`${retardsJour.length} retard(s)`} icon={AlertTriangle} color={absentsJour.length ? 'rose' : 'gray'} />
           <StatCard title="Appel non fait" value={appels?.manquants.length ?? 0} sub={appels?.appelees.length ? `${appels.appelees.length} classe(s) appelée(s)` : 'aucune classe appelée'} icon={ClipboardList} color={appels?.manquants.length ? 'rose' : 'emerald'} />
           <StatCard title="Visiteurs sur site" value={visiteursPresents.length} sub="entrés non sortis" icon={Shield} color="blue" />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title={`Absents ${estAujourdhui ? "du jour" : 'du dernier relevé'}`} description={taux != null ? `Taux de présence : ${taux}%` : 'Aucun pointage'}>
             <DataTable
               columns={[
@@ -305,7 +305,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             />
           </SectionBlock>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Sorties anticipées" description="Mineurs sortis avant l'heure">
             <DataTable
               columns={[
@@ -364,15 +364,15 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const documents = initialData.documents ?? [];
 
     return (
-      <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · Année ${initialData.anneeScolaire?.libelle ?? '—'}`} />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard title="Élèves actifs" value={elevesActifs.length} sub={`${classes.length} classes`} icon={Users} color="emerald" />
           <StatCard title="Candidatures en cours" value={candidaturesEnCours.length} sub={`${candidatures.length} au total`} icon={FileCheck} color={candidaturesEnCours.length ? 'amber' : 'gray'} />
           <StatCard title="RDV à venir" value={rdvsAVenir.length} sub="parents-enseignants" icon={CalendarDays} color="blue" />
           <StatCard title="Réunions prévues" value={reunionsAVenir.length} sub="collectives" icon={CalendarDays} color="purple" />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Candidatures / admissions" description="Pipeline d'inscriptions">
             <DataTable
               columns={[
@@ -444,9 +444,9 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const derniersPassages = [...passagesInfirmerie].sort((a: any, b: any) => new Date(b.datePassage).getTime() - new Date(a.datePassage).getTime());
 
     return (
-      <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · ${passagesInfirmerie.length} passage(s) au total`} />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard title={`Passages ${estAujourdhui ? "du jour" : 'dernier relevé'}`} value={passagesJour.length} sub={jourActif ? formatDate(jourActif) : '—'} icon={Stethoscope} color="blue" />
           <StatCard title="Issues graves" value={urgences.length} sub="départs hôpital/domicile" icon={AlertTriangle} color={urgences.length ? 'rose' : 'gray'} />
           <StatCard title="Rappels vaccins" value={vaccinsARappeler.length} sub="dates dépassées" icon={HeartPulse} color={vaccinsARappeler.length ? 'amber' : 'emerald'} />
@@ -466,7 +466,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             emptyLabel="Aucun passage enregistré"
           />
         </SectionBlock>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Vaccinations" description={`${vaccinations.length} enregistrement(s)`}>
             <DataTable
               columns={[
@@ -513,21 +513,21 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
   const affectations = personnelsRoles.filter((pr: any) => !pr.dateFin).length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title={meta.titre} subtitle={`${meta.sous} · Année ${initialData.anneeScolaire?.libelle ?? '—'}`} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Élèves actifs" value={eleves.filter((e: any) => e.statut === 'actif').length} sub={`${classes.length} classes`} icon={Users} color="emerald" />
         <StatCard title="Absents du jour" value={absentsJour.length} sub={`${appels?.manquants.length ?? 0} appel(s) non fait(s)`} icon={AlertTriangle} color={absentsJour.length ? 'rose' : 'gray'} />
         <StatCard title="Retards scolarité" value={retardataires} sub="échéances échues impayées" icon={PiggyBank} color={retardataires ? 'amber' : 'emerald'} />
         <StatCard title="Encaissé du mois" value={formatXOF(encaisseMois, devise)} sub={moisActif ?? '—'} icon={Wallet} color="purple" />
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Congés à valider" value={congesAValider} sub="RH" icon={ClipboardList} color={congesAValider ? 'amber' : 'gray'} />
         <StatCard title="Candidatures" value={candidaturesEnCours} sub="en cours d'instruction" icon={FileCheck} color="blue" />
         <StatCard title="Affectations actives" value={affectations} sub="enseignant·matière·classe" icon={GraduationCap} color="purple" />
         <StatCard title="Incidents" value={incidents.length} sub="vie scolaire" icon={Shield} color={incidents.length ? 'amber' : 'gray'} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SectionBlock title={`Absences ${estAujourdhui ? "du jour" : 'du dernier relevé'}`} description={`${presentsJour.length} présents · ${absentsJour.length} absents · ${retardsJour.length} retards`}>
           <DataTable
             columns={[

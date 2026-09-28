@@ -22,7 +22,7 @@ export default function RdvModule({ initialData }: { initialData: any }) {
   const rdvsAVenir = rdvs.filter((r: any) => r.statut === 'confirme').length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Rendez-vous parents-professeurs"
         subtitle="Créneaux individuels + réunions collectives de classe"
@@ -42,7 +42,7 @@ export default function RdvModule({ initialData }: { initialData: any }) {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Créneaux disponibles" value={creneauxDisponibles} icon={Clock} color="emerald" />
         <StatCard title="RDV confirmés" value={rdvsAVenir} icon={CalendarDays} color="blue" />
         <StatCard title="Réunions collectives" value={reunions.length} icon={Users} color="purple" />

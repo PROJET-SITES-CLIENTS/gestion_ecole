@@ -31,10 +31,10 @@ export default function SallesModule({ initialData }: { initialData: any }) {
   const retourEdt = useActionFeedback();
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader title="Salles & Calendrier scolaire" subtitle="Ressources physiques et calendrier officiel" />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Salles" value={salles.length} icon={Building} color="emerald" />
         <StatCard title="Réservations" value={reservations.length} icon={CalendarDays} color="blue" />
         <StatCard title="Entrées calendrier" value={calendrier.length} sub="jours fériés, vacances, journées pédagogiques" icon={CalendarDays} color="purple" />

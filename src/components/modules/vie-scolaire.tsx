@@ -28,7 +28,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
   const sanctionsNotifiees = sanctions.filter((s: any) => s.notifieParents).length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Vie scolaire & Discipline"
         subtitle="Déclaration d'incidents, sanctions, notification automatique aux parents"
@@ -58,14 +58,14 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Incidents déclarés" value={incidents.length} icon={AlertTriangle} color="amber" />
         <StatCard title="Incidents graves" value={incidentsGraves} icon={Shield} color="rose" />
         <StatCard title="Sanctions décidées" value={sanctions.length} icon={FileText} color="blue" />
         <StatCard title="Parents notifiés" value={sanctionsNotifiees} sub="sur les sanctions" icon={Shield} color="emerald" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SectionBlock title="Incidents">
           <DataTable
             columns={[
@@ -173,7 +173,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
       >
         {stats?.ok ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-5 gap-2">
               <StatCard title="Incidents" value={stats.totaux.incidents} color="amber" />
               <StatCard title="Graves" value={stats.totaux.graves} color="rose" />
               <StatCard title="Retards" value={stats.totaux.retards} sub={`${stats.totaux.retardsNonJustifies} non justifiés`} color="blue" />

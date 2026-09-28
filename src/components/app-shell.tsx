@@ -400,7 +400,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900">
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform`}>
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-200 ease-out shadow-xl lg:shadow-none`}>
         <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-200">
           <div className="h-8 w-8 rounded-md bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
             SG
@@ -451,7 +451,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
       {sidebarOpen && <div className="lg:hidden fixed inset-0 bg-black/40 z-30" onClick={() => setSidebarOpen(false)} />}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-20 lg:pb-0">
         <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-3 flex-shrink-0">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
             <Menu className="h-5 w-5" />
@@ -463,7 +463,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
             <GlobalSearch initialData={initialData} onNavigate={(m) => setActive(m)} />
           )}
 
-          <div className="flex-1 text-sm text-gray-600 min-w-0 truncate">
+          <div className="hidden sm:block flex-1 text-sm text-gray-600 min-w-0 truncate">
             <span className="text-gray-400">{PORTAL_LABELS[portal]}</span>
             <span className="mx-2 text-gray-300">/</span>
             <span className="font-medium text-gray-900">{MODULES.find((m) => m.id === active)?.label}</span>
@@ -570,6 +570,32 @@ export default function AppShell({ initialData }: { initialData: any }) {
         </footer>
       </div>
           <AssistantIA prenom={sessionUser?.prenom} />
+
+        {/* ═══ Bottom Navigation Mobile (native app feel) ═══ */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around h-16 px-1 pb-[env(safe-area-inset-bottom)] shadow-lg">
+          {visibleModules.slice(0, 4).map((m) => {
+            const Icon = m.icon;
+            const isActive = active === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => setActive(m.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full py-1 transition-colors ${isActive ? 'text-emerald-600' : 'text-gray-500'}`}
+              >
+                <Icon className={`h-5 w-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
+                <span className="text-[10px] font-medium truncate max-w-[64px]">{m.label.split(' ')[0]}</span>
+                {isActive && <div className="w-1 h-1 rounded-full bg-emerald-600" />}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full py-1 text-gray-500"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Plus</span>
+          </button>
+        </nav>
 </div>
   );
 }

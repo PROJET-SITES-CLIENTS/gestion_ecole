@@ -693,7 +693,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
   // ================================ RENDU ================================
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title={mode === 'dashboard' ? `Cockpit 360° — ${portalLabel}` : 'Cockpit 360° — Direction'}
         subtitle={`Année ${initialData.anneeScolaire?.libelle ?? '—'} · ${classes.length} classes · ${elevesActifs.length} élèves actifs · ${personnelsActifs.length} personnels`}
@@ -756,7 +756,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           <CardContent className="p-4">
             <h3 className="text-sm font-semibold text-emerald-900 mb-1">Seuils d&apos;alerte du cockpit</h3>
             <p className="text-xs text-gray-600 mb-3">Personnalisez les déclencheurs — enregistrés sur ce poste (localStorage).</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-4">
               {([
                 ['retardJours', 'Retard de paiement (jours)', 1, 120],
                 ['avancement', 'Avancement programme (%)', 0, 100],
@@ -786,7 +786,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           title="Analytique financière — recettes, recouvrement, impayés, trésorerie"
           description={`Recettes par type (année civile) · recouvrement par classe (tri croissant) · vieillissement des impayés · projection de trésorerie à 3 mois`}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+          <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
             {/* Bloc 1 — Recettes par type de frais (mini barres horizontales) */}
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2 flex items-center gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Recettes par type de frais</h4>
@@ -833,7 +833,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
           {/* Bloc 4 — Projection de trésorerie 3 mois */}
           <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2 mt-4">Projection de trésorerie — 3 prochains mois</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-3 gap-3">
             {projectionTresorerie.map((p: any) => (
               <Card key={p.mois} className={depuisCentimes(p.montant) === 0 ? 'border-gray-200' : 'border-emerald-200 bg-emerald-50/40'}>
                 <CardContent className="p-3">
@@ -853,7 +853,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           title="Analytique pédagogique — moyennes par matière, classe et enseignant"
           description={`${pedagogiques.totalNotes ?? 0} notes prises en compte · matière la plus fragile en premier (tri croissant) · échelle /20`}
         >
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             <StatCard
               title="Moyenne générale"
               value={pedagogiques.moyenneGlobale != null ? `${pedagogiques.moyenneGlobale.toFixed(2)}/20` : '—'}
@@ -871,7 +871,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
               color={pedagoParMatiere[0]?.moyenne != null && pedagoParMatiere[0].moyenne < 10 ? 'rose' : 'amber'}
             />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Par matière — difficultés en premier</h4>
               <DataTable
@@ -917,7 +917,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         title="Absentéisme — 12 derniers mois"
         description={`${presences12m.length} pointage(s) sur la fenêtre · ${absences12m} absence(s) · ${retards12m} retard(s) · taux d'absentéisme : ${tauxAbsenteisme != null ? `${tauxAbsenteisme}%` : '—'}`}
       >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <StatCard title="Absences (12 mois)" value={absences12m} sub="tous élèves confondus" icon={AlertTriangle} color={absences12m > 0 ? 'rose' : 'gray'} />
           <StatCard title="Retards (12 mois)" value={retards12m} sub="tous élèves confondus" icon={Clock} color={retards12m > 0 ? 'amber' : 'gray'} />
           <StatCard title="Taux d'absentéisme" value={tauxAbsenteisme != null ? `${tauxAbsenteisme}%` : '—'} sub="absences / (présences + absences)" icon={ClipboardList} color={tauxAbsenteisme != null && tauxAbsenteisme > seuils.absence ? 'rose' : 'emerald'} />
@@ -972,7 +972,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
       )}
 
       {/* ---------- KPIs principaux ---------- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard title="Élèves actifs" value={elevesActifs.length} sub={`${classes.length} classes · ${nonAffectes > 0 ? `${nonAffectes} non affectés` : 'tous affectés'}`} icon={Users} color="emerald" />
         <StatCard title="Personnels actifs" value={personnelsActifs.length} sub={[...parContrat.entries()].map(([k, v]) => `${v} ${k}`).slice(0, 2).join(' · ') || '—'} icon={GraduationCap} color="blue" />
         <StatCard
@@ -1014,7 +1014,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             <h3 className="text-sm font-semibold text-amber-900 flex items-center gap-2 mb-2">
               <AlertCircle className="h-4 w-4" /> Points d&apos;attention ({alertes.length})
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-2">
               {alertes.map((a, i) => (
                 <div key={i} className={`flex items-start gap-2 p-2 rounded border ${a.severite === 'rouge' ? 'bg-rose-50 border-rose-200' : 'bg-white border-amber-200'}`}>
                   <AlertTriangle className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${a.severite === 'rouge' ? 'text-rose-600' : 'text-amber-600'}`} />
@@ -1031,7 +1031,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
       {/* ---------- 1. Effectifs 360° ---------- */}
       <SectionBlock title="Effectifs 360° — cycles, niveaux, classes" description="Répartition complète des élèves actifs du primaire au secondaire">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           {[...effectifsParCycle.entries()].map(([cycle, effectif]) => (
             <Card key={cycle}>
               <CardContent className="p-3">
@@ -1143,7 +1143,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         title={`Présences ${estAujourdhui ? "du jour" : 'du dernier relevé'} — tous les élèves sont-ils présents ?`}
         description={`${jourActif ? formatDate(jourActif) : '—'} · ${seancesDuJour.length} séance(s) · ${presencesDuJour.length} pointage(s) · taux ${tauxJour != null ? `${tauxJour}%` : '—'}`}
       >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <StatCard title="Présents" value={presentsJour} icon={UserCheck} color="emerald" />
           <StatCard title="Absents" value={absentsJour.length} icon={AlertTriangle} color={absentsJour.length ? 'rose' : 'gray'} />
           <StatCard title="Retards" value={retardsJour.length} icon={Clock} color={retardsJour.length ? 'amber' : 'gray'} />
@@ -1232,7 +1232,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
               </Button>
             }
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard title="Élèves à jour" value={Math.max(0, elevesAJour)} sub={`sur ${elevesActifs.length} actifs`} icon={UserCheck} color="emerald" />
               <StatCard title="En retard" value={new Set(retardataires.map((r: any) => r.eleve)).size} sub={`${retardataires.length} échéance(s)`} icon={AlertTriangle} color={retardataires.length ? 'rose' : 'gray'} />
               <StatCard title="Restant dû" value={formatXOF(restantDu, devise)} sub={`sur ${formatXOF(totalDu, devise)} attendus`} icon={PiggyBank} color="amber" />
@@ -1260,7 +1260,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             title="Comptabilité — recettes, dépenses, budget"
             description={`Mois de référence : ${moisActif ?? '—'} · ${depenses.length} dépense(s) enregistrée(s) · ${budgetLignes.length} ligne(s) budgétaires`}
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="overflow-x-auto grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard title="Recettes du mois" value={formatXOF(encaisseMois, devise)} sub="scolarité & frais encaissés" icon={TrendingUp} color="emerald" />
               <StatCard title="Dépenses du mois" value={formatXOF(depensesMois, devise)} sub={depensesNonValidees.length ? `${depensesNonValidees.length} en attente de validation` : 'toutes validées'} icon={TrendingDown} color="amber" />
               <StatCard title="Solde du mois" value={formatXOF(soldeMois, devise)} sub={`cumul saison : ${formatXOF(encaisseCumule - depensesCumulees, devise)}`} icon={Wallet} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
@@ -1292,7 +1292,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
             title="RH 360° — congés, paie, effectifs"
             description={`${personnelsActifs.length} actifs · ${congesEnCours.length} en congé · ${congesAValider.length} demande(s) à valider · ${bulletinsPaie.length} bulletin(s) de paie`}
           >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Congés en cours & à valider</h4>
                 <DataTable
@@ -1350,7 +1350,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
       )}
 
       {/* ---------- 11. Activité récente ---------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SectionBlock title="Notifications récentes" description="Messages internes du compte connecté">
           <div className="space-y-2">
             {notifications.length === 0 && <p className="text-sm text-gray-500">Aucune notification</p>}

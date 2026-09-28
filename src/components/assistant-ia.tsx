@@ -110,7 +110,7 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
     return (
       <button
         onClick={() => setOuvert(true)}
-        className="fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105"
+        className="fixed bottom-20 lg:bottom-5 right-4 lg:right-5 z-50 h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105"
         title="Assistant IA — parlez-lui ou écrivez"
         aria-label="Ouvrir l'assistant IA"
       >

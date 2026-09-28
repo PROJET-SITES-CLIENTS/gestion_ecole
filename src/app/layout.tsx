@@ -13,6 +13,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#059669',
+};
+
 export const metadata: Metadata = {
   title: "ScolaGestion V4 — Plateforme SaaS de Gestion Scolaire",
   description: "Plateforme SaaS complète de gestion scolaire : élèves, personnel, pédagogie, finances, communication, multi-tenant.",

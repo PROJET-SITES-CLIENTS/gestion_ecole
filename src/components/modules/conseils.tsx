@@ -56,14 +56,14 @@ export default function ConseilsModule({ initialData }: { initialData: any }) {
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Conseils de classe"
         subtitle="Programmation, délibérations par élève et votes des membres"
         actions={<NouveauConseilDialog classes={classes} periodes={periodes} utilisateurs={utilisateurs} />}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Conseils" value={conseils.length} icon={Gavel} color="emerald" />
         <StatCard title="Délibérations" value={deliberationsTotal} icon={ClipboardList} color="blue" />
         <StatCard title="Votes exprimés" value={votesTotal} icon={VoteIcon} color="purple" />
@@ -234,7 +234,7 @@ function NouveauConseilDialog({ classes, periodes, utilisateurs }: { classes: an
         <DialogHeader><DialogTitle>Programmer un conseil de classe</DialogTitle></DialogHeader>
         {erreur && <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{erreur}</div>}
         <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Classe" required>
               <select className={classeSelect} value={classeId} onChange={(e) => setClasseId(e.target.value)}>
                 <option value="">— Choisir —</option>
@@ -248,7 +248,7 @@ function NouveauConseilDialog({ classes, periodes, utilisateurs }: { classes: an
               </select>
             </FormField>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="overflow-x-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Date du conseil" required>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
             </FormField>

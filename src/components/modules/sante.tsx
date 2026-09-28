@@ -29,13 +29,13 @@ export default function SanteModule({ initialData }: { initialData: any }) {
   const rappelsAVenir = vaccinations.filter((v: any) => v.dateRappel && new Date(v.dateRappel) > new Date()).length;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Santé & Infirmerie"
         subtitle="Fiches santé, passages à l'infirmerie, vaccinations et rappels"
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Fiches santé" value={fichesSante.length} sub={`${eleves.length} élèves`} icon={HeartPulse} color="rose" />
         <StatCard title="Passages infirmerie" value={passages.length} icon={Stethoscope} color="emerald" />
         <StatCard title="Issues sensibles" value={issuesSensibles} sub="parents notifiés automatiquement" icon={AlertTriangle} color="amber" />

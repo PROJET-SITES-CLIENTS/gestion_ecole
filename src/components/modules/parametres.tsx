@@ -110,7 +110,7 @@ export default function ParametresEtablissement() {
       <form onSubmit={enregistrer} className="space-y-4">
         <Card><CardContent className="p-5 space-y-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-700"><Building2 className="h-4 w-4" />Identité</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5 md:col-span-2"><Label>Nom officiel de l'établissement *</Label><Input name="nom" defaultValue={etab.nom} required /></div>
             <div className="space-y-1.5"><Label>Adresse (voie)</Label><Input name="adresse" defaultValue={etab.adresse ?? ''} placeholder="12, avenue L. S. Senghor" /></div>
             <div className="space-y-1.5"><Label>Ville</Label><Input name="ville" defaultValue={etab.ville ?? ''} placeholder="Dakar" /></div>
@@ -122,7 +122,7 @@ export default function ParametresEtablissement() {
         </CardContent></Card>
 
         <SectionBlock title="Images officielles" description="Logo (en-tête), cachet et signature scannée (zone de signature des documents). Format PNG transparent recommandé, ~500 Ko max.">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-6">
             <ChampImage id="logo" libelle="Logo de l'école" aide="Affiché en haut à gauche de chaque document."
               valeur={logo} onChange={setLogo} />
             <ChampImage id="cachet" libelle="Cachet officiel" aide="Apposé automatiquement à côté des signatures."
@@ -133,7 +133,7 @@ export default function ParametresEtablissement() {
         </SectionBlock>
 
         <SectionBlock title="Mentions légales (pied de page)" description="Identifiants repris dans le pied de page de tous les documents officiels.">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5"><Label>NINEA</Label><Input name="ninea" defaultValue={etab.ninea ?? ''} /></div>
             <div className="space-y-1.5"><Label>N° autorisation d'ouverture</Label><Input name="autorisation" defaultValue={etab.autorisation ?? ''} /></div>
             <div className="space-y-1.5"><Label>Affiliation / tutelle</Label><Input name="affiliation" defaultValue={etab.affiliation ?? ''} placeholder="Ex : Ministère de l'Éducation Nationale" /></div>

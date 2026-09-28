@@ -61,13 +61,13 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
   const taux = totalPresences > 0 ? Math.round(presents / totalPresences * 100) : 0;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
       <PageHeader
         title="Présences — Appel de classe"
         subtitle="Saisie rapide par séance · confirmation immédiate"
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <StatCard title="Taux de présence" value={`${taux}%`} icon={Users} color="emerald" />
         <StatCard title="Présents" value={presents} icon={CheckCircle2} color="emerald" />
         <StatCard title="Absents" value={absents} icon={XCircle} color="rose" />
@@ -75,7 +75,7 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
         <StatCard title="Saisie en ligne" value="Immédiate" sub="synchronisation directe" icon={Wifi} color="blue" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
+      <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
         <Card className="lg:col-span-1">
           <CardHeader className="pb-2"><CardTitle className="text-sm">Séances</CardTitle></CardHeader>
           <CardContent className="p-2 max-h-[60vh] overflow-y-auto">
