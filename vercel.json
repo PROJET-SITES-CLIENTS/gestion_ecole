@@ -7,5 +7,15 @@
     "src/app/**/*.{ts,tsx}": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/keep-alive",
+      "schedule": "*/4 * * * *"
+    },
+    {
+      "path": "/api/cron",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }
