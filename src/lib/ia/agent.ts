@@ -43,7 +43,7 @@ async function appelerOpenRouter(messages: MessageIA[], tools: unknown[], toolCh
         'X-Title': 'ScolaGestion Assistant',
       },
       body: JSON.stringify({
-        model: process.env.IA_MODELE || 'openai/gpt-4o-mini',
+        model: process.env.IA_MODELE || 'nvidia/nemotron-3-ultra-550b-a55b:free',
         messages,
         tools: tools.length ? tools : undefined,
         tool_choice: tools.length ? toolChoice : undefined,
@@ -56,7 +56,7 @@ async function appelerOpenRouter(messages: MessageIA[], tools: unknown[], toolCh
     const texte = reponse ? await reponse.text().catch(() => '') : 'réseau indisponible';
     const statut = reponse?.status ?? 0;
     derniereErreur = new Error(`OpenRouter ${statut} : ${texte.slice(0, 200)}`);
-    if (![401, 402, 429].includes(statut)) break; // autre erreur : pas de repli
+    if (statut === 402) { /* credits epuises -> essayer le modele gratuit */ } if (![401, 402, 429].includes(statut)) break;
   }
   throw derniereErreur ?? new Error('OpenRouter injoignable.');
 }
