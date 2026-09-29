@@ -2,15 +2,20 @@
 
 // ====================================================================
 // ASSISTANT IA — interface conversationnelle (texte + VOIX).
-// Reconnaissance vocale (Web Speech API) + synthèse vocale des réponses.
-// Flottant, accessible depuis tous les portails — le serveur limite
-// l'agent aux permissions réelles de la session.
-// FIX: Le contexte technique (tool_calls) est conservé dans l'historique
-// pour éviter l'amnésie de l'IA lors des conversations multi-tours.
+// MODE CONVERSATION MAINS LIBRES : l'utilisateur parle, ARIA répond à
+// voix haute puis rouvre le micro automatiquement — un vrai dialogue
+// continu, sans jamais toucher l'écran.
+//  - Reconnaissance vocale : Web Speech API (Chrome/Edge/Safari 14.5+),
+//    transcription partielle en direct dans le champ de saisie ;
+//  - Synthèse vocale fr-FR avec voix française si disponible ;
+//  - relance automatique du micro après chaque réponse (garde-fous :
+//    arrêt sur silence répété, permission refusée ou panneau fermé).
+// FIX historique conservé : le contexte technique (tool_calls) reste
+// dans l'historique pour éviter l'amnésie de l'IA en multi-tours.
 // ====================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Bot, X, Send, Mic, MicOff, Volume2, VolumeX, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Bot, X, Send, Mic, MicOff, Volume2, VolumeX, Headphones, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { demanderAssistant } from '@/app/actions/ia';
 
 // Tour affiché à l'écran (le champ outils_ctx est technique, jamais affiché)
@@ -39,29 +44,149 @@ function versMessagesServeur(tours: Tour[]): Array<{ role: 'user' | 'assistant';
   return msgs;
 }
 
+/** Support de la reconnaissance vocale (préfixes navigateurs). */
+function getSpeechRecognition(): any | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as any;
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 export default function AssistantIA({ prenom }: { prenom?: string }) {
   const [ouvert, setOuvert] = useState(false);
   const [tours, setTours] = useState<Tour[]>([{
     role: 'assistant',
-    content: `Bonjour ${prenom ?? ''} 👋 Je suis votre assistant. Parlez-moi ou écrivez : « Qui sont les absents aujourd'hui ? », « Inscrit l'élève Awa Diop en 6ème A », « Combien d'impayés en scolarité ? », « Encaisse 50 000 F de Malick Sow en espèces »… J'agis directement dans votre périmètre.`,
+    content: `Bonjour ${prenom ?? ''} 👋 Je suis ARIA. Activez le mode conversation 🎧 pour me parler sans toucher l'écran, ou écrivez : « Qui sont les absents aujourd'hui ? », « Inscrit l'élève Awa Diop en 6ème A », « Combien d'impayés en scolarité ? », « Encaisse 50 000 F de Malick Sow en espèces »…`,
   }]);
   const [saisie, setSaisie] = useState('');
   const [enCours, setEnCours] = useState(false);
   const [ecoute, setEcoute] = useState(false);
   const [voixActive, setVoixActive] = useState(false);
+  // MODE CONVERSATION : micro + voix enchaînés automatiquement
+  const [modeConv, setModeConv] = useState(false);
+  const [parle, setParle] = useState(false);
+
   const finRef = useRef<HTMLDivElement>(null);
   const recoRef = useRef<any>(null);
+  // Réfs anti-closurs figées : les callbacks longévifs (reconnaissance,
+  // synthèse) lisent toujours l'état courant via ces réfs.
+  const modeConvRef = useRef(false);
+  const voixRef = useRef(false);
+  const ouvertRef = useRef(true);
+  const envoyerRef = useRef<(t?: string) => void>(() => {});
+  const relancesVidesRef = useRef(0);
+  const resultatRecuRef = useRef(false);
 
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [tours, enCours]);
+  useEffect(() => { modeConvRef.current = modeConv; }, [modeConv]);
+  useEffect(() => { voixRef.current = voixActive; }, [voixActive]);
+  useEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
 
-  const parler = useCallback((texte: string) => {
-    if (!voixActive || typeof window === 'undefined' || !window.speechSynthesis) return;
+  /** Choisit une voix française si le navigateur en propose une. */
+  const voixFrancaise = useCallback(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+    const voix = window.speechSynthesis.getVoices();
+    return voix.find((v) => v.lang?.toLowerCase().startsWith('fr')) ?? null;
+  }, []);
+
+  /** Prononce un texte (markdown nettoyé). `aLaFin` est appelé à la fin
+   *  de la prononciation — c'est là que le mode conversation rouvre le micro. */
+  const parler = useCallback((texte: string, aLaFin?: () => void) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) { aLaFin?.(); return; }
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(texte.replace(/[*_#`]/g, '').slice(0, 600));
+    // En conversation on prononce toujours ; sinon seulement si voix active
+    if (!modeConvRef.current && !voixRef.current) { aLaFin?.(); return; }
+    const u = new SpeechSynthesisUtterance(texte.replace(/[*_#`•]/g, ' ').replace(/\s+/g, ' ').slice(0, 600));
     u.lang = 'fr-FR';
+    const vf = voixFrancaise();
+    if (vf) u.voice = vf;
+    u.rate = 1.05;
+    u.onstart = () => setParle(true);
+    u.onend = () => { setParle(false); aLaFin?.(); };
+    u.onerror = () => { setParle(false); aLaFin?.(); };
     window.speechSynthesis.speak(u);
-  }, [voixActive]);
+  }, [voixFrancaise]);
 
+  // ── Reconnaissance vocale ──────────────────────────────────────────
+  /** Ouvre le micro. En mode conversation, se relance seule sur silence
+   *  (garde-fou : 8 relances vides consécutives → arrêt du mode). */
+  const demarrerEcoute = useCallback(() => {
+    const Ctor = getSpeechRecognition();
+    if (!Ctor) {
+      alert('La reconnaissance vocale nécessite Chrome, Edge ou Safari récent.');
+      setModeConv(false);
+      return;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel(); // on n'écoute pas pendant qu'ARIA parle
+    resultatRecuRef.current = false;
+    const reco = new Ctor();
+    reco.lang = 'fr-FR';
+    reco.interimResults = true;   // transcription en direct dans le champ
+    reco.continuous = false;
+    reco.maxAlternatives = 1;
+    reco.onresult = (e: any) => {
+      let finale = '';
+      let partielle = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finale += r[0].transcript;
+        else partielle += r[0].transcript;
+      }
+      if (partielle) setSaisie(partielle);
+      if (finale.trim()) {
+        resultatRecuRef.current = true;
+        relancesVidesRef.current = 0;
+        setEcoute(false);
+        setSaisie('');
+        envoyerRef.current(finale.trim());
+      }
+    };
+    reco.onerror = (e: any) => {
+      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
+        alert('Accès au micro refusé — autorisez le microphone dans votre navigateur pour parler à ARIA.');
+        setModeConv(false);
+      }
+      // « no-speech » / « aborted » : silence géré par onend
+    };
+    reco.onend = () => {
+      setEcoute(false);
+      // MODE CONVERSATION — relance automatique sur silence
+      if (modeConvRef.current && ouvertRef.current && !resultatRecuRef.current) {
+        relancesVidesRef.current += 1;
+        if (relancesVidesRef.current <= 8) {
+          setTimeout(() => { if (modeConvRef.current && ouvertRef.current) demarrerEcoute(); }, 350);
+        } else {
+          setModeConv(false); // silence prolongé : on repasse en mode ponctuel
+        }
+      }
+    };
+    try { reco.start(); recoRef.current = reco; setEcoute(true); } catch { /* déjà démarré */ }
+  }, []);
+
+  const arreterVoix = useCallback(() => {
+    modeConvRef.current = false;
+    setModeConv(false);
+    try { recoRef.current?.stop(); } catch { /* ignoré */ }
+    recoRef.current = null;
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+    setEcoute(false);
+    setParle(false);
+    relancesVidesRef.current = 0;
+  }, []);
+
+  /** Bascule le mode conversation mains libres. */
+  const basculerConversation = useCallback(() => {
+    if (modeConv) { arreterVoix(); return; }
+    relancesVidesRef.current = 0;
+    modeConvRef.current = true;
+    setModeConv(true);
+    setVoixActive(true);
+    voixRef.current = true;
+    parler('Mode conversation activé. Je vous écoute.', () => {
+      if (modeConvRef.current) demarrerEcoute();
+    });
+  }, [modeConv, arreterVoix, parler, demarrerEcoute]);
+
+  // ── Envoi d'un message (texte ou vocal) ───────────────────────────
   const envoyer = useCallback(async (texte?: string) => {
     const message = (texte ?? saisie).trim();
     if (!message || enCours) return;
@@ -76,35 +201,34 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
         ? (r as any).reponse ?? ''
         : (r as any)?.error ?? 'Erreur inattendue.';
       setTours([...nouvelleHistorique, { role: 'assistant', content: reponse, actions: (r as any)?.actions }]);
-      parler(reponse);
+      // CONVERSATION : la réponse est prononcée puis le micro se rouvre
+      parler(reponse, () => {
+        if (modeConvRef.current && ouvertRef.current) {
+          setTimeout(() => { if (modeConvRef.current && ouvertRef.current) demarrerEcoute(); }, 250);
+        }
+      });
     } catch (e: any) {
       setTours([...nouvelleHistorique, { role: 'assistant', content: `⚠️ ${e?.message ?? 'Erreur réseau.'}` }]);
+      if (modeConvRef.current) demarrerEcoute();
     } finally {
       setEnCours(false);
     }
-  }, [saisie, tours, enCours, parler]);
+  }, [saisie, tours, enCours, parler, demarrerEcoute]);
 
-  const basculerEcoute = useCallback(() => {
-    if (typeof window === 'undefined' || !(window as any).webkitSpeechRecognition) {
-      alert('La reconnaissance vocale nécessite Chrome ou Edge.');
-      return;
-    }
-    if (ecoute) { recoRef.current?.stop(); setEcoute(false); return; }
-    const reco = new (window as any).webkitSpeechRecognition();
-    reco.lang = 'fr-FR';
-    reco.interimResults = false;
-    reco.continuous = false;
-    reco.onresult = (e: any) => {
-      const texte = e.results[0][0].transcript as string;
-      setEcoute(false);
-      envoyer(texte);
-    };
-    reco.onerror = () => setEcoute(false);
-    reco.onend = () => setEcoute(false);
-    recoRef.current = reco;
-    reco.start();
-    setEcoute(true);
-  }, [ecoute, envoyer]);
+  // Le micro lit toujours la dernière version d'envoyer via la réf
+  useEffect(() => { envoyerRef.current = envoyer; }, [envoyer]);
+
+  // Fermer le panneau coupe proprement la conversation
+  useEffect(() => {
+    if (!ouvert && modeConvRef.current) arreterVoix();
+  }, [ouvert, arreterVoix]);
+
+  // Précharge les voix du navigateur (arrivent de façon asynchrone)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }, []);
 
   if (!ouvert) {
     return (
@@ -125,12 +249,24 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5" />
           <div>
-            <div className="font-semibold text-sm">Assistant ScolaGestion</div>
-            <div className="text-[10px] opacity-80">vos informations & actions — dans votre périmètre</div>
+            <div className="font-semibold text-sm">ARIA — Assistant ScolaGestion</div>
+            <div className="text-[10px] opacity-80">
+              {modeConv
+                ? ecoute ? '🎧 Je vous écoute…' : parle ? '🔊 ARIA parle…' : enCours ? '⏳ J\'analyse…' : '🎧 Conversation active'
+                : 'vos informations & actions — dans votre périmètre'}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => { setVoixActive(!voixActive); if (voixActive) window.speechSynthesis?.cancel(); }} title={voixActive ? 'Couper la voix' : 'Lire les réponses à voix haute'} className="p-1.5 hover:bg-emerald-700 rounded">
+          <button
+            onClick={basculerConversation}
+            title={modeConv ? 'Arrêter la conversation vocale' : 'Mode conversation mains libres (je parle, ARIA répond à voix haute et réécoute)'}
+            className={`p-1.5 rounded ${modeConv ? 'bg-white text-emerald-700 animate-pulse' : 'hover:bg-emerald-700'}`}
+            aria-label="Mode conversation vocale"
+          >
+            <Headphones className="h-4 w-4" />
+          </button>
+          <button onClick={() => { setVoixActive(!voixActive); if (voixActive) { window.speechSynthesis?.cancel(); if (modeConv) arreterVoix(); } }} title={voixActive ? 'Couper la voix' : 'Lire les réponses à voix haute'} className="p-1.5 hover:bg-emerald-700 rounded">
             {voixActive ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </button>
           <button onClick={() => setOuvert(false)} className="p-1.5 hover:bg-emerald-700 rounded" title="Fermer">
@@ -166,11 +302,21 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
       </div>
 
       <div className="p-2 border-t bg-white">
+        {modeConv && (
+          <div className="flex items-center justify-between px-2 pb-1.5">
+            <span className="text-[11px] text-emerald-700">
+              {ecoute ? '🎧 Parlez — je transcris en direct…' : parle ? '🔊 Réponse en cours de lecture…' : '⏳ Prêt à réécouter…'}
+            </span>
+            <button onClick={arreterVoix} className="text-[11px] text-rose-600 hover:underline">
+              Arrêter la conversation
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-1.5">
           <button
-            onClick={basculerEcoute}
+            onClick={modeConv ? arreterVoix : demarrerEcoute}
             className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${ecoute ? 'bg-rose-600 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-            title="Commande vocale (français)"
+            title={modeConv ? 'Arrêter l\'écoute' : 'Commande vocale ponctuelle (français)'}
             aria-label="Parler à l'assistant"
           >
             {ecoute ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
