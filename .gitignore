@@ -55,3 +55,7 @@ server.log
 db/custom.db*
 stockage/
 tool-results/
+
+# AUDIT DEPLOIEMENT — jamais uploader la base locale ni ses sauvegardes (prod = Supabase)
+db/
+.env.local

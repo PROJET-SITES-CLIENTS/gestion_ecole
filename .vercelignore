@@ -1,0 +1,20 @@
+# Upload Vercel : UNIQUEMENT ce qui est nécessaire au build.
+# La base SQLite locale et ses sauvegardes (63 Mo) ne partent JAMAIS —
+# la production utilise Supabase via les variables d'environnement Vercel.
+.git
+.github
+.next
+node_modules
+db
+stockage
+scripts
+tests
+coverage
+.vercel
+.env
+.env.local
+*.log
+worklog.md
+DEPLOYEMENT.md
+AGENTS.md
+CLAUDE.md
