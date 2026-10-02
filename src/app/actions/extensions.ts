@@ -799,11 +799,12 @@ export async function majAvancement(formData: FormData): Promise<ActionResult> {
 export async function creerEntreeCahier(formData: FormData): Promise<ActionResult> {
   try {
     const ctx = await ctxSession();
-    const d = z.object({ classeId: idReq, matiereId: str, dateCours: dateReq, contenu: strReq, travailAFaire: str, publier: coche, chapitreId: str, chapitreTermine: coche }).parse(Object.fromEntries(formData));
+    const d = z.object({ classeId: idReq, matiereId: str, dateCours: dateReq, contenu: strReq, travailAFaire: str, publier: coche, chapitreId: str, chapitreTermine: coche, pourcentageAvancement: z.coerce.number().min(0).max(100).optional(), resteAEnseigner: str }).parse(Object.fromEntries(formData));
     const r = await creerEntreeCahierCore(ctx, {
       classeId: d.classeId, matiereId: d.matiereId || undefined, dateCours: d.dateCours, contenu: d.contenu,
       travailAFaire: d.travailAFaire || undefined, publier: estCoche(d.publier),
       chapitreId: d.chapitreId || undefined, chapitreTermine: estCoche(d.chapitreTermine),
+      pourcentageAvancement: d.pourcentageAvancement, resteAEnseigner: d.resteAEnseigner || undefined,
     });
     revalidatePath('/');
     return {

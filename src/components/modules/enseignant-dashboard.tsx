@@ -11,13 +11,16 @@
 //   5. Dispenses actives de ses élèves.
 // ====================================================================
 
+import { useState } from 'react';
 import { CalendarClock, Users, ClipboardCheck, BookOpen, HeartPulse, ArrowRight } from 'lucide-react';
+import VueClasseEnseignant from './vue-classe-enseignant';
 import { StatCard, SectionBlock, StatusBadge } from '@/components/shared-ui';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/format';
 
 export default function EnseignantDashboard({ initialData, onNaviguer }: { initialData: any; onNaviguer?: (module: string) => void }) {
+  const [classeOuverte, setClasseOuverte] = useState<string | null>(null);
   const seances = initialData.seances ?? [];
   const eleves = initialData.eleves ?? [];
   const classes = initialData.classes ?? [];
@@ -78,6 +81,21 @@ export default function EnseignantDashboard({ initialData, onNaviguer }: { initi
   }).slice(0, 6);
 
   const periodeEnCours = periodes.find((p: any) => auj >= new Date(p.dateDebut) && auj <= new Date(p.dateFin));
+
+  // AUDIT ENSEIGNANT — drill-down : cliquer sur une de MES classes ouvre
+  // la vue dédiée (matières, EDT 3 zones, clôture, élèves + tendance, notes)
+  if (classeOuverte) {
+    return (
+      <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
+        <VueClasseEnseignant
+          initialData={initialData}
+          classeId={classeOuverte}
+          onFermer={() => setClasseOuverte(null)}
+          onNaviguer={onNaviguer}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto space-y-6">
@@ -149,12 +167,13 @@ export default function EnseignantDashboard({ initialData, onNaviguer }: { initi
                 const niv = niveauParId.get(c.niveauId);
                 const mesMat = affectations.filter((a: any) => a.classeId === c.id).map((a: any) => matieres.find((m: any) => m.id === a.matiereId)?.libelle).filter(Boolean);
                 return (
-                  <Card key={c.id} className="border border-gray-100">
+                  <Card key={c.id} className="border border-gray-100 hover:border-emerald-300 hover:shadow-sm transition-all cursor-pointer" onClick={() => setClasseOuverte(c.id)}>
                     <CardContent className="p-3">
                       <div className="text-sm font-semibold">{c.libelle}</div>
                       <div className="text-[11px] text-gray-500">{niv?.libelle ?? ''}</div>
                       <div className="mt-1 text-xs">{eff.n} élèves <span className="text-gray-500">({eff.g} G · {eff.f} F)</span></div>
                       {mesMat.length > 0 && <div className="text-[10px] text-emerald-700 mt-1 truncate" title={mesMat.join(', ')}>{mesMat.join(', ')}</div>}
+                      <div className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-0.5">Ouvrir ma classe <ArrowRight className="h-2.5 w-2.5" /></div>
                     </CardContent>
                   </Card>
                 );

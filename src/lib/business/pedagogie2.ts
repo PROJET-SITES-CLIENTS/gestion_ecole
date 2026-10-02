@@ -55,7 +55,7 @@ export async function noterRenduCore(ctx: Ctx, renduId: string, input: { note: n
 // B10 — CAHIER DE TEXTES
 // --------------------------------------------------------------------
 
-export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string; matiereId?: string; dateCours: Date; contenu: string; travailAFaire?: string; publier?: boolean; chapitreId?: string; chapitreTermine?: boolean; pourcentageAvancement?: number }) {
+export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string; matiereId?: string; dateCours: Date; contenu: string; travailAFaire?: string; publier?: boolean; chapitreId?: string; chapitreTermine?: boolean; pourcentageAvancement?: number; resteAEnseigner?: string }) {
   assertPermission(ctx, 'notes.saisir');
   if (!input.contenu?.trim()) throw new ActionError('Le contenu du cours est obligatoire.', 'CHAMP_MANQUANT');
   if (isNaN(input.dateCours?.getTime())) throw new ActionError('Date de cours invalide.', 'DATE_INVALIDE');
@@ -93,14 +93,22 @@ export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string;
   let avancementMisAJour = false;
   if (chapitre && (input.chapitreTermine || (input.pourcentageAvancement != null && input.pourcentageAvancement >= 0))) {
     const pourcentage = input.chapitreTermine ? 100 : Math.min(100, Math.max(0, input.pourcentageAvancement!));
+    // AUDIT ENSEIGNANT — le RESTE À RATTRAPER est conservé avec l'avancement :
+    // la séance suivante saura exactement quoi reprendre.
+    const reste = input.resteAEnseigner?.trim();
+    const commentaire = `Cahier — ${input.dateCours.toISOString().slice(0, 10)}${reste ? ` · reste : ${reste.slice(0, 180)}` : ''}`;
     await db.avancementProgramme.upsert({
       where: { chapitreId_classeId: { chapitreId: chapitre.id, classeId: input.classeId } },
-      create: { chapitreId: chapitre.id, classeId: input.classeId, pourcentage, enseignantId: enseignantCahier.id, commentaire: `Depuis le cahier de textes — ${input.dateCours.toISOString().slice(0, 10)}` },
-      update: { pourcentage, enseignantId: enseignantCahier.id, dateMaj: new Date(), commentaire: `Depuis le cahier de textes — ${input.dateCours.toISOString().slice(0, 10)}` },
+      create: { chapitreId: chapitre.id, classeId: input.classeId, pourcentage, enseignantId: enseignantCahier.id, commentaire },
+      update: { pourcentage, enseignantId: enseignantCahier.id, dateMaj: new Date(), commentaire },
     }).catch(() => undefined); // groupeId variant : ignoré ici
     avancementMisAJour = true;
   }
-  return { entreeId: e.id, chapitre: chapitre?.titre ?? null, avancementMisAJour };
+  return {
+    entreeId: e.id, chapitre: chapitre?.titre ?? null, avancementMisAJour,
+    pourcentage: input.chapitreTermine ? 100 : input.pourcentageAvancement ?? null,
+    resteAEnseigner: input.resteAEnseigner?.trim() || null,
+  };
 }
 
 export async function publierEntreeCahierCore(ctx: Ctx, entreeId: string) {
