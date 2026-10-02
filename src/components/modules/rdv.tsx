@@ -17,6 +17,9 @@ export default function RdvModule({ initialData }: { initialData: any }) {
   const personnels = initialData.personnels ?? [];
   const classes = initialData.classes ?? [];
   const retourRdvs = useActionFeedback();
+  // AUDIT ERGO — pré-sélection de SON propre compte à l'ouverture d'un
+  // créneau (l'enseignant ouvre pour lui, pas pour un collègue par erreur)
+  const monIdProf = personnels.find((p: any) => p.utilisateurId === initialData.session?.utilisateur?.id)?.id ?? '';
 
   const creneauxDisponibles = creneaux.filter((c: any) => c.statut === 'disponible').length;
   const rdvsAVenir = rdvs.filter((r: any) => r.statut === 'confirme').length;
@@ -31,12 +34,13 @@ export default function RdvModule({ initialData }: { initialData: any }) {
             trigger={<CreateButton label="Ouvrir un créneau" />}
             title="Ouvrir un créneau de disponibilité"
             fields={[
-              { name: 'personnelId', label: 'Enseignant', type: 'select', options: personnels.map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })), required: true },
+              { name: 'personnelId', label: 'Enseignant', type: 'select', options: personnels.map((p: any) => ({ value: p.id, label: monIdProf === p.id ? `${p.prenom} ${p.nom} (moi)` : `${p.prenom} ${p.nom}` })), required: true },
               { name: 'date', label: 'Date', type: 'date', required: true },
               { name: 'heureDebut', label: 'Heure début', required: true, placeholder: '16:00' },
               { name: 'heureFin', label: 'Heure fin', required: true, placeholder: '16:15' },
               { name: 'lieu', label: 'Lieu', type: 'select', options: [{ value: 'presentiel', label: 'Présentiel' }, { value: 'visio', label: 'Visio' }] },
             ]}
+            defaultValues={monIdProf ? { personnelId: monIdProf } : undefined}
             action={actions.ouvrirCreneauRdv}
           />
         }

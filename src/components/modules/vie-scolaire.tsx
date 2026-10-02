@@ -13,6 +13,12 @@ import * as actions from '@/app/actions';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 export default function VieScolaireModule({ initialData }: { initialData: any }) {
+  const retourVie = useActionFeedback();
+  // AUDIT ERGO — les outils d'administration disciplinaire (exclusion,
+  // conseils, surveillances d'examens) sont réservés aux portails vie
+  // scolaire/direction : l'enseignant déclare, il ne juge pas.
+  const portal = initialData.session?.portal;
+  const estCadreVieScolaire = ['direction', 'super_admin', 'vie_scolaire', 'secretariat'].includes(portal ?? '');
   const retards = initialData.retards ?? [];
   const surveillancesExamens = initialData.surveillancesExamens ?? [];
   const conseilsDiscipline = initialData.conseilsDiscipline ?? [];
@@ -29,6 +35,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
 
   return (
     <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
+      <div className="mb-4">{retourVie.Message}</div>
       <PageHeader
         title="Vie scolaire & Discipline"
         subtitle="Déclaration d'incidents, sanctions, notification automatique aux parents"
@@ -103,6 +110,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
         </SectionBlock>
       </div>
 
+      {estCadreVieScolaire && (
       <SectionBlock title="Sanctionner un incident" description="La sanction notifie automatiquement les parents/tuteurs">
         <div className="flex gap-2 flex-wrap">
           <ModalForm
@@ -133,6 +141,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
           />
         </div>
       </SectionBlock>
+      )}
 
       {/* VIE SCOLAIRE+ */}
       <SectionBlock
@@ -159,7 +168,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
             { key: 'classe', label: 'Classe', render: (r: any) => r.eleve?.classeActuelle?.libelle ?? '—' },
             { key: 'dateHeure', label: 'Le', render: (r: any) => new Date(r.dateHeure).toLocaleString('fr-FR') },
             { key: 'dureeMinutes', label: 'Durée', render: (r: any) => `${r.dureeMinutes} min` },
-            { key: 'justifie', label: 'Justifié', render: (r: any) => r.justifie ? <StatusBadge statut="valide" /> : <Button variant="outline" size="sm" onClick={() => actionsExt.justifierRetard(r.id)}>Justifier</Button> },
+            { key: 'justifie', label: 'Justifié', render: (r: any) => r.justifie ? <StatusBadge statut="valide" /> : <Button variant="outline" size="sm" disabled={retourVie.pending} onClick={() => retourVie.run(() => actionsExt.justifierRetard(r.id), 'Retard justifié')}>Justifier</Button> },
           ]}
           rows={retards}
           emptyLabel="Aucun retard enregistré"
@@ -205,6 +214,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
         )}
       </SectionBlock>
 
+      {estCadreVieScolaire && (
       <SectionBlock
         title="Surveillance des compositions & examens"
         description="Planning des épreuves avec affectation des surveillants (anti-chevauchement automatique)"
@@ -236,7 +246,9 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
           emptyLabel="Aucune épreuve planifiée"
         />
       </SectionBlock>
+      )}
 
+      {estCadreVieScolaire && (
       <SectionBlock
         title="Conseils de discipline"
         description="Séances formalisées : convocation automatique des parents, décision notifiée"
@@ -271,6 +283,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
           emptyLabel="Aucun conseil programmé"
         />
       </SectionBlock>
+      )}
     </div>
   );
 }

@@ -578,7 +578,20 @@ export default function AppShell({ initialData }: { initialData: any }) {
 
         {/* ═══ Bottom Navigation Mobile (native app feel) ═══ */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around h-16 px-1 pb-[env(safe-area-inset-bottom)] shadow-lg">
-          {visibleModules.slice(0, 4).map((m) => {
+          {(function () {
+            // AUDIT ERGO — épinglage métier : les 4 premiers modules génériques
+            // reléguaient « Présences » derrière « Plus » pour l'enseignant.
+            const EPINGLAGE: Record<string, string[]> = {
+              enseignant: ['dashboard', 'presences', 'pedagogique', 'eleves'],
+              direction: ['dashboard', 'eleves', 'pedagogique', 'finances'],
+              comptabilite: ['dashboard', 'finances', 'compta', 'eleves'],
+            };
+            const ordre = EPINGLAGE[portal];
+            const vis = ordre
+              ? ordre.map((id) => visibleModules.find((m) => m.id === id)).filter((m): m is typeof visibleModules[number] => Boolean(m))
+              : visibleModules.slice(0, 4);
+            return vis;
+          })().map((m) => {
             const Icon = m.icon;
             const isActive = active === m.id;
             return (
@@ -588,7 +601,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
                 className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full py-1 transition-colors ${isActive ? 'text-emerald-600' : 'text-gray-500'}`}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
-                <span className="text-[10px] font-medium truncate max-w-[64px]">{m.label.split(' ')[0]}</span>
+                <span className="text-[10px] font-medium truncate max-w-[64px]">{({ dashboard: 'Accueil', presences: 'Appel' } as Record<string, string>)[m.id] ?? m.label.split(' ')[0]}</span>
                 {isActive && <div className="w-1 h-1 rounded-full bg-emerald-600" />}
               </button>
             );

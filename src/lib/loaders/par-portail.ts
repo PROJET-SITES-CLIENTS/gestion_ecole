@@ -507,7 +507,18 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
   if (vieScolaire) {
     promises.push((async () => {
       const [seances, presences, incidents, sanctions, justificationsAbsence] = await Promise.all([
-        db.seance.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'desc' }, take: 300, include: { matiere: true, classe: true, enseignant: { select: { id: true, prenom: true, nom: true, matricule: true, email: true } } } }),
+        // AUDIT ERGO — fenêtre glissante : 150 passées + 150 futures. Un tri
+        // global `date desc` + take 300 excluait les séances du jour dès que
+        // l'EDT annuel dépassait 300 séances (cockpit et appel vides).
+        (async () => {
+          const includeSeance = { matiere: true, classe: true, enseignant: { select: { id: true, prenom: true, nom: true, matricule: true, email: true } } } as const;
+          const maintenant = new Date();
+          const [futures, passees] = await Promise.all([
+            db.seance.findMany({ where: { classe: { ecoleId }, date: { gt: maintenant } }, orderBy: { date: 'asc' }, take: 150, include: includeSeance }),
+            db.seance.findMany({ where: { classe: { ecoleId }, date: { lte: maintenant } }, orderBy: { date: 'desc' }, take: 150, include: includeSeance }),
+          ]);
+          return [...futures, ...passees];
+        })(),
         db.presence.findMany({ take: CAP.presences, include: { seance: { include: { matiere: true, classe: true } } } }),
         db.incident.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateHeure: 'desc' }, take: CAP.incidents }),
         db.sanction.findMany({ where: { incident: { eleve: { ecoleId } } }, take: CAP.sanctions, include: { incident: true } }),
@@ -682,6 +693,21 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       ]);
       v.creneauxRdv = creneauxRdv; v.rdvs = rdvs; v.reunionsCollectives = reunionsCollectives;
       v.candidaturesAdmission = candidaturesAdmission;
+    })());
+  }
+  // AUDIT ERGO — RDV pour l'ENSEIGNANT : le module lui est ouvert, il doit
+  // voir SES créneaux, les RDV que les parents y réservent et les réunions
+  // collectives de SES classes (résolu côté serveur, jamais depuis le client).
+  if (portal === 'enseignant') {
+    promises.push((async () => {
+      const moi = await db.personnel.findFirst({ where: { utilisateurId: session.utilisateur.id, deletedAt: null }, select: { id: true } });
+      if (!moi) return;
+      const [creneauxRdv, rdvs, reunionsCollectives] = await Promise.all([
+        db.creneauRdv.findMany({ where: { personnelId: moi.id }, orderBy: { date: 'asc' }, take: 100, include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } }),
+        db.rdv.findMany({ where: { creneauRdv: { personnelId: moi.id } }, orderBy: { createdAt: 'desc' }, take: 100, include: { parent: true, eleve: true, creneauRdv: { include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } } } }),
+        db.reunionCollective.findMany({ where: { classe: { ecoleId, affectationsEnseignant: { some: { personnelId: moi.id } } } }, orderBy: { date: 'asc' }, include: { classe: true } }),
+      ]);
+      v.creneauxRdv = creneauxRdv; v.rdvs = rdvs; v.reunionsCollectives = reunionsCollectives;
     })());
   }
 

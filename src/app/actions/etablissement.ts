@@ -121,14 +121,20 @@ export async function lireIdentiteEtablissement(): Promise<ActionResult> {
 
 export async function listerCatalogueDocuments(): Promise<ActionResult> {
   try {
-    await requireSession();
+    const s = await requireSession();
     const { CATALOGUE } = await import('@/lib/documents/registre');
+    // AUDIT ERGO — la permission accompagne chaque modèle : l'UI filtre et
+    // n'affiche QUE ce que le portail peut réellement générer (fini les
+    // boutons qui ouvrent un onglet 403).
     return {
       ok: true,
-      catalogue: CATALOGUE.map((m) => ({
-        code: m.code, libelle: m.libelle, domaine: m.domaine, description: m.description,
-        entete: m.entete, confidential: !!m.confidential, parametres: m.parametres,
-      })),
+      catalogue: CATALOGUE
+        .filter((m) => !m.permission || s.utilisateur.type === 'super_admin' || s.permissions.has(m.permission))
+        .map((m) => ({
+          code: m.code, libelle: m.libelle, domaine: m.domaine, description: m.description,
+          entete: m.entete, confidential: !!m.confidential, parametres: m.parametres,
+          permission: m.permission ?? null,
+        })),
     };
   } catch (e) { return echec(e); }
 }

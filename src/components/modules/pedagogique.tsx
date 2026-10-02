@@ -137,6 +137,17 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   // valide en tant que PP, mais ne publie pas aux familles)
   const peutPublierBulletins = initialData.session?.permissions?.includes?.('bulletins.valider')
     ?? ['direction', 'super_admin'].includes(initialData.session?.portal ?? '');
+  // AUDIT ERGO — « les miennes d'abord » : le portail enseignant voit ses
+  // évaluations / cahiers / devoirs en tête de liste (les autres restent
+  // accessibles dessous — remplacements, décharges…)
+  const portalMoi = initialData.session?.portal;
+  const monIdProf = (initialData.personnels ?? []).find((p: any) => p.utilisateurId === initialData.session?.utilisateur?.id)?.id ?? null;
+  const mesClasseIdsSet = new Set<string>((initialData.affectationsEnseignant ?? []).filter((a: any) => monIdProf && a.personnelId === monIdProf).map((a: any) => a.classeId as string).filter(Boolean));
+  const estMesClasse = (classeId?: string | null) => Boolean(classeId && mesClasseIdsSet.has(classeId));
+  const lesMiennesDabord = <T,>(liste: T[], poids: (x: T) => number): T[] =>
+    liste.slice().sort((a, b) => poids(b) - poids(a));
+  const poidsMien = (enseignantId?: string | null, classeId?: string | null) =>
+    (enseignantId && enseignantId === monIdProf ? 2 : 0) + (estMesClasse(classeId) ? 1 : 0);
   const [pendingCorrection, startCorrection] = useTransition();
   const tousRendus = (devoirs ?? []).flatMap((d: any) => (d.rendus ?? []).map((r: any) => ({ ...r, devoirId: d.id })));
 
@@ -447,7 +458,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
               { key: 'statut', label: 'Statut', render: (d) => <StatusBadge statut={d.statut} label={STATUT_DEVOIR_LABELS[d.statut] ?? d.statut} /> },
               { key: 'rendus', label: 'Rendus', render: (d) => `${(d.rendus ?? []).length} rendu(s)` },
             ]}
-            rows={devoirs}
+            rows={lesMiennesDabord(devoirs, (d: any) => poidsMien(d.enseignantId, d.classeId))}
             emptyLabel="Aucun devoir assigné — utilisez le bouton « Nouveau devoir »."
           />
         </SectionBlock>
@@ -516,7 +527,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             <EmptyState title="Aucun cahier de textes" description="Créez une première entrée : le cahier de la classe et matière sera ouvert automatiquement. Sélectionnez le chapitre travaillé pour alimenter le suivi de programme." />
           )}
           <div className="space-y-4">
-            {cahiersTexte.map((ct: any) => {
+            {lesMiennesDabord(cahiersTexte, (ct: any) => poidsMien(ct.enseignantId, ct.classeId)).map((ct: any) => {
               const entrees = [...(ct.entrees ?? [])].sort((a: any, b: any) => new Date(b.dateCours).getTime() - new Date(a.dateCours).getTime());
               return (
                 <Card key={ct.id}>
@@ -1006,10 +1017,13 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             <Card className="lg:col-span-1">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Évaluations</CardTitle></CardHeader>
               <CardContent className="p-2 max-h-[60vh] overflow-y-auto">
-                {evaluations.map((e: any) => (
+                {evaluations.length === 0 && (
+                  <p className="text-sm text-gray-500 p-2">Aucune évaluation — créez-en une dans l&apos;onglet « Évaluations » pour saisir des notes.</p>
+                )}
+                {lesMiennesDabord(evaluations, (e: any) => poidsMien(e.enseignantId, e.classeId)).map((e: any) => (
                   <button key={e.id} onClick={() => setSelectedEvalId(e.id)}
                     className={`w-full text-left p-2 rounded text-sm hover:bg-gray-50 ${selectedEvalId === e.id ? 'bg-emerald-50 border border-emerald-200' : ''}`}>
-                    <div className="font-medium">{e.intitule}</div>
+                    <div className="font-medium">{e.enseignantId === monIdProf && portalMoi === 'enseignant' && <span title="Votre évaluation" className="text-emerald-600 mr-1">★</span>}{e.intitule}</div>
                     <div className="text-xs text-gray-500">
                       {matieres.find((m: any) => m.id === e.matiereId)?.libelle} · {formatDate(e.date)}
                     </div>
