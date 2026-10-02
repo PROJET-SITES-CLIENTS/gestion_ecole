@@ -15,6 +15,7 @@ const InfrastructuresModule = dynamic(() => import('./modules/infrastructures'),
 const ComptaModule = dynamic(() => import('./modules/compta'), { ssr: false });
 const RhPlusModule = dynamic(() => import('./modules/rh-plus'), { ssr: false });
 const DirectionModule = dynamic(() => import('./modules/direction'), { ssr: false });
+const EnseignantDashboard = dynamic(() => import('./modules/enseignant-dashboard'), { ssr: false });
 const ElevesModule = dynamic(() => import('./modules/eleves'), { ssr: false });
 const PersonnelModule = dynamic(() => import('./modules/personnel'), { ssr: false });
 const PedagogiqueModule = dynamic(() => import('./modules/pedagogique'), { ssr: false });
@@ -347,7 +348,11 @@ export default function AppShell({ initialData }: { initialData: any }) {
         if (['comptabilite', 'rh', 'vie_scolaire', 'secretariat', 'sante', 'assistant'].includes(portal)) {
           return <PortailMetiers {...props} portal={portal as 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant'} />;
         }
-        return <DirectionModule {...props} mode="dashboard" portalLabel={portal === 'enseignant' ? 'Enseignant' : 'Direction'} />;
+        // AUDIT ENSEIGNANT — cockpit dédié : mes séances, mes classes, mes copies, mon programme
+        if (portal === 'enseignant') {
+          return <EnseignantDashboard {...props} onNaviguer={(m) => setActive(m as ModuleId)} />;
+        }
+        return <DirectionModule {...props} mode="dashboard" portalLabel="Direction" />;
       case 'rh_plus': return <RhPlusModule {...props} />;
       case 'compta': return <ComptaModule {...props} />;
       case 'infrastructures': return <InfrastructuresModule {...props} />;

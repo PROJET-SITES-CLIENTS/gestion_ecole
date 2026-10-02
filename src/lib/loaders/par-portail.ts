@@ -462,7 +462,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   if (pedagogie) {
     promises.push((async () => {
-      const [periodes, programmes, avancements, evaluations, notes, bulletins, competences, evalsCompetence, devoirsPeda, cahiersPeda] = await Promise.all([
+      const [periodes, programmes, avancements, evaluations, notes, bulletins, competences, evalsCompetence, devoirsPeda, dispensesPeda, cahiersPeda] = await Promise.all([
         db.periode.findMany({ where: { ecoleId, ...(idAnnee ? { anneeScolaireId: idAnnee } : {}) }, orderBy: { dateDebut: 'asc' } }),
         db.programme.findMany({ where: { ecoleId }, include: { matiere: true, niveau: true, chapitres: true } }),
         // SÉCURITÉ TENANT — filtre par le programme de l'école (avancement sans ecoleId direct)
@@ -479,6 +479,9 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         // chargés pour TOUS les portails pédagogiques — plus seulement
         // la direction (v4) : l'enseignant VOIT ses devoirs et son cahier.
         db.devoir.findMany({ where: { ecoleId }, orderBy: { dateRendu: 'desc' }, take: 150, include: { classe: true, matiere: true, rendus: { include: { eleve: { select: { id: true, prenom: true, nom: true } } } } } }),
+        // AUDIT ENSEIGNANT — dispenses visibles par l'enseignant (il en crée :
+        // la liste doit exister aussi pour lui, pas seulement en v4 direction)
+        db.dispense.findMany({ where: { ecoleId }, include: { eleve: true }, orderBy: { dateDebut: 'asc' }, take: 200 }),
         // AUDIT ENSEIGNANT — entrées INCLUSES (avec le chapitre du programme
         // travaillé) : le cahier alimente visuellement le suivi d'avancement
         db.cahierTexte.findMany({
@@ -493,6 +496,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       v.evaluations = evaluations; v.notes = notes; v.bulletins = bulletins;
       v.competences = competences; v.evalsCompetence = evalsCompetence;
       v.devoirs = devoirsPeda; v.cahiersTexte = cahiersPeda;
+      if (!v.dispenses || (v.dispenses as unknown[]).length === 0) v.dispenses = dispensesPeda;
       // AUDIT ENSEIGNANT — règles de calcul (configuration direction)
       if (portal === 'direction' || portal === 'super_admin') {
         v.reglesCalcul = await db.regleCalculMoyenne.findMany({ where: { ecoleId }, include: { cycle: true } });

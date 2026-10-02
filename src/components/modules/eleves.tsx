@@ -77,8 +77,15 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   // Les classes sont rangées par cycle pédagogique (Maternelle, Primaire,
   // Collège, Lycée) puis par niveau ; l'utilisateur choisit une classe et
   // voit sa liste d'élèves — plus une recherche globale en secours.
+  // AUDIT ENSEIGNANT — ses classes d'affectation par défaut (option « toutes »)
+  const estEnseignant = portal === 'enseignant';
+  const affectations = initialData.affectationsEnseignant ?? [];
+  const monIdProf = (initialData.personnels ?? []).find((p: any) => p.utilisateurId === initialData.session?.utilisateur?.id)?.id ?? null;
+  const mesClasseIds = estEnseignant && monIdProf
+    ? [...new Set<string>(affectations.filter((a: any) => a.personnelId === monIdProf).map((a: any) => a.classeId as string).filter(Boolean))]
+    : [];
   const [cycleActif, setCycleActif] = useState<string>('tous');
-  const [classeActive, setClasseActive] = useState<string>('toutes');
+  const [classeActive, setClasseActive] = useState<string>(mesClasseIds.length > 0 ? mesClasseIds[0] : 'toutes');
   const [recherche, setRecherche] = useState('');
   const niveauParClasse = new Map<string, any>(niveaux.map((n: any) => [n.id, n]));
   const cycleDeClasse = (c: any): string => {
@@ -294,9 +301,12 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   classeActive === 'toutes' ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium' : 'bg-white text-gray-500 border-gray-200 hover:border-emerald-200'
                 }`}
               >
-                Toutes les classes
+                {estEnseignant && mesClasseIds.length > 0 ? 'Toutes (école entière)' : 'Toutes les classes'}
               </button>
-              {classesDuCycle.map((c: any) => (
+              {(estEnseignant && mesClasseIds.length > 0
+                ? classesDuCycle.filter((c: any) => mesClasseIds.includes(c.id))
+                : classesDuCycle
+              ).map((c: any) => (
                 <button
                   key={c.id}
                   onClick={() => setClasseActive(c.id)}

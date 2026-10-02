@@ -133,6 +133,10 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   const retourProgrammes = useActionFeedback();
   // AUDIT ENSEIGNANT — rythme attendu vs réalisé des programmes
   const [rythmes, setRythmes] = useState<any[] | null>(null);
+  // Publication des bulletins : direction uniquement (l'enseignant génère et
+  // valide en tant que PP, mais ne publie pas aux familles)
+  const peutPublierBulletins = initialData.session?.permissions?.includes?.('bulletins.valider')
+    ?? ['direction', 'super_admin'].includes(initialData.session?.portal ?? '');
   const [pendingCorrection, startCorrection] = useTransition();
   const tousRendus = (devoirs ?? []).flatMap((d: any) => (d.rendus ?? []).map((r: any) => ({ ...r, devoirId: d.id })));
 
@@ -303,12 +307,17 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                         Transmettre direction
                       </Button>
                     )}
-                    {b.statut === 'en_attente_direction' && (
+                    {(b.statut === 'en_attente_direction' || b.statut === 'publie') && !peutPublierBulletins && (
+                      <span className="text-[10px] text-gray-400" title="Réservé à la direction (permission bulletins.valider)">
+                        publication : direction
+                      </span>
+                    )}
+                    {peutPublierBulletins && b.statut === 'en_attente_direction' && (
                       <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'publie'), 'Bulletin publié')}>
                         Publier
                       </Button>
                     )}
-                    {b.statut === 'publie' && (
+                    {peutPublierBulletins && b.statut === 'publie' && (
                       <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'rectifie'), 'Bulletin remis en rectification')}>
                         Rectifier
                       </Button>
