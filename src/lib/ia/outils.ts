@@ -11,6 +11,7 @@
 import { db } from '@/lib/db';
 import { Ctx } from '@/lib/business/commun';
 import * as biz from '@/lib/business';
+import { resoudreMatiere, resoudreNiveau, resoudrePersonnel, resoudreClasse, normaliser } from './resolution';
 
 export type ParametreOutil = {
   type: 'object';
@@ -1655,18 +1656,60 @@ const outilsConfiguration: OutilIA[] = [
   },
   {
     nom: "supprimer_matiere",
-    description: "Supprime une matière si elle n est utilisée nulle part. Refuse si des programmes, évaluations ou affectations l utilisent.",
+    description: "Supprime une MATIÈRE DU RÉFÉRENTIEL de l'école (la matière disparaît de toute l'école — ce n'est NI une affectation de classe, NI un programme). Si des éléments l'utilisent, la réponse liste les blocages avec la marche à suivre : desaffecter=true retire d'abord les affectations enseignant-classe ; les programmes doivent être supprimés avant (supprimer_programme) ; les évaluations/notes sont PROTÉGÉES (aucune suppression de notes).",
     permission: "admin.saas",
-    parametres: P({ matiere: { type: "string", description: "Nom de la matière" } }, ["matiere"]),
+    parametres: P({
+      matiere: { type: "string", description: "Nom EXACT de la matière (si plusieurs correspondent, l'outil listera les candidats)" },
+      desaffecter: { type: "boolean", description: "true = retirer d'abord les affectations enseignant×classe qui bloquent (seulement si ce sont les seuls blocages)" },
+    }, ["matiere"]),
     executer: async (ctx, args) => {
       const ecoleId = ctx.ecoleId!;
-      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
-      if (!mat) return { erreur: `Matiété "${args.matiere}" introuvable.` };
-      const nbProgs = await db.programme.count({ where: { matiereId: mat.id } });
-      const nbEvals = await db.evaluation.count({ where: { matiereId: mat.id } });
-      const nbAff = await db.affectationEnseignant.count({ where: { matiereId: mat.id } });
-      if (nbProgs + nbEvals + nbAff > 0) {
-        return { erreur: `Impossible : "${mat.libelle}" a ${nbProgs} programme(s), ${nbEvals} évaluation(s), ${nbAff} affectation(s).` };
+      const r = await resoudreMatiere(ecoleId, String(args.matiere));
+      if (!r.trouve) return { erreur: r.erreur, candidats: r.candidats };
+      const mat = r.entite;
+      // Inventaire complet des usages, par gravité croissante
+      const [affectations, programmes, evaluations, seances, devoirs, edt, competences] = await Promise.all([
+        db.affectationEnseignant.findMany({ where: { matiereId: mat.id }, include: { personnel: true, classe: true } }),
+        db.programme.findMany({ where: { matiereId: mat.id }, include: { niveau: true } }),
+        db.evaluation.count({ where: { matiereId: mat.id } }),
+        db.seance.count({ where: { matiereId: mat.id } }),
+        db.devoir.count({ where: { matiereId: mat.id } }),
+        db.emploiTemps.count({ where: { matiereId: mat.id } }),
+        db.competence.count({ where: { matiereId: mat.id } }),
+      ]);
+      // Blocages LÉTAUX : données pédagogiques historisées — jamais touchées
+      if (evaluations > 0 || seances > 0 || devoirs > 0) {
+        return {
+          erreur: `Suppression de « ${mat.libelle} » impossible : elle possède des données pédagogiques (${evaluations} évaluation(s) avec notes, ${seances} séance(s), ${devoirs} devoir(s)). Ces historiques sont protégés.`,
+          marcheASuivre: `Pour retirer « ${mat.libelle} » de l'usage courant SANS perdre l'historique : retirez ses ${affectations.length} affectation(s) (retirer_affectation) et passez-la hors service, ou renommez-la (modifier_matiere). La suppression totale n'est possible qu'après suppression des données pédagogiques par un administrateur, ce que je ne fais pas.`,
+          blocages: { evaluations, seances, devoirs, programmes: programmes.length, affectations: affectations.length },
+        };
+      }
+      // Blocages PROGRAMMES : l'IA peut les supprimer elle-même (avec l'utilisateur)
+      if (programmes.length > 0) {
+        return {
+          erreur: `« ${mat.libelle} » a ${programmes.length} programme(s) : ${programmes.map((p) => `${p.titre} (${p.niveau?.libelle ?? '?'})`).join(', ')}.`,
+          marcheASuivre: `Dites-moi « supprime le programme <titre> » (ou supprimez-les tous) puis redemandez la suppression de la matière.`,
+          blocages: { programmes: programmes.length, affectations: affectations.length },
+        };
+      }
+      // Blocages AFFECTATIONS seuls : déblocable via desaffecter=true
+      if (affectations.length > 0) {
+        if (args.desaffecter === true) {
+          await db.affectationEnseignant.deleteMany({ where: { matiereId: mat.id } });
+          await db.competence.deleteMany({ where: { matiereId: mat.id } });
+          await db.matiere.delete({ where: { id: mat.id } });
+          return {
+            supprimee: mat.libelle,
+            affectationsRetirees: affectations.map((a) => `${a.personnel?.prenom ?? ''} ${a.personnel?.nom ?? ''} → ${a.classe?.libelle ?? '?'}`),
+            edtNettoye: edt,
+          };
+        }
+        return {
+          erreur: `« ${mat.libelle} » est enseignée dans ${affectations.length} classe(s) : ${affectations.map((a) => a.classe?.libelle ?? '?').join(', ')}.`,
+          marcheASuivre: `PROPOSE à l'utilisateur : « Voulez-vous que je retire ses ${affectations.length} affectation(s) puis supprime la matière ? » — N'AGIS qu'après son accord explicite (rappelle alors cet outil avec desaffecter=true). Ne fais JAMAIS les deux d'un seul coup sans accord.`,
+          blocages: { affectations: affectations.length },
+        };
       }
       await db.competence.deleteMany({ where: { matiereId: mat.id } });
       await db.matiere.delete({ where: { id: mat.id } });
@@ -1692,7 +1735,7 @@ const outilsConfiguration: OutilIA[] = [
   },
   {
     nom: "creer_matieres",
-    description: "Crée plusieurs matières d'un coup (ex: Français, Mathématiques, Dessin). Ignore celles qui existent déjà. Exemples de particularités gérées : l'utilisateur peut préciser des matières seulement pour certains niveaux — l'association niveau se fait via creer_programme.",
+    description: "Crée des MATIÈRES dans le RÉFÉRENTIEL de l'école (la liste globale des matières existantes : Français, Maths…). Ignore celles qui existent déjà. ⚠️ UNIQUEMENT le référentiel : NE crée NI affectation de classe, NI programme, NI emploi du temps. Si l'utilisateur mentionne une classe ou un enseignant en plus, crée la matière ici PUIS demande-lui s'il veut aussi affecter un enseignant (affecter_enseignant) — ne le fais jamais de toi-même.",
     permission: "admin.saas",
     parametres: P({
       matieres: { type: "string", description: "Liste séparée par virgules (ex: Français, Mathématiques, Éducation scientifique, Dessin)" },
@@ -1707,9 +1750,13 @@ const outilsConfiguration: OutilIA[] = [
       }
       const creees: string[] = [];
       const existantes: string[] = [];
+      const matieresDejaLa = await db.matiere.findMany({ where: { ecoleId }, select: { libelle: true } });
       for (const libelle of String(args.matieres).split(",").map((x) => x.trim()).filter(Boolean)) {
-        const existe = await db.matiere.findFirst({ where: { ecoleId, OR: [{ libelle: { equals: libelle, mode: "insensitive" } }, { libelle: { contains: libelle, mode: "insensitive" } }] } });
-        if (existe) { existantes.push(libelle); continue; }
+        // ANTI-CONFUSION — une matière « existe déjà » seulement si son
+        // libellé est IDENTIQUE (accents/casse ignorés) ; créer « Physique »
+        // ne doit pas être refusé parce que « Physique-Chimie » existe.
+        const existante = matieresDejaLa.find((m) => normaliser(m.libelle) === normaliser(libelle));
+        if (existante) { existantes.push(existante.libelle); continue; }
         const initiales = libelle.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z]/g, "").slice(0, 4).toUpperCase() || "MAT";
         const code = `${initiales}-${Date.now().toString(36).slice(-3).toUpperCase()}`;
         await db.matiere.create({ data: { ecoleId, code, libelle, coefficient: coefs.get(libelle.toLowerCase()) ?? 1 } });
@@ -1730,9 +1777,12 @@ const outilsConfiguration: OutilIA[] = [
     }, ["matiere", "niveau", "chapitres"]),
     executer: async (ctx, args) => {
       const ecoleId = ctx.ecoleId!;
-      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
-      const niv = await db.niveau.findFirst({ where: { section: { cycle: { ecoleId } }, OR: [{ code: { contains: String(args.niveau).toUpperCase() } }, { libelle: { contains: String(args.niveau), mode: "insensitive" } }] } });
-      if (!mat || !niv) return { erreur: "Matière ou niveau introuvable. Créez la matière d'abord (creer_matieres)." };
+      const rm = await resoudreMatiere(ecoleId, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const rn = await resoudreNiveau(ecoleId, String(args.niveau));
+      if (!rn.trouve) return { erreur: rn.erreur, candidats: rn.candidats };
+      const mat = rm.entite;
+      const niv = rn.entite;
       const intitule = args.intitule ? String(args.intitule) : `Programme ${mat.libelle} ${niv.libelle}`;
       const prog = await biz.creerProgrammeCore(ctx as never, ecoleId, { matiereId: mat.id, niveauId: niv.id, intitule } as never);
       const ajoutes: string[] = [];
@@ -1765,20 +1815,38 @@ const outilsConfiguration: OutilIA[] = [
     }, ["enseignant", "matiere", "classes"]),
     executer: async (ctx, args) => {
       const ecoleId = ctx.ecoleId!;
-      const pers = await db.personnel.findFirst({ where: { ecoleId, deletedAt: null, AND: String(String(args.enseignant)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
-      if (!pers) return { erreur: `Enseignant « ${args.enseignant} » introuvable.` };
-      const mat = await db.matiere.findFirst({ where: { ecoleId, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
-      if (!mat) return { erreur: `Matière « ${args.matiere} » introuvable (créez-la avec creer_matieres).` };
-      const toutes = await db.classe.findMany({ where: { ecoleId } });
-      const resoudre = (liste: string) => String(liste).split(",").map((x) => x.trim()).filter(Boolean);
-      let cibleNoms = resoudre(String(args.classes));
+      // ANTI-CONFUSION — résolution stricte : chaque entité est identifiée
+      // sans ambiguïté (exact → unique → candidats), jamais au hasard.
+      const rp = await resoudrePersonnel(ecoleId, String(args.enseignant));
+      if (!rp.trouve) return { erreur: rp.erreur, candidats: rp.candidats };
+      const pers = rp.entite;
+      const rm = await resoudreMatiere(ecoleId, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const mat = rm.entite;
+      const toutes = await db.classe.findMany({ where: { ecoleId }, orderBy: { libelle: 'asc' } });
+      const cibleNoms = String(args.classes).split(",").map((x) => x.trim()).filter(Boolean);
       const tout = cibleNoms.some((n) => /^tous|toutes$/i.test(n));
-      let classes = tout ? toutes : toutes.filter((c) => cibleNoms.some((n) => c.libelle.toUpperCase().includes(n.toUpperCase()) || c.code.toUpperCase().includes(n.toUpperCase()) || n.toUpperCase().includes(c.code.toUpperCase())));
-      const saufNoms = resoudre(String(args.sauf ?? ""));
-      const exclusions = saufNoms.length ? toutes.filter((c) => saufNoms.some((n) => c.libelle.toUpperCase().includes(n.toUpperCase()) || c.code.toUpperCase().includes(n.toUpperCase()))) : [];
+      let classesCibles: typeof toutes;
+      if (tout) {
+        classesCibles = toutes;
+      } else {
+        // chaque nom cité doit résoudre UNE classe — sinon on liste les candidats
+        classesCibles = [];
+        for (const nom of cibleNoms) {
+          const rc = await resoudreClasse(ecoleId, nom);
+          if (!rc.trouve) return { erreur: `Classe « ${nom} » : ${rc.erreur}`, candidats: rc.candidats };
+          if (!classesCibles.some((c) => c.id === rc.entite.id)) classesCibles.push(toutes.find((c) => c.id === rc.entite.id)!);
+        }
+      }
+      const saufNoms = String(args.sauf ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+      const exclusions: typeof toutes = [];
+      for (const nom of saufNoms) {
+        const rc = await resoudreClasse(ecoleId, nom);
+        if (rc.trouve) exclusions.push(toutes.find((c) => c.id === rc.entite.id)!);
+      }
       const exclusIds = new Set(exclusions.map((c) => c.id));
-      const classesFinales = classes.filter((c) => !exclusIds.has(c.id));
-      if (classesFinales.length === 0) return { erreur: "Aucune classe correspondante." };
+      const classesFinales = classesCibles.filter((c) => !exclusIds.has(c.id));
+      if (classesFinales.length === 0) return { erreur: "Aucune classe correspondante.", classesExistantes: toutes.map((c) => c.libelle).slice(0, 20) };
       const r = await biz.affecterEnseignantCore(ctx as never, {
         personnelId: pers.id, matiereId: mat.id,
         classeIds: classesFinales.map((c) => c.id),

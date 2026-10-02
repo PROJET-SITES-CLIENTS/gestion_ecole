@@ -48,7 +48,10 @@ async function appelerOpenRouter(messages: MessageIA[], tools: unknown[], toolCh
         tools: tools.length ? tools : undefined,
         tool_choice: tools.length ? toolChoice : undefined,
         temperature: 0.2,
-        max_tokens: 1500, // augmenté : réponses complètes et naturelles
+        // Les modèles à RAISONNEMENT (nemotron…) consomment le budget tokens
+        // en chaîne de pensée : 1500 coupait la réponse avant le tool_call
+        // ou le texte final (réponses vides intermittentes). Marge large.
+        max_tokens: 4000,
       }),
       signal: AbortSignal.timeout(45000),
     }).catch(() => null);
@@ -83,6 +86,20 @@ COMMENT TU TRAVAILLES :
 5. JAMAIS de confirmation sans avoir appelé et reçu la réponse de l'outil. JAMAIS de simulation.
 6. RÈGLE ABSOLUE : ne crée JAMAIS plus que demandé. Si on te demande 2 matières, tu en crées EXACTEMENT 2 (pas 10). N'ajoute PAS d'éléments « standards » de ton propre chef. Les 15 classes par défaut (PS-A à TLE-A) existent déjà — ne les recrée jamais. Pour supprimer une classe : supprimer_classe_vide. Pour supprimer une matière : supprimer_matiere.
 
+⚠️ DISTINCTIONS CRITIQUES — ne confonds JAMAIS ces objets :
+• MATIÈRE = entrée du RÉFÉRENTIEL de l'école (liste globale : Français, Maths…). Outils : creer_matieres, modifier_matiere, supprimer_matiere.
+• AFFECTATION = un ENSEIGNANT qui enseigne une matière dans une classe. Outils : affecter_enseignant, retirer_affectation, voir_affectations.
+• PROGRAMME = le CONTENU annuel d'une matière pour un NIVEAU (chapitres). Outils : creer_programme_annee, supprimer_programme.
+• CLASSE = division réelle d'un niveau (6ème A). Outils : creer_classes, modifier_classe, supprimer_classe_vide.
+→ « ajouter/supprimer une MATIÈRE » = agir sur le RÉFÉRENTIEL uniquement. Si l'utilisateur mentionne AUSSI une classe ou un enseignant dans la même phrase, fais UNIQUEMENT la demande de matière puis signale-le : "La matière X est créée. Voulez-vous aussi l'affecter à un enseignant en 6ème A ?" — n'exécute JAMAIS l'affectation ou le programme sans demande explicite.
+
+📋 PROCÉDURE ANTI-ERREUR (obligatoire) :
+a. Avant toute action de configuration (créer/supprimer/modifier/affecter), énonce mentalement : QUEL type d'objet + QUEL nom exact + COMBIEN. En cas de doute entre deux types d'objets → demande, n'improvise pas.
+b. Un outil qui répond { erreur + candidats } signifie plusieurs homonymes : redemande à l'utilisateur en listant les candidats — ne choisis JAMAIS à sa place.
+c. Un outil qui répond { erreur + marcheASuivre } : suis cette marche et explique-la simplement à l'utilisateur.
+d. Après chaque action, confirme en répétant l'OBJET EXACT touché et son TYPE : "✅ Matière « Dessin » créée dans le référentiel", "✅ Affectation de Jean retirée en 6ème A".
+e. Si un outil échoue 2 fois de la même façon, ARRÊTE et explique le blocage à l'utilisateur au lieu de réessayer.
+
 TES DROITS : ${outils.length} outils disponibles correspondant exactement aux permissions de l'utilisateur.
 
 STYLE DE RÉPONSE :
@@ -102,6 +119,7 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
   const parNom = new Map(outils.map((t) => [t.nom, t]));
   const actions: ResultatAgent['actions'] = [];
 
+  let videsConsecutifs = 0;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
     // tool_choice est toujours 'auto' : après avoir traité les outils l'IA choisit
     // librement d'appeler un autre outil OU de formuler une réponse textuelle naturelle.
@@ -139,7 +157,14 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
     }
 
     // Réponse finale (texte, sans tool_calls)
-    return { reponse: choix.content ?? '(aucune réponse)', actions };
+    const contenu = (choix.content ?? '').trim();
+    if (contenu) return { reponse: contenu, actions };
+    // Réponse VIDE (raisonnement tronqué du modèle) : on relance l'étape
+    // jusqu'à 3 fois — le modèle reformule généralement une réponse pleine.
+    console.error('[ARIA] étape sans contenu ni outil :', JSON.stringify({ finish: (data as any)?.choices?.[0]?.finish_reason, contenu: (choix.content ?? '').slice(0, 80), raison: typeof (choix as any).reasoning === 'string' ? (choix as any).reasoning.slice(0, 120) : undefined, toolCalls: choix.tool_calls?.length }).slice(0, 400));
+    videsConsecutifs++;
+    if (videsConsecutifs <= 3) continue;
+    break;
   }
 
   // Fallback : boucle épuisée sans réponse textuelle — synthèse en langage naturel.
@@ -163,7 +188,23 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 function extraitResume(nom: string, r: unknown): string {
   const res = r as Record<string, unknown>;
   if (!res || typeof res !== 'object') return String(r).slice(0, 100);
-  if (res.erreur) return `erreur : ${String(res.erreur).slice(0, 80)}`;
+  if (res.erreur) {
+    const detail = res.candidats && Array.isArray(res.candidats) && (res.candidats as string[]).length > 0
+      ? ` (candidats : ${(res.candidats as string[]).slice(0, 3).join(', ')})`
+      : '';
+    return `erreur : ${String(res.erreur).slice(0, 110)}${detail}`;
+  }
+  // Libellés lisibles pour les clés métier courantes
+  if (Array.isArray(res.creees) || Array.isArray(res.existantes)) {
+    const creees = (res.creees as string[]) ?? [];
+    const existantes = (res.existantes as string[]) ?? [];
+    return `${creees.length} créée(s)${creees.length ? ` : ${creees.slice(0, 4).join(', ')}` : ''}${existantes.length ? ` · ${existantes.length} déjà existante(s)` : ''}`;
+  }
+  if (res.supprimee) return `supprimé : ${String(res.supprimee)}`;
+  if (res.modifiee && res.nouveauNom) return `modifié : ${String(res.modifiee)} → ${String(res.nouveauNom)}`;
+  if (res.retiree) return String(res.detail ?? 'retiré');
+  if (res.affectationsCreees != null) return `${res.affectationsCreees} affectation(s) : ${String(res.enseignant ?? '')} en ${Array.isArray(res.classesDetail) ? (res.classesDetail as string[]).slice(0, 4).join(', ') : ''}`;
+  if (res.blocages) return `bloqué : ${JSON.stringify(res.blocages)}`;
   const cles = Object.keys(res).filter((k) => typeof res[k] === 'number' || typeof res[k] === 'string').slice(0, 3);
   return cles.map((k) => `${k}=${String(res[k]).slice(0, 40)}`).join(', ') || 'ok';
 }

@@ -6,6 +6,7 @@
 import { db } from '@/lib/db';
 import { Ctx, logAction } from '@/lib/business/commun';
 import { OutilIA, ParametreOutil } from './outils';
+import { resoudreMatiere, resoudrePersonnel, resoudreClasse } from './resolution';
 
 const P = (properties: Record<string, { type: string; description?: string; enum?: string[] }>, required?: string[]): ParametreOutil => ({ type: 'object', properties, required });
 
@@ -21,13 +22,14 @@ export const outilsCRUD: OutilIA[] = [
       nouveauCoefficient: { type: "number", description: "Nouveau coefficient (optionnel)" },
     }, ["matiere"]),
     executer: async (ctx, args) => {
-      const mat = await db.matiere.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
-      if (!mat) return { erreur: "Matière introuvable." };
+      const r = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!r.trouve) return { erreur: r.erreur, candidats: r.candidats };
+      const mat = r.entite;
       await db.matiere.update({ where: { id: mat.id }, data: {
         ...(args.nouveauNom ? { libelle: String(args.nouveauNom) } : {}),
         ...(args.nouveauCoefficient ? { coefficient: Number(args.nouveauCoefficient) } : {}),
       } });
-      return { modifiee: mat.libelle };
+      return { modifiee: mat.libelle, nouveauNom: args.nouveauNom ? String(args.nouveauNom) : mat.libelle, coefficient: args.nouveauCoefficient ? Number(args.nouveauCoefficient) : mat.coefficient };
     },
   },
 
@@ -278,17 +280,19 @@ export const outilsCRUD: OutilIA[] = [
       classe: { type: "string", description: "Classe" },
     }, ["enseignant", "matiere", "classe"]),
     executer: async (ctx, args) => {
-      const q = String(args.classe ?? "").trim().toUpperCase();
-      // Chercher par nom, prénom, code de classe OU libellé
+      // ANTI-CONFUSION — chaque entité est résolue strictement AVANT la recherche
+      const rp = await resoudrePersonnel(ctx.ecoleId!, String(args.enseignant));
+      if (!rp.trouve) return { erreur: rp.erreur, candidats: rp.candidats };
+      const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const rc = await resoudreClasse(ctx.ecoleId!, String(args.classe));
+      if (!rc.trouve) return { erreur: rc.erreur, candidats: rc.candidats };
       const aff = await db.affectationEnseignant.findFirst({
         where: {
           ecoleId: ctx.ecoleId!,
-          personnel: { OR: [{ nom: { contains: String(args.enseignant), mode: "insensitive" } }, { prenom: { contains: String(args.enseignant), mode: "insensitive" } }] },
-          matiere: { libelle: { contains: String(args.matiere), mode: "insensitive" } },
-          OR: [
-            { classe: { libelle: { contains: String(args.classe), mode: "insensitive" } } },
-            { classe: { code: { contains: q } } },
-          ],
+          personnelId: rp.entite.id,
+          matiereId: rm.entite.id,
+          classeId: rc.entite.id,
         },
         include: { personnel: true, matiere: true, classe: true },
       });
