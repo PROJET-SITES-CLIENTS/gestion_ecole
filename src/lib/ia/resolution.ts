@@ -156,3 +156,34 @@ export async function resoudrePlusieurs<T>(
 }
 
 export { pluriel };
+
+/** Résolution CHIRURGICALE d'un élève par nom (prénom nom, nom, ou matricule).
+ *  1. matricule exact → 2. « prénom nom » exact → 3. termes tous présents unique.
+ *  Jamais de choix au hasard : ambiguïté → candidats. */
+export async function resoudreEleve(ecoleId: string, q: string): Promise<Resolution<{ id: string; nom: string; prenom: string; matricule: string | null; classeActuelleId: string | null }>> {
+  const eleves = await db.eleve.findMany({
+    where: { ecoleId, deletedAt: null },
+    orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+    select: { id: true, nom: true, prenom: true, matricule: true, classeActuelleId: true },
+  });
+  const qN = normaliser(q);
+  if (!qN) return introuvable('élève', '(vide)', []);
+  if (eleves.length === 0) return introuvable('élève', q, []);
+  const lib = (e: { prenom: string; nom: string }) => `${e.prenom} ${e.nom}`.trim();
+  // 1. matricule exact
+  const parMat = eleves.filter((e) => e.matricule && normaliser(e.matricule) === qN);
+  if (parMat.length === 1) return { trouve: true, entite: parMat[0] };
+  // 2. nom complet exact (les deux sens)
+  const exactes = eleves.filter((e) => normaliser(lib(e)) === qN || normaliser(`${e.nom} ${e.prenom}`) === qN);
+  if (exactes.length === 1) return { trouve: true, entite: exactes[0] };
+  if (exactes.length > 1) return ambigu('élève', q, exactes.map(lib));
+  // 3. tous les termes présents
+  const termes = qN.split(' ').filter(Boolean);
+  const partiels = eleves.filter((e) => termes.every((t) => normaliser(lib(e)).includes(t)));
+  if (partiels.length === 1) return { trouve: true, entite: partiels[0] };
+  if (partiels.length > 1) return ambigu('élève', q, partiels.map(lib).slice(0, 8));
+  return introuvable('élève', q, eleves.map(lib).slice(0, 15));
+}
+
+/** Alias historique. */
+export const resoudreEleveSiPresent = resoudreEleve;

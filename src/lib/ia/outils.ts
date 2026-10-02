@@ -590,57 +590,110 @@ const outilsAction: OutilIA[] = [
     },
     {
     nom: 'saisir_notes',
-    description: "Enregistre les notes d'une évaluation (copies corrigées). Fournir l'intitulé exact de l'évaluation et la liste élève→note.",
+    description: "Enregistre les notes d'une évaluation (copies corrigées) — CHIRURGICAL : l'évaluation est identifiée sans ambiguïté (si plusieurs portent un nom proche, les candidates sont listées) et chaque élève est résolu UNIQUEMENT dans la classe de l'évaluation (jamais ailleurs). « abs » note un absent (exclu de la moyenne).",
     permission: 'notes.saisir',
     parametres: P({
-      evaluation: { type: 'string', description: 'Intitulé de l\'évaluation (extrait)' },
-      notes: { type: 'string', description: 'Liste « Nom Prénom: note » séparée par des points-virgules (ex: « Awa Diop: 15; Malick Sow: 11.5 »)' },
+      evaluation: { type: 'string', description: "Intitulé de l'évaluation — préciser assez pour être unique (ex: « Interro fractions 6A »)" },
+      notes: { type: 'string', description: "Liste « Nom Prénom: note » ou « Nom: abs » séparée par des points-virgules (ex: « Awa Diop: 15; Malick Sow: abs; Ali Ba: 11,5 »)" },
     }, ['evaluation', 'notes']),
     executer: async (ctx, args) => {
-      const evaluation = await db.evaluation.findFirst({ where: { ecoleId: ctx.ecoleId!, intitule: { contains: String(args.evaluation), mode: 'insensitive' } } });
-      if (!evaluation) return { erreur: `Évaluation « ${args.evaluation} » introuvable.` };
-      const paires = String(args.notes).split(/;|\n/).map((x) => x.trim()).filter(Boolean);
-      const notes: Array<{ eleveId: string; valeur: number }> = [];
-      const introuvables: string[] = [];
-      for (const paire of paires) {
-        const m = paire.match(/^(.+?):\s*([\d.,]+)$/);
-        if (!m) continue;
-        const nom = m[1].trim();
-        const valeur = parseFloat(m[2].replace(',', '.'));
-        const el = await db.eleve.findFirst({
-          where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(nom.split(' ')[0]).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) },
-          include: { classeActuelle: true },
-        });
-        if (!el || (evaluation.classeId && el.classeActuelleId !== evaluation.classeId)) { introuvables.push(nom); continue; }
-        notes.push({ eleveId: el.id, valeur });
+      // 1. ÉVALUATION — résolution stricte : exacte → contains unique → candidats
+      const qEv = String(args.evaluation).trim();
+      const evaluationsEcole = await db.evaluation.findMany({
+        where: { ecoleId: ctx.ecoleId! },
+        include: { classe: { select: { libelle: true } }, matiere: { select: { libelle: true } } },
+        orderBy: { date: 'desc' },
+        take: 300,
+      });
+      const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const libelleEval = (e: any) => `${e.intitule} (${e.matiere?.libelle ?? '?'} · ${e.classe?.libelle ?? '?'})`;
+      const exactes = evaluationsEcole.filter((e) => norm(e.intitule) === norm(qEv));
+      const contient = evaluationsEcole.filter((e) => norm(e.intitule).includes(norm(qEv)));
+      let evaluation: any = null;
+      if (exactes.length === 1) evaluation = exactes[0];
+      else if (exactes.length === 0 && contient.length === 1) evaluation = contient[0];
+      else {
+        const candidates = (exactes.length > 0 ? exactes : contient).slice(0, 6).map(libelleEval);
+        return {
+          erreur: candidates.length === 0
+            ? `Évaluation « ${qEv} » introuvable. Évaluations récentes : ${evaluationsEcole.slice(0, 8).map(libelleEval).join(' ; ') || 'aucune'}`
+            : `Plusieurs évaluations correspondent à « ${qEv} » : ${candidates.join(' ; ')}. Précisez laquelle (matière/classe).`,
+          candidates,
+        };
       }
-      if (notes.length === 0) return { erreur: 'Aucun élève reconnu.', introuvables };
+      // 2. ÉLÈVES — résolution STRICTEMENT dans la classe de l'évaluation
+      const elevesClasse = evaluation.classeId
+        ? await db.eleve.findMany({ where: { classeActuelleId: evaluation.classeId, deletedAt: null, statut: 'actif' }, orderBy: [{ nom: 'asc' }, { prenom: 'asc' }] })
+        : [];
+      if (evaluation.classeId && elevesClasse.length === 0) return { erreur: 'La classe de cette évaluation n\'a aucun élève actif.' };
+      const paires = String(args.notes).split(/;|\n/).map((x) => x.trim()).filter(Boolean);
+      const notes: Array<{ eleveId: string; valeur: number; absent?: boolean }> = [];
+      const introuvables: string[] = [];
+      const ambigus: string[] = [];
+      for (const paire of paires) {
+        const m = paire.match(/^(.+?):\s*([\d.,]+|abs)$/i);
+        if (!m) { introuvables.push(paire); continue; }
+        const nom = m[1].trim();
+        const estAbsent = /^abs$/i.test(m[2]);
+        const valeur = estAbsent ? 0 : parseFloat(m[2].replace(',', '.'));
+        if (!estAbsent && !Number.isFinite(valeur)) { introuvables.push(paire); continue; }
+        const termes = norm(nom).split(' ').filter(Boolean);
+        const exact = elevesClasse.filter((e) => norm(`${e.prenom} ${e.nom}`) === norm(nom) || norm(`${e.nom} ${e.prenom}`) === norm(nom));
+        const partiels = elevesClasse.filter((e) => termes.every((t) => norm(`${e.prenom} ${e.nom}`).includes(t) || norm(`${e.nom} ${e.prenom}`).includes(t)));
+        const el = exact.length === 1 ? exact[0] : (exact.length > 1 ? null : (partiels.length === 1 ? partiels[0] : null));
+        if (!el) {
+          if (partiels.length > 1 || exact.length > 1) ambigus.push(`${nom} (homonymes : ${partiels.map((e) => `${e.prenom} ${e.nom}`).slice(0, 3).join(' / ')})`);
+          else introuvables.push(nom);
+          continue;
+        }
+        notes.push(estAbsent ? { eleveId: el.id, valeur: 0, absent: true } : { eleveId: el.id, valeur });
+      }
+      if (notes.length === 0) {
+        return { erreur: 'Aucun élève reconnu dans la classe de cette évaluation.', introuvables, ambigus };
+      }
       await biz.saisirNotesCore(ctx as never, { evaluationId: evaluation.id, notes } as never);
-      return { enregistrées: notes.length, introuvables, evaluation: evaluation.intitule };
+      return {
+        enregistrées: notes.length,
+        absents: notes.filter((n: any) => n.absent).length,
+        introuvables: introuvables.length ? introuvables : undefined,
+        ambigus: ambigus.length ? ambigus : undefined,
+        evaluation: libelleEval(evaluation),
+        message: ambigus.length > 0 ? "Des homonymes demandent une clarification — aucune note ambiguë n'a été enregistrée." : undefined,
+      };
     },
   },
   {
     nom: 'creer_evaluation',
-    description: "Crée une évaluation (devoir, interrogation, composition) pour une classe, une matière et une période.",
+    description: "Crée une évaluation (devoir, interrogation, composition) pour une classe et une matière — CHIRURGICAL : classe et matière identifiées sans ambiguïté (candidats listés sinon), l'enseignant est VOUS, la période est celle qui couvre la date de l'évaluation.",
     permission: 'notes.saisir',
     parametres: P({
       intitule: { type: 'string', description: 'Intitulé' }, classe: { type: 'string', description: 'Libellé classe' },
       matiere: { type: 'string', description: 'Libellé matière' }, type: { type: 'string', description: '', enum: ['devoir', 'composition', 'interrogation'] },
-      date: { type: 'string', description: 'Date ISO' }, sur: { type: 'number', description: 'Barème (ex: 20 ou 40)' }, coefficient: { type: 'number', description: 'Coefficient' },
+      date: { type: 'string', description: 'Date ISO (ex: 2026-10-02)' }, sur: { type: 'number', description: 'Barème (ex: 20 ou 40)' }, coefficient: { type: 'number', description: 'Coefficient' },
     }, ['intitule', 'classe', 'matiere', 'type', 'date', 'sur', 'coefficient']),
     executer: async (ctx, args) => {
-      const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: 'insensitive' } } });
-      const matiere = await db.matiere.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.matiere), mode: 'insensitive' } } });
-      if (!classe || !matiere) return { erreur: 'Classe ou matière introuvable.' };
-      const periode = await db.periode.findFirst({ where: { ecoleId: ctx.ecoleId!, anneeScolaireId: classe.anneeScolaireId } , orderBy: { dateDebut: 'desc' } });
-      const pers = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, deletedAt: null } })
-        ?? await db.personnel.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null } });
+      const rc = await resoudreClasse(ctx.ecoleId!, String(args.classe));
+      if (!rc.trouve) return { erreur: rc.erreur, candidats: rc.candidats };
+      const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const classe = await db.classe.findUnique({ where: { id: rc.entite.id } });
+      const date = new Date(String(args.date));
+      if (isNaN(date.getTime())) return { erreur: 'Date invalide (format attendu : 2026-10-02).' };
+      // Période couvrant la date de l'évaluation, sinon la période en cours
+      const periodes = await db.periode.findMany({ where: { ecoleId: ctx.ecoleId!, anneeScolaireId: classe!.anneeScolaireId }, orderBy: { dateDebut: 'asc' } });
+      const periode = periodes.find((pp) => date >= pp.dateDebut && date <= pp.dateFin)
+        ?? periodes.find((pp) => new Date() >= pp.dateDebut && new Date() <= pp.dateFin)
+        ?? periodes[periodes.length - 1];
+      if (!periode) return { erreur: 'Aucune période (trimestre) définie pour cette année — la direction doit les créer.' };
+      // L'enseignant est l'utilisateur connecté (jamais un autre)
+      const pers = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, deletedAt: null } });
+      if (!pers) return { erreur: 'Aucun profil enseignant associé à votre compte.' };
       const r = await biz.creerEvaluationCore(ctx as never, ctx.ecoleId!, {
-        classeId: classe.id, matiereId: matiere.id, enseignantId: pers!.id, periodeId: periode!.id,
-        type: String(args.type), intitule: String(args.intitule), date: new Date(String(args.date)),
+        classeId: classe!.id, matiereId: rm.entite.id, enseignantId: pers.id, periodeId: periode.id,
+        type: String(args.type), intitule: String(args.intitule), date,
         sur: Number(args.sur), coefficient: Number(args.coefficient),
       } as never);
-      return { ...r, classe: classe.libelle, matiere: matiere.libelle };
+      return { ...r, classe: classe!.libelle, matiere: rm.entite.libelle, periode: periode.libelle, enseignant: `${pers.prenom} ${pers.nom}` };
     },
   },
   {
@@ -742,20 +795,65 @@ const outilsAction: OutilIA[] = [
   },
   {
     nom: 'ecrire_cahier_textes',
-    description: "Ajoute une entrée au cahier de textes d'une classe (contenu du cours + travail à faire), publiée aux familles.",
+    description: "Clôture une séance / ajoute une entrée au cahier de textes d'une classe : contenu enseigné + chapitre du programme + avancement (%) + CE QUI RESTE À RATTRAPER (conservé pour la séance suivante) + travail à faire. Met à jour l'avancement du programme automatiquement.",
     permission: 'notes.saisir',
     parametres: P({
-      classe: { type: 'string', description: 'Libellé classe' }, matiere: { type: 'string', description: 'Libellé matière' },
-      contenu: { type: 'string', description: 'Contenu du cours' }, travailAFaire: { type: 'string', description: 'Travail à faire (devoirs)' },
+      classe: { type: 'string', description: 'Libellé classe (ex: 6ème A)' },
+      matiere: { type: 'string', description: 'Matière (doit être une matière de l’enseignant pour cette classe)' },
+      contenu: { type: 'string', description: 'Ce qui a été enseigné durant la séance' },
+      chapitre: { type: 'string', description: 'Titre (ou début du titre) du chapitre du programme travaillé — optionnel mais recommandé (permet l’avancement)' },
+      pourcentage: { type: 'number', description: 'Avancement du chapitre après cette séance, 0-100 (défaut 100 = terminé)' },
+      resteAEnseigner: { type: 'string', description: 'Ce qui reste à enseigner / rattraper à la séance prochaine (affiché en alerte)' },
+      travailAFaire: { type: 'string', description: 'Devoirs pour la prochaine séance' },
+      publier: { type: 'boolean', description: 'Publier aux familles (défaut true)' },
     }, ['classe', 'contenu']),
     executer: async (ctx, args) => {
-      const classe = await db.classe.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.classe), mode: 'insensitive' } } });
-      if (!classe) return { erreur: 'Classe introuvable.' };
-      const matiere = args.matiere ? await db.matiere.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.matiere), mode: 'insensitive' } } }) : null;
-      return biz.creerEntreeCahierCore(ctx as never, {
-        classeId: classe.id, matiereId: matiere?.id, dateCours: new Date(),
-        contenu: String(args.contenu), travailAFaire: args.travailAFaire ? String(args.travailAFaire) : undefined, publier: true,
+      // CHIRURGICAL — résolutions strictes, jamais de choix au hasard
+      const rc = await resoudreClasse(ctx.ecoleId!, String(args.classe));
+      if (!rc.trouve) return { erreur: rc.erreur, candidats: rc.candidats };
+      let matiere = null as { id: string; libelle: string } | null;
+      if (args.matiere) {
+        const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+        if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+        matiere = rm.entite;
+      }
+      let chapitreId: string | undefined;
+      if (args.chapitre) {
+        // chapitres du programme de la matière × niveau de la classe
+        const classe = await db.classe.findUnique({ where: { id: rc.entite.id }, select: { niveauId: true } });
+        const progs = matiere && classe
+          ? await db.programme.findMany({ where: { ecoleId: ctx.ecoleId!, matiereId: matiere.id, niveauId: classe.niveauId }, include: { chapitres: true } })
+          : await db.programme.findMany({ where: { ecoleId: ctx.ecoleId! }, include: { chapitres: true, niveau: true, matiere: true } });
+        const tous = progs.flatMap((pr) => (pr.chapitres ?? []).map((c) => ({ ...c, _prog: pr })));
+        const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const q = norm(String(args.chapitre));
+        const exact = tous.filter((c) => norm(c.titre) === q);
+        const partiel = tous.filter((c) => norm(c.titre).includes(q) || q.includes(norm(c.titre)));
+        const ch = exact.length === 1 ? exact[0] : (exact.length === 0 && partiel.length === 1 ? partiel[0] : null);
+        if (!ch) {
+          const candidates = (exact.length > 0 ? exact : partiel).slice(0, 6).map((c) => c.titre);
+          return {
+            erreur: candidates.length === 0
+              ? `Chapitre « ${args.chapitre} » introuvable. ${tous.length > 0 ? `Chapitres existants : ${tous.slice(0, 10).map((c) => c.titre).join(' ; ')}` : 'Aucun programme/chapitre défini pour cette matière et ce niveau — créez le programme d’abord.'}`
+              : `Plusieurs chapitres correspondent : ${candidates.join(' ; ')}. Précisez.`,
+            candidats: candidates,
+          };
+        }
+        chapitreId = ch.id;
+      }
+      const r = await biz.creerEntreeCahierCore(ctx as never, {
+        classeId: rc.entite.id, matiereId: matiere?.id, dateCours: new Date(),
+        contenu: String(args.contenu), travailAFaire: args.travailAFaire ? String(args.travailAFaire) : undefined,
+        publier: args.publier !== false, chapitreId,
+        pourcentageAvancement: args.pourcentage != null ? Number(args.pourcentage) : (chapitreId ? 100 : undefined),
+        resteAEnseigner: args.resteAEnseigner ? String(args.resteAEnseigner) : undefined,
       } as never);
+      return {
+        ...r,
+        classe: rc.entite.libelle, matiere: matiere?.libelle ?? '(générale)',
+        avancement: chapitreId ? (args.pourcentage != null ? Number(args.pourcentage) : 100) : null,
+        resteAEnseigner: args.resteAEnseigner ? String(args.resteAEnseigner) : null,
+      };
     },
   },
   {
@@ -1905,8 +2003,9 @@ const outilsConfiguration: OutilIA[] = [
 
 import { outilsCRUD } from "./outils-crud";
 import { outilsAudit } from "./outils-audit";
+import { outilsEnseignant } from "./outils-enseignant";
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit];
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
