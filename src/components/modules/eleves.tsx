@@ -135,18 +135,25 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const notes = initialData.notes ?? [];
   const presences = initialData.presences ?? [];
   const notesEleve = notes.filter((n: any) => n.eleveId === selectedEleveId && n.evaluation?.matiere && !n.absent && n.valeur != null);
-  const parMatiereEleve = new Map<string, { somme: number; coef: number; n: number }>();
+  // AUDIT ENSEIGNANT — moyenne GÉNÉRALE pondérée par le coefficient de chaque
+  // matière (cohérente avec le calcul officiel des bulletins)
+  const parMatiereEleve = new Map<string, { somme: number; coef: number; n: number; coefMatiere: number }>();
   for (const n of notesEleve) {
     const k = n.evaluation.matiere.libelle;
-    const cur = parMatiereEleve.get(k) ?? { somme: 0, coef: 0, n: 0 };
+    const coefMatiere = Number(n.evaluation.matiere.coefficient ?? 1) || 1;
+    const cur = parMatiereEleve.get(k) ?? { somme: 0, coef: 0, n: 0, coefMatiere };
     cur.somme += (n.valeur / n.evaluation.sur) * 20 * (n.evaluation.coefficient ?? 1);
     cur.coef += n.evaluation.coefficient ?? 1;
     cur.n++;
     parMatiereEleve.set(k, cur);
   }
   const moyennesMatiere = [...parMatiereEleve.entries()].map(([lib, v]) => ({ matiere: lib, moyenne: v.coef > 0 ? Number((v.somme / v.coef).toFixed(2)) : 0, nbNotes: v.n }));
-  const moyenneGeneraleEleve = moyennesMatiere.length
-    ? Number((moyennesMatiere.reduce((s2, m) => s2 + m.moyenne, 0) / moyennesMatiere.length).toFixed(2))
+  const totalCoefMatieres = [...parMatiereEleve.values()].reduce((s, v) => s + v.coefMatiere, 0);
+  const moyenneGeneraleEleve = moyennesMatiere.length && totalCoefMatieres > 0
+    ? Number(([...parMatiereEleve.entries()].reduce((s, [lib, v]) => {
+        const m = moyennesMatiere.find((x) => x.matiere === lib)!;
+        return s + m.moyenne * v.coefMatiere;
+      }, 0) / totalCoefMatieres).toFixed(2))
     : null;
   const meilleureMatiere = moyennesMatiere.length ? moyennesMatiere.reduce((a, b) => (b.moyenne > a.moyenne ? b : a)) : null;
   const matiereFaible = moyennesMatiere.length ? moyennesMatiere.reduce((a, b) => (b.moyenne < a.moyenne ? b : a)) : null;

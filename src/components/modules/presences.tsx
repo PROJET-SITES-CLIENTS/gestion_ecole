@@ -51,9 +51,32 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
   const [erreurAppel, setErreurAppel] = useState<string | null>(null);
   const retourJustifications = useActionFeedback();
 
+  // AUDIT ENSEIGNANT — « mes séances » : celles où l'enseignant connecté
+  // intervient (résolu côté client depuis les personnels de l'école)
+  const monId = personnels.find((p: any) => p.utilisateurId === initialData.session?.utilisateur?.id)?.id ?? null;
+  const [mesSeules, setMesSeules] = useState(Boolean(monId));
+  const seancesVisibles = mesSeules && monId ? seances.filter((s: any) => s.enseignantId === monId) : seances;
+  const nbMesSeances = monId ? seances.filter((s: any) => s.enseignantId === monId).length : 0;
+
   const seance = seances.find((s: any) => s.id === selectedSeanceId);
   const elevesClasse = seance ? eleves.filter((e: any) => e.classeActuelleId === seance.classeId) : [];
   const presencesSeance = seance ? presences.filter((p: any) => p.seanceId === seance.id) : [];
+
+  // AUDIT ENSEIGNANT — détail de l'appel de LA séance sélectionnée, avec
+  // répartition garçons/filles comme dans un appel papier
+  const eleveParId = new Map<string, any>(eleves.map((e: any) => [e.id as string, e]));
+  const decompte = (statut: string) => {
+    let g = 0, f = 0;
+    for (const p of presencesSeance) {
+      if (p.statut !== statut) continue;
+      const sexe = eleveParId.get(p.eleveId)?.sexe;
+      if (sexe === 'F') f++; else if (sexe === 'M') g++;
+    }
+    return { g, f, total: g + f };
+  };
+  const appelFait = presencesSeance.length > 0;
+  const dp = decompte('present'), da = decompte('absent'), dr = decompte('retard');
+  const effectifGF = { g: elevesClasse.filter((e: any) => e?.sexe === 'M').length, f: elevesClasse.filter((e: any) => e?.sexe === 'F').length };
 
   const totalPresences = presences.length;
   const presents = presences.filter((p: any) => p.statut === 'present').length;
@@ -84,10 +107,22 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
 
       <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
         <Card className="lg:col-span-1">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Séances</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span>Séances</span>
+              {monId && nbMesSeances > 0 && (
+                <button
+                  onClick={() => { setMesSeules(!mesSeules); setSelectedSeanceId(null); }}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${mesSeules ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}
+                >
+                  {mesSeules ? `Mes séances (${nbMesSeances})` : `Toutes (${seances.length})`}
+                </button>
+              )}
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-2 max-h-[60vh] overflow-y-auto">
-            {seances.length === 0 && <p className="text-sm text-gray-500 p-2">Aucune séance planifiée</p>}
-            {seances.map((s: any) => {
+            {seancesVisibles.length === 0 && <p className="text-sm text-gray-500 p-2">{mesSeules ? 'Aucune séance vous est attribuée (l\'EDT doit être configuré avec vous comme enseignant).' : 'Aucune séance planifiée'}</p>}
+            {seancesVisibles.map((s: any) => {
               const classe = classes.find((c: any) => c.id === s.classeId);
               const matiere = matieres.find((m: any) => m.id === s.matiereId);
               const enseignant = personnels.find((p: any) => p.id === s.enseignantId);
@@ -114,6 +149,26 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
                 <p className="text-xs text-gray-500">
                   Cliquez sur un statut pour chaque élève. La saisie est enregistrée côté serveur.
                 </p>
+                {/* AUDIT ENSEIGNANT — détail de l'appel comme sur le papier :
+                    effectif G/F et répartition par statut, mis à jour en direct */}
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
+                  <div className="px-2 py-1.5 bg-gray-50 rounded border border-gray-100">
+                    <div className="text-[10px] uppercase text-gray-500">Effectif</div>
+                    <div className="font-semibold">{elevesClasse.length} élèves <span className="text-gray-500 font-normal">({effectifGF.g} G · {effectifGF.f} F)</span></div>
+                  </div>
+                  <div className={`px-2 py-1.5 rounded border ${appelFait ? 'bg-emerald-50 border-emerald-100' : 'bg-gray-50 border-gray-100'}`}>
+                    <div className="text-[10px] uppercase text-emerald-700">Présents</div>
+                    <div className="font-semibold text-emerald-700">{dp.total} <span className="font-normal">({dp.g} G · {dp.f} F)</span></div>
+                  </div>
+                  <div className={`px-2 py-1.5 rounded border ${da.total > 0 ? 'bg-rose-50 border-rose-100' : 'bg-gray-50 border-gray-100'}`}>
+                    <div className="text-[10px] uppercase text-rose-700">Absents</div>
+                    <div className="font-semibold text-rose-700">{da.total} <span className="font-normal">({da.g} G · {da.f} F)</span></div>
+                  </div>
+                  <div className={`px-2 py-1.5 rounded border ${dr.total > 0 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
+                    <div className="text-[10px] uppercase text-amber-700">Retards</div>
+                    <div className="font-semibold text-amber-700">{dr.total} <span className="font-normal">({dr.g} G · {dr.f} F)</span></div>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {erreurAppel && (

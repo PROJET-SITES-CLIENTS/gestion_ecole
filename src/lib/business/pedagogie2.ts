@@ -55,13 +55,22 @@ export async function noterRenduCore(ctx: Ctx, renduId: string, input: { note: n
 // B10 — CAHIER DE TEXTES
 // --------------------------------------------------------------------
 
-export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string; matiereId?: string; dateCours: Date; contenu: string; travailAFaire?: string; publier?: boolean }) {
+export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string; matiereId?: string; dateCours: Date; contenu: string; travailAFaire?: string; publier?: boolean; chapitreId?: string; chapitreTermine?: boolean; pourcentageAvancement?: number }) {
   assertPermission(ctx, 'notes.saisir');
   if (!input.contenu?.trim()) throw new ActionError('Le contenu du cours est obligatoire.', 'CHAMP_MANQUANT');
   if (isNaN(input.dateCours?.getTime())) throw new ActionError('Date de cours invalide.', 'DATE_INVALIDE');
   const classe = await db.classe.findUnique({ where: { id: input.classeId } });
   if (!classe) throw new ActionError('Classe introuvable.', 'INTROUVABLE');
   assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  // AUDIT ENSEIGNANT — l'entrée peut être rattachée à un chapitre du
+  // programme : le cahier alimente alors le suivi d'avancement.
+  let chapitre: { id: string; titre: string } | null = null;
+  if (input.chapitreId) {
+    const ch = await db.chapitre.findUnique({ where: { id: input.chapitreId }, include: { programme: true } });
+    if (!ch) throw new ActionError('Chapitre introuvable.', 'INTROUVABLE');
+    assertTenant(ch.programme.ecoleId, ctx, 'Ce chapitre');
+    chapitre = { id: ch.id, titre: ch.titre };
+  }
   const enseignantCahier = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, ecoleId: classe.ecoleId } });
   if (!enseignantCahier) throw new ActionError('Aucun profil personnel associé à votre compte.', 'PERSONNEL_MANQUANT');
   const cahier = await db.cahierTexte.findFirst({
@@ -73,12 +82,25 @@ export async function creerEntreeCahierCore(ctx: Ctx, input: { classeId: string;
   const e = await db.entreeCahierTexte.create({
     data: {
       cahierTexteId: cible.id, dateCours: input.dateCours, contenu: input.contenu.trim(),
+      chapitreId: chapitre?.id ?? null,
       travailAFaire: input.travailAFaire?.trim() || null,
       statut: input.publier ? 'publie' : 'brouillon',
       valideParId: input.publier ? ctx.utilisateurId : null, dateValidation: input.publier ? new Date() : null,
     },
   });
-  return { entreeId: e.id };
+  // AUDIT ENSEIGNANT — « chapitre terminé » : le cahier met à jour
+  // l'avancement du programme SANS re-saisie (100 % pour ce chapitre/classe).
+  let avancementMisAJour = false;
+  if (chapitre && (input.chapitreTermine || (input.pourcentageAvancement != null && input.pourcentageAvancement >= 0))) {
+    const pourcentage = input.chapitreTermine ? 100 : Math.min(100, Math.max(0, input.pourcentageAvancement!));
+    await db.avancementProgramme.upsert({
+      where: { chapitreId_classeId: { chapitreId: chapitre.id, classeId: input.classeId } },
+      create: { chapitreId: chapitre.id, classeId: input.classeId, pourcentage, enseignantId: enseignantCahier.id, commentaire: `Depuis le cahier de textes — ${input.dateCours.toISOString().slice(0, 10)}` },
+      update: { pourcentage, enseignantId: enseignantCahier.id, dateMaj: new Date(), commentaire: `Depuis le cahier de textes — ${input.dateCours.toISOString().slice(0, 10)}` },
+    }).catch(() => undefined); // groupeId variant : ignoré ici
+    avancementMisAJour = true;
+  }
+  return { entreeId: e.id, chapitre: chapitre?.titre ?? null, avancementMisAJour };
 }
 
 export async function publierEntreeCahierCore(ctx: Ctx, entreeId: string) {

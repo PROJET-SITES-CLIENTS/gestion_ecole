@@ -131,6 +131,8 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   const retourCahier = useActionFeedback();
   const retourDispenses = useActionFeedback();
   const retourProgrammes = useActionFeedback();
+  // AUDIT ENSEIGNANT — rythme attendu vs réalisé des programmes
+  const [rythmes, setRythmes] = useState<any[] | null>(null);
   const [pendingCorrection, startCorrection] = useTransition();
   const tousRendus = (devoirs ?? []).flatMap((d: any) => (d.rendus ?? []).map((r: any) => ({ ...r, devoirId: d.id })));
 
@@ -286,11 +288,22 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                       Détail
                     </Button>
                     {b.statut === 'en_construction' && (
+                      // Machine à états : en_construction → en_attente_validation_pp → valide_pp
+                      <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'en_attente_validation_pp'), 'Bulletin soumis à la validation du professeur principal')}>
+                        Soumettre au PP
+                      </Button>
+                    )}
+                    {b.statut === 'en_attente_validation_pp' && (
                       <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'valide_pp'), 'Bulletin validé par le PP')}>
-                        Valider PP
+                        Valider (PP)
                       </Button>
                     )}
                     {b.statut === 'valide_pp' && (
+                      <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'en_attente_direction'), 'Bulletin transmis à la direction')}>
+                        Transmettre direction
+                      </Button>
+                    )}
+                    {b.statut === 'en_attente_direction' && (
                       <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'publie'), 'Bulletin publié')}>
                         Publier
                       </Button>
@@ -470,30 +483,28 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
   // B10 — CAHIER DE TEXTES NUMÉRIQUE
   // --------------------------------------------------------------------
   function renderCahierTextes() {
+    // AUDIT ENSEIGNANT — chapitres disponibles pour une classe+matière :
+    // le programme de la matière pour le NIVEAU de la classe (config à l'avance)
+    const chapitresPour = (classeId: string, matiereId: string): Array<{ id: string; titre: string; periode?: string }> => {
+      const classe = classes.find((c: any) => c.id === classeId);
+      if (!classe || !matiereId) return [];
+      const prog = programmes.find((p: any) => p.matiereId === matiereId && p.niveauId === classe.niveauId);
+      if (!prog) return [];
+      return (prog.chapitres ?? [])
+        .slice()
+        .sort((a: any, b: any) => (a.ordre ?? 0) - (b.ordre ?? 0))
+        .map((c: any) => ({ id: c.id, titre: `#${c.ordre} ${c.titre}` }));
+    };
     return (
       <div className="space-y-4">
         {retourCahier.Message}
         <SectionBlock
           title="Cahier de textes numérique"
-          description="Par classe et matière : contenu des séances, travail à faire, publication aux familles"
-          action={
-            <ModalForm
-              trigger={<CreateButton label="Nouvelle entrée" />}
-              title="Ajouter une entrée au cahier de textes"
-              fields={[
-                { name: 'classeId', label: 'Classe', type: 'select', options: classes.map((c: any) => ({ value: c.id, label: c.libelle })), required: true },
-                { name: 'matiereId', label: 'Matière', type: 'select', options: matieres.map((m: any) => ({ value: m.id, label: m.libelle })) },
-                { name: 'dateCours', label: 'Date du cours', type: 'date', required: true },
-                { name: 'contenu', label: 'Contenu du cours', type: 'textarea', required: true },
-                { name: 'travailAFaire', label: 'Travail à faire', type: 'textarea' },
-                { name: 'publier', label: 'Publier immédiatement aux familles', type: 'checkbox' },
-              ]}
-              action={actionsExt.creerEntreeCahier}
-            />
-          }
+          description="Rattachez chaque cours au chapitre du programme : l'avancement se met à jour automatiquement"
+          action={<FormEntreeCahier chapitresPour={chapitresPour} retour={retourCahier} classes={classes} matieres={matieres} />}
         >
           {cahiersTexte.length === 0 && (
-            <EmptyState title="Aucun cahier de textes" description="Créez une première entrée : le cahier de la classe et matière sera ouvert automatiquement." />
+            <EmptyState title="Aucun cahier de textes" description="Créez une première entrée : le cahier de la classe et matière sera ouvert automatiquement. Sélectionnez le chapitre travaillé pour alimenter le suivi de programme." />
           )}
           <div className="space-y-4">
             {cahiersTexte.map((ct: any) => {
@@ -510,6 +521,9 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                     <DataTable
                       columns={[
                         { key: 'dateCours', label: 'Date', render: (e) => formatDate(e.dateCours) },
+                        { key: 'chapitre', label: 'Chapitre du programme', render: (e) => e.chapitre ? (
+                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{e.chapitre.titre}</Badge>
+                        ) : <span className="text-xs text-gray-400">—</span> },
                         { key: 'contenu', label: 'Contenu du cours', render: (e) => <span className="text-xs text-gray-700 line-clamp-2">{e.contenu}</span> },
                         { key: 'travailAFaire', label: 'Travail à faire', render: (e) => <span className="text-xs text-gray-700 line-clamp-2">{e.travailAFaire ?? '—'}</span> },
                         { key: 'statut', label: 'Statut', render: (e) => <StatusBadge statut={e.statut} label={e.statut === 'publie' ? 'Publié' : e.statut === 'valide' ? 'Validé' : 'Brouillon'} /> },
@@ -809,6 +823,69 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
             rows={avancements}
             emptyLabel="Aucun avancement déclaré"
           />
+        </SectionBlock>
+
+        {/* AUDIT ENSEIGNANT — RYTHME : attendu (périodes planifiées) vs réalisé
+            (avancements + cahier) : avance / à l'heure / retard par classe */}
+        <SectionBlock
+          title="Rythme des programmes — attendu vs réalisé"
+          description="Le système compare la position idéale (chapitres planifiés par trimestre, date du jour) à l'avancement réel déclaré et alimenté par le cahier de textes"
+          action={
+            <Button
+              variant="outline" size="sm" disabled={retourProgrammes.pending}
+              onClick={() => retourProgrammes.run(async () => {
+                const r: any = await actionsExt.rythmeProgrammes();
+                if (r?.ok) setRythmes(r.rythmes ?? []);
+                return r;
+              }, 'Rythme recalculé.')}
+            >
+              Évaluer le rythme
+            </Button>
+          }
+        >
+          {rythmes === null ? (
+            <p className="text-sm text-gray-500">Cliquez sur « Évaluer le rythme » pour comparer chaque classe à son objectif.</p>
+          ) : rythmes.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun programme avec chapitres — créez d'abord les programmes par matière et niveau (avec chapitres planifiés sur les trimestres).</p>
+          ) : (
+            <DataTable
+              columns={[
+                { key: 'matiere', label: 'Matière · Niveau', render: (r: any) => <span className="text-xs">{r.matiere} · {r.niveau}</span> },
+                { key: 'classe', label: 'Classe', render: (r: any) => r.classe },
+                { key: 'realise', label: 'Réalisé', render: (r: any) => (
+                  <div className="flex items-center gap-1.5 min-w-[110px]">
+                    <div className="flex-1 h-2 bg-gray-200 rounded">
+                      <div className={`h-2 rounded ${r.statut === 'en_retard' ? 'bg-rose-500' : r.statut === 'en_avance' ? 'bg-blue-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, r.pourcentageRealise)}%` }} />
+                    </div>
+                    <span className="text-xs font-medium">{r.pourcentageRealise}%</span>
+                  </div>
+                ) },
+                { key: 'attendu', label: 'Attendu à ce jour', render: (r: any) => <span className="text-xs">{r.pourcentageAttendu}%</span> },
+                { key: 'ecart', label: 'Écart', render: (r: any) => (
+                  <span className={`text-xs font-semibold ${r.ecart < 0 ? 'text-rose-600' : r.ecart > 0 ? 'text-blue-600' : 'text-gray-500'}`}>
+                    {r.ecart > 0 ? '+' : ''}{r.ecart} pts
+                  </span>
+                ) },
+                { key: 'statut', label: 'Statut', render: (r: any) => (
+                  <StatusBadge
+                    statut={r.statut === 'en_retard' ? 'absent' : r.statut === 'en_avance' ? 'planifie' : r.statut === 'a_l_heure' ? 'valide' : 'en_attente'}
+                    label={r.statut === 'en_retard' ? 'En retard' : r.statut === 'en_avance' ? 'En avance' : r.statut === 'a_l_heure' ? 'À l\'heure' : 'Pas démarré'}
+                  />
+                ) },
+                { key: 'detail', label: 'Chapitres', render: (r: any) => (
+                  <span className="text-xs text-gray-600">
+                    {r.chapitresTermines}/{r.nbChapitres} terminé(s)
+                    {r.chapitresEnRetard.length > 0 && (
+                      <span className="text-rose-600 block" title={r.chapitresEnRetard.join(', ')}>⚠ {r.chapitresEnRetard.length} en retard de période</span>
+                    )}
+                  </span>
+                ) },
+                { key: 'cahier', label: 'Dernier cours noté', render: (r: any) => r.derniereEntreeCahier ? formatDate(r.derniereEntreeCahier) : <span className="text-xs text-gray-400">—</span> },
+              ]}
+              rows={rythmes}
+              emptyLabel=""
+            />
+          )}
         </SectionBlock>
 
         {(initialData.session?.portal === 'direction' || initialData.session?.portal === 'super_admin') && (
@@ -1239,5 +1316,104 @@ function BulletinImprimable({ bulletinId }: { bulletinId: string }) {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ====================================================================
+// AUDIT ENSEIGNANT — formulaire d'entrée du cahier AVEC chapitre du
+// programme : les sélecteurs classe → matière → chapitre sont dépendants ;
+// « chapitre terminé » met à jour l'avancement sans re-saisie.
+// ====================================================================
+function FormEntreeCahier({ classes, matieres, chapitresPour, retour }: {
+  classes: any[];
+  matieres: any[];
+  chapitresPour: (classeId: string, matiereId: string) => Array<{ id: string; titre: string }>;
+  retour: { run: (fn: () => Promise<any>, succes: string) => void; pending: boolean; Message: React.ReactNode };
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const [classeId, setClasseId] = useState('');
+  const [matiereId, setMatiereId] = useState('');
+  const [chapitreId, setChapitreId] = useState('');
+  const chapitres = chapitresPour(classeId, matiereId);
+
+  function soumettre(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    fd.set('classeId', classeId);
+    fd.set('matiereId', matiereId);
+    fd.set('chapitreId', chapitreId);
+    retour.run(async () => {
+      const r = await actionsExt.creerEntreeCahier(fd);
+      if (r?.ok) { setOuvert(false); setChapitreId(''); }
+      return r;
+    }, 'Entrée enregistrée — avancement du programme mis à jour.');
+  }
+
+  return (
+    <>
+      <CreateButton label="Nouvelle entrée" onClick={() => setOuvert(true)} />
+      {ouvert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setOuvert(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold">Entrée du cahier de textes</h3>
+            <p className="text-xs text-gray-500">Rattachez le cours à un chapitre du programme : l&apos;avancement se mettra à jour automatiquement.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-sm space-y-1">
+                <span className="text-xs font-medium text-gray-600">Classe *</span>
+                <select required value={classeId} onChange={(e) => { setClasseId(e.target.value); setChapitreId(''); }} className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-2 text-sm">
+                  <option value="">— Choisir —</option>
+                  {classes.map((c: any) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+                </select>
+              </label>
+              <label className="text-sm space-y-1">
+                <span className="text-xs font-medium text-gray-600">Matière</span>
+                <select value={matiereId} onChange={(e) => { setMatiereId(e.target.value); setChapitreId(''); }} className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-2 text-sm">
+                  <option value="">— Aucune —</option>
+                  {matieres.map((m: any) => <option key={m.id} value={m.id}>{m.libelle}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="text-sm space-y-1 block">
+              <span className="text-xs font-medium text-gray-600">Chapitre du programme travaillé {chapitres.length === 0 && classeId && matiereId && <span className="text-amber-600">(aucun programme défini pour cette matière/niveau — créez-le dans l&apos;onglet Programmes)</span>}</span>
+              <select value={chapitreId} onChange={(e) => setChapitreId(e.target.value)} className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-2 text-sm" disabled={chapitres.length === 0}>
+                <option value="">— Non rattaché —</option>
+                {chapitres.map((c) => <option key={c.id} value={c.id}>{c.titre}</option>)}
+              </select>
+            </label>
+            <form onSubmit={soumettre} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-sm space-y-1">
+                  <span className="text-xs font-medium text-gray-600">Date du cours *</span>
+                  <Input name="dateCours" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} />
+                </label>
+                <label className="text-sm space-y-1 flex items-end gap-2 pb-1">
+                  <input type="checkbox" name="chapitreTermine" className="h-4 w-4 accent-emerald-600" disabled={!chapitreId} />
+                  <span className="text-xs text-gray-700">Chapitre TERMINÉ (avancement → 100 %)</span>
+                </label>
+              </div>
+              <label className="text-sm space-y-1 block">
+                <span className="text-xs font-medium text-gray-600">Contenu du cours *</span>
+                <Textarea name="contenu" required placeholder="Notions enseignées, activités menées…" rows={3} />
+              </label>
+              <label className="text-sm space-y-1 block">
+                <span className="text-xs font-medium text-gray-600">Travail à faire</span>
+                <Textarea name="travailAFaire" placeholder="Devoirs pour la prochaine séance…" rows={2} />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="publier" className="h-4 w-4 accent-emerald-600" />
+                <span className="text-xs text-gray-700">Publier immédiatement aux familles</span>
+              </label>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setOuvert(false)}>Annuler</Button>
+                <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={retour.pending}>
+                  {retour.pending ? 'Enregistrement…' : 'Enregistrer l’entrée'}
+                </Button>
+              </div>
+            </form>
+            {retour.Message}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

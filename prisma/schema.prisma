@@ -996,8 +996,9 @@ model Chapitre {
   periodeId          String?
   periode            Periode?  @relation(fields: [periodeId], references: [id], onDelete: SetNull)
 
-  avancements AvancementProgramme[]
-  seances     Seance[] // F17
+  avancements  AvancementProgramme[]
+  seances      Seance[] // F17
+  entreesCahier EntreeCahierTexte[] // AUDIT ENSEIGNANT — cahier ↔ programme
 }
 
 model AvancementProgramme {
@@ -2320,6 +2321,10 @@ model EntreeCahierTexte {
   cahierTexteId  String
   cahierTexte    CahierTexte @relation(fields: [cahierTexteId], references: [id])
   seanceId       String?
+  // AUDIT ENSEIGNANT — chaque entrée du cahier est rattachée au CHAPITRE du
+  // programme travaillé : le remplissage du cahier alimente l'avancement.
+  chapitreId     String?
+  chapitre       Chapitre?   @relation(fields: [chapitreId], references: [id], onDelete: SetNull)
   dateCours      DateTime
   contenu        String // ce qui a été fait en cours
   travailAFaire  String? // devoirs pour la prochaine séance

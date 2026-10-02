@@ -291,18 +291,23 @@ const outilsLecture: OutilIA[] = [
   },
   {
     nom: 'avancement_programmes',
-    description: "Avancement des chapitres par classe (%) — saisie-vous en retard sur le programme ?",
-    permission: 'eleves.lire',
+    description: "Rythme pédagogique : compare pour chaque classe l'avancement RÉALISÉ (chapitres complétés, alimenté par le cahier de textes) à l'attendu à la date du jour (chapitres planifiés par trimestre). Répond aux questions « suis-je en retard sur le programme ? », « quelles classes ont pris du retard en maths ? ». Statuts : en_retard / a_l_heure / en_avance / demarre.",
+    permission: ['eleves.lire', 'notes.saisir'],
     parametres: P({}),
     executer: async (ctx) => {
-      const av: any[] = await db.avancementProgramme.findMany({
-        where: { chapitre: { programme: { ecoleId: ctx.ecoleId! } } },
-        include: { chapitre: { include: { programme: { include: { matiere: true } } } }, classe: true } as any,
-      });
-      return av.map((a) => ({
-        classe: a.classe?.libelle ?? '—', matiere: a.chapitre.programme.matiere?.libelle ?? '—',
-        chapitre: a.chapitre.titre ?? a.chapitre.intitule, pourcentage: a.pourcentage,
-      }));
+      const { rythmeProgrammesCore } = await import('@/lib/business/rythme');
+      const rythmes = await rythmeProgrammesCore(ctx as never);
+      return {
+        interpretation: 'écart = réalisé − attendu (points de %). Négatif = retard.',
+        rythmes: rythmes.map((r) => ({
+          classe: r.classe, matiere: r.matiere, niveau: r.niveau,
+          realise: `${r.pourcentageRealise}%`, attendu: `${r.pourcentageAttendu}%`,
+          ecart: r.ecart, statut: r.statut,
+          chapitres: `${r.chapitresTermines}/${r.nbChapitres}`,
+          chapitresEnRetardDePeriode: r.chapitresEnRetard.length > 0 ? r.chapitresEnRetard : undefined,
+          dernierCoursNoteAuCahier: r.derniereEntreeCahier?.slice(0, 10) ?? null,
+        })),
+      };
     },
   },
   {

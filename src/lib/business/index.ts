@@ -32,3 +32,5 @@ export * from './rh-suite';
 export * from './dossier';
 export * from './configuration';
 export * from './stats-absences';
+// AUDIT ENSEIGNANT — moteur de rythme pédagogique (cahier ↔ programme)
+export * from './rythme';

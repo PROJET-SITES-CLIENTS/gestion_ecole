@@ -479,7 +479,15 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         // chargés pour TOUS les portails pédagogiques — plus seulement
         // la direction (v4) : l'enseignant VOIT ses devoirs et son cahier.
         db.devoir.findMany({ where: { ecoleId }, orderBy: { dateRendu: 'desc' }, take: 150, include: { classe: true, matiere: true, rendus: { include: { eleve: { select: { id: true, prenom: true, nom: true } } } } } }),
-        db.cahierTexte.findMany({ where: { ecoleId }, orderBy: { dateCreation: 'desc' }, take: 100, include: { classe: true, matiere: true } }),
+        // AUDIT ENSEIGNANT — entrées INCLUSES (avec le chapitre du programme
+        // travaillé) : le cahier alimente visuellement le suivi d'avancement
+        db.cahierTexte.findMany({
+          where: { ecoleId }, orderBy: { dateCreation: 'desc' }, take: 100,
+          include: {
+            classe: true, matiere: true,
+            entrees: { orderBy: { dateCours: 'desc' }, take: 60, include: { chapitre: { select: { id: true, titre: true } } } },
+          },
+        }),
       ]);
       v.periodes = periodes; v.programmes = programmes; v.avancements = avancements;
       v.evaluations = evaluations; v.notes = notes; v.bulletins = bulletins;

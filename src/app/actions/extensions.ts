@@ -63,6 +63,8 @@ import {
   modifierProgrammeCore, supprimerProgrammeCore, modifierChapitreCore, supprimerChapitreCore,
   // AUDIT — statistiques d'absentéisme complètes
   statsAbsencesCore, notifierFamillesAbsencesCore,
+  // AUDIT ENSEIGNANT — moteur de rythme pédagogique
+  evaluerRythmeProgrammeCore, rythmeProgrammesCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -797,10 +799,19 @@ export async function majAvancement(formData: FormData): Promise<ActionResult> {
 export async function creerEntreeCahier(formData: FormData): Promise<ActionResult> {
   try {
     const ctx = await ctxSession();
-    const d = z.object({ classeId: idReq, matiereId: str, dateCours: dateReq, contenu: strReq, travailAFaire: str, publier: coche }).parse(Object.fromEntries(formData));
-    await creerEntreeCahierCore(ctx, { classeId: d.classeId, matiereId: d.matiereId || undefined, dateCours: d.dateCours, contenu: d.contenu, travailAFaire: d.travailAFaire || undefined, publier: estCoche(d.publier) });
+    const d = z.object({ classeId: idReq, matiereId: str, dateCours: dateReq, contenu: strReq, travailAFaire: str, publier: coche, chapitreId: str, chapitreTermine: coche }).parse(Object.fromEntries(formData));
+    const r = await creerEntreeCahierCore(ctx, {
+      classeId: d.classeId, matiereId: d.matiereId || undefined, dateCours: d.dateCours, contenu: d.contenu,
+      travailAFaire: d.travailAFaire || undefined, publier: estCoche(d.publier),
+      chapitreId: d.chapitreId || undefined, chapitreTermine: estCoche(d.chapitreTermine),
+    });
     revalidatePath('/');
-    return { ok: true };
+    return {
+      ok: true,
+      message: r.avancementMisAJour
+        ? `Entrée enregistrée${r.chapitre ? ` (chapitre « ${r.chapitre} »)` : ''} — avancement du programme mis à jour automatiquement.`
+        : 'Entrée du cahier de textes enregistrée.',
+    };
   } catch (e) { return echec(e); }
 }
 
@@ -1407,5 +1418,19 @@ export async function statsAbsences(fenetreJours = 30): Promise<ActionResult> {
 
 export async function notifierFamillesAbsences(seuilAbsences: number, fenetreJours: number): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await notifierFamillesAbsencesCore(ctx, seuilAbsences, fenetreJours); return { ok: true, ...r, message: `${r.famillesNotifiées} famille(s) notifiée(s).` }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT ENSEIGNANT — moteur de rythme pédagogique (cahier ↔ programme)
+// ====================================================================
+
+export async function evaluerRythmeProgramme(programmeId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await evaluerRythmeProgrammeCore(ctx, programmeId); return { ok: true, rythme: r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function rythmeProgrammes(): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await rythmeProgrammesCore(ctx); return { ok: true, rythmes: r }; }
   catch (e) { return echec(e); }
 }
