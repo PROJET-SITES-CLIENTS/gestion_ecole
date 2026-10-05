@@ -368,22 +368,7 @@ export const outilsSecretariatFull: OutilIA[] = [
     },
   },
   // ═══ RH — stats enrichies (turnover, absentéisme) ═══
-  {
-    nom: 'stats_rh',
-    description: "Statistiques RH complètes : effectifs, masse salariale, coût patronal, répartition par contrat, ancienneté, fins de contrats imminentes (60 j), TURNOVER de l’année et jours de congés maladie (absentéisme).",
-    permission: ['rh.gerer'],
-    parametres: P({}),
-    executer: async (ctx) => {
-      const { statsRhCore } = await import('@/lib/business/rh-suite');
-      const r = await statsRhCore(ctx as never);
-      return {
-        ...r,
-        masseSalarialeF: `${((r.masseSalarialeMensuelle ?? 0) / 100).toLocaleString('fr-FR')} F CFA/mois`,
-        interpretation: 'turnoverPourcent = sorties de l’année / effectif ; joursMaladieAnnee = absentéisme maladie (congés validés).',
-      };
-    },
-  },
-
+  
   // ═══ CENSEUR — réintégration après exclusion ═══
   {
     nom: 'reintegrer_eleve',

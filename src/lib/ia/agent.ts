@@ -74,6 +74,10 @@ export async function invoquerAssistant(opts: {
   const ecole = await db.ecole.findUnique({ where: { id: opts.ctx.ecoleId! }, select: { nom: true } });
   const nbOutilsAction = outils.filter((t) => CATALOGUE_IA.find((c) => c.nom === t.nom)).length;
 
+  // PLAFOND : les modèles gratuits saturent au-delà de ~60 définitions
+  // (61 Ko de payload → réponses vides « impossible »). On envoie les 60
+  // premiers — le filtre par permissions a déjà éliminé les hors-périmètre.
+  let tools = versOutilsOpenAI(outils.slice(0, 60));
   const systeme = `Tu es ARIA, l'assistante intelligente de ScolaGestion pour l'école « ${ecole?.nom ?? ''} ».
 Tu parles FRANÇAIS, de façon naturelle et directe, comme un collaborateur compétent.
 Tu aides « ${opts.nomUtilisateur ?? 'l\'utilisateur'} » (portail : ${opts.portail ?? 'interne'}).
@@ -100,7 +104,7 @@ c. Un outil qui répond { erreur + marcheASuivre } : suis cette marche et expliq
 d. Après chaque action, confirme en répétant l'OBJET EXACT touché et son TYPE : "✅ Matière « Dessin » créée dans le référentiel", "✅ Affectation de Jean retirée en 6ème A".
 e. Si un outil échoue 2 fois de la même façon, ARRÊTE et explique le blocage à l'utilisateur au lieu de réessayer.
 
-TES DROITS : ${outils.length} outils disponibles correspondant exactement aux permissions de l'utilisateur.
+TES DROITS : ${outils.length > 0 ? outils.length + ' outils disponibles correspondant exactement aux permissions de l’utilisateur.' : 'AUCUN outil disponible — réponds avec ce que tu sais, explique la limitation, ne prétends JAMAIS avoir agi.'}
 
 STYLE DE RÉPONSE :
 - Commence directement par la réponse : "Vous avez…", "✅ C'est fait…", "⚠️ Attention…"
@@ -119,7 +123,6 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
     { role: 'system', content: systeme },
     ...opts.messages.map((m) => ({ ...m })),
   ];
-  const tools = versOutilsOpenAI(outils);
   const parNom = new Map(outils.map((t) => [t.nom, t]));
   const actions: ResultatAgent['actions'] = [];
 
@@ -127,7 +130,23 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
     // tool_choice est toujours 'auto' : après avoir traité les outils l'IA choisit
     // librement d'appeler un autre outil OU de formuler une réponse textuelle naturelle.
-    const data = await appelerOpenRouter(messages, tools, 'auto');
+    // PLAFOND : le modèle gratuit sature au-delà de ~60 définitions. Après le
+    // premier tour d'outils réussi, le catalogue est retiré : le modèle a déjà
+    // les résultats dans l'historique, il n'a plus besoin des définitions.
+    // Après le premier tour d'outils réussi : on ENVOIE les tools (le modèle
+    // peut enchaîner légitimement) — c'est le comportement d'origine qui
+    // fonctionnait. La correction principale est le dédoublonnage.
+    const toolsCeTour = tools;
+    let data = await appelerOpenRouter(messages, toolsCeTour, 'auto').catch(async (e) => {
+      // MODE DÉGRADÉ — payload tools rejeté (400) : relance SANS outils pour
+      // que l'utilisateur reçoive une réponse au lieu d'un silence.
+      const msg = String((e as Error)?.message ?? '');
+      console.error('[ARIA] appel avec outils échoué :', msg.slice(0, 200));
+      if (toolsCeTour.length > 0 && /OpenRouter 400/.test(msg)) {
+        return appelerOpenRouter(messages, [], 'auto');
+      }
+      throw e;
+    });
     const choix = data?.choices?.[0]?.message;
     if (!choix) break;
 
@@ -175,11 +194,11 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
   if (actions.length > 0) {
     const resumeActions = actions.map((a) => `- ${a.outil} : ${a.resume}`).join('\n');
     const synthese = await appelerOpenRouter([
-      ...messages,
-      { role: 'user', content: `Synthétise en une réponse concise et naturelle en français les résultats obtenus :\n${resumeActions}\nDonne les chiffres clés directement et propose la suite logique.` },
+      { role: 'system', content: 'Tu es ARIA. Réponds en français, naturellement, en 3 lignes max.' },
+      { role: 'user', content: `Voici les résultats obtenus par mes outils :\n${resumeActions}\n\nRédige la réponse finale : chiffres clés directement, puis une suggestion de suite. Pas de préambule.` },
     ], [], 'auto').catch(() => null);
     const contenu = synthese?.choices?.[0]?.message?.content;
-    if (contenu) return { reponse: contenu, actions };
+    if (contenu && contenu.trim()) return { reponse: contenu.trim(), actions };
     return {
       reponse: `Voici ce que j'ai fait :\n${actions.map((a) => `• ${a.resume}`).join('\n')}\n\nVoulez-vous que je fasse autre chose ?`,
       actions,

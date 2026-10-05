@@ -80,52 +80,7 @@ const outilsLecture: OutilIA[] = [
         }))
       };
     }
-  },   {
-    nom: 'etat_caisse',
-    description: "Affiche l'etat actuel de la tresorerie et le detail des caisses (entrees, sorties, soldes).",
-    permission: 'finances.voir',
-    parametres: { type: 'object', properties: {} },
-    executer: async (ctx) => {
-      return biz.etatCaisseCore(ctx as never);
-    }
-  },
-  {
-    nom: 'balance_comptable',
-    description: "Genere la balance comptable (Totaux Debit/Credit et Soldes par compte) pour verifier l'equilibre.",
-    permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
-    executer: async (ctx, args) => {
-      return biz.balanceComptableCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
-    }
-  },
-  {
-    nom: 'compte_resultat',
-    description: "Genere le compte de résultat detaille (Charges classe 6, Produits classe 7) et donne le benefice/perte.",
-    permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
-    executer: async (ctx, args) => {
-      return biz.compteResultatCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
-    }
-  },
-  {
-    nom: 'bilan_simplifie',
-    description: "Genere le Bilan Comptable simplifie (Actif, Passif, Trèsorerie, Resultat de l'exercice).",
-    permission: 'finances.voir',
-    parametres: { type: 'object', properties: { sectionId: { type: 'string', description: 'toutes (par defaut) ou ID section' } } },
-    executer: async (ctx, args) => {
-      return biz.bilanSimplifieCore(ctx as never, args.sectionId ? String(args.sectionId) : 'toutes');
-    }
-  },
-  {
-    nom: 'grand_livre',
-    description: "Recherche toutes les ecritures passees sur un numero de compte SYSCOHADA precis.",
-    permission: 'finances.voir',
-    parametres: { type: 'object', properties: { numeroCompte: { type: 'string', description: 'Numero de compte (ex: 4111, 706)' } }, required: ['numeroCompte'] },
-    executer: async (ctx, args) => {
-      return biz.grandLivreCore(ctx as never, String(args.numeroCompte));
-    }
-  },
-  {
+  },             {
     nom: 'liste_paiements_recus',
     description: "Liste chronologique des paiements physiques encaisses (especes, cheques, etc). Pour voir les encaissements.",
     permission: 'finances.voir',
@@ -1146,27 +1101,7 @@ const outilsAction: OutilIA[] = [
        return { msg: "Compétence évaluée avec succès." };
     }
   },
-  {
-    nom: 'creer_dispense',
-    description: "Enregistre une dispense (sport, activité) pour un élève avec un motif et des dates.",
-    permission: 'vie_scolaire.gerer',
-    parametres: P({
-       eleve: { type: 'string', description: 'Nom de l\'élève' },
-       matiere: { type: 'string', description: 'Libellé de la matière concernée (ex: EPS)' },
-       motif: { type: 'string', description: 'Motif (ex: Certificat médical)' },
-       description: { type: 'string', description: 'Détails de la dispense' },
-       dateDebut: { type: 'string', description: 'Date de début ISO' },
-       dateFin: { type: 'string', description: 'Date de fin ISO (optionnelle)' }
-    }, ['eleve', 'matiere', 'motif', 'description', 'dateDebut']),
-    executer: async (ctx, args) => {
-       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
-       if (!el) return { erreur: "Élève introuvable." };
-       const mat = await db.matiere.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.matiere), mode: "insensitive" } } });
-       if (!mat) return { erreur: "Matière introuvable." };
-       return biz.creerDispenseCore(ctx as never, { eleveId: el.id, matiereId: mat.id, motif: String(args.motif), description: String(args.description), dateDebut: new Date(String(args.dateDebut)), dateFin: args.dateFin ? new Date(String(args.dateFin)) : undefined } as never);
-    }
-  },
-  {
+    {
     nom: 'saisir_sanction',
     description: "Saisit une sanction suite à un incident (Retenue, Avertissement, etc.).",
     permission: 'vie_scolaire.gerer',
@@ -2004,11 +1939,18 @@ export function outilsPourSession(permissions: Set<string>): OutilIA[] {
   });
 }
 
-/** Format OpenAI tools. */
+/** Format OpenAI tools — descriptions tronquées à 220 caractères : le
+ *  catalogue dépasse 140 outils ; des descriptions très longues portaient
+ *  le payload à 60+ Ko et le modèle gratuit répondait « impossible » au
+ *  lieu d'appeler les outils. */
 export function versOutilsOpenAI(outils: OutilIA[]) {
   return outils.map((t) => ({
     type: 'function' as const,
-    function: { name: t.nom, description: t.description, parameters: t.parametres as object },
+    function: {
+      name: t.nom,
+      description: t.description.length > 220 ? t.description.slice(0, 217) + '…' : t.description,
+      parameters: t.parametres as object,
+    },
   }));
 }
 
