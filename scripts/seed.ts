@@ -146,7 +146,7 @@ async function main() {
       surveillant: ["eleves.lire","presences.saisir","vie_scolaire.gerer","securite.gerer"],
       rh: ["eleves.lire","rh.gerer","communication.envoyer"],
       censeur: ["eleves.lire","bulletins.valider","notes.saisir","presences.saisir","vie_scolaire.gerer","examens.gerer","edt.gerer","protection.gerer"],
-      secretariat: ["eleves.lire","eleves.ecrire","presences.saisir","finances.voir","communication.envoyer"],
+      secretariat: ["eleves.lire","eleves.ecrire","presences.saisir","finances.voir","communication.envoyer","secretariat.gerer"],
       assistant_direction: ["eleves.lire","eleves.ecrire","presences.saisir","vie_scolaire.gerer","communication.envoyer"],
       infirmier: ["eleves.lire","sante.gerer"],
     };
@@ -155,7 +155,7 @@ async function main() {
       const cree = await db.role.create({ data: { ecoleId: ecoleVierge.id, code: r.code, libelle: r.libelle, twofaRequis: r.twofaRequis ?? false } });
       roleIds.set(r.code, cree.id);
     }
-    const PERMS = ["eleves.lire","eleves.ecrire","notes.saisir","bulletins.valider","finances.voir","finances.ecrire","finances.valider","presences.saisir","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer"];
+    const PERMS = ["eleves.lire","eleves.ecrire","notes.saisir","bulletins.valider","finances.voir","finances.ecrire","finances.valider","presences.saisir","rh.gerer","communication.envoyer","admin.saas","vie_scolaire.gerer","securite.gerer","examens.gerer","services.gerer","edt.gerer","sante.gerer","salles.gerer","protection.gerer","secretariat.gerer"];
     const permIds = new Map<string, string>();
     for (const code of PERMS) {
       const existante = await db.permission.findUnique({ where: { code } });
@@ -1652,6 +1652,7 @@ async function main() {
   const permsData = [
     { code: "eleves.lire", libelle: "Consulter les élèves", module: "eleves" },
     { code: "eleves.ecrire", libelle: "Créer/modifier les élèves", module: "eleves" },
+    { code: "secretariat.gerer", libelle: "Guichet secrétariat (registres, relances, convocations)", module: "eleves" },
     { code: "notes.saisir", libelle: "Saisir les notes", module: "pedagogie" },
     { code: "bulletins.valider", libelle: "Valider les bulletins", module: "pedagogie" },
     { code: "finances.voir", libelle: "Consulter la trésorerie", module: "finances" },
@@ -1722,6 +1723,7 @@ async function main() {
     { roleId: roleCenseur.id, permissionId: byCode("protection.gerer") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.lire") },
     { roleId: roleSecretariat.id, permissionId: byCode("eleves.ecrire") },
+  { roleId: roleSecretariat.id, permissionId: byCode("secretariat.gerer") },
     { roleId: roleSecretariat.id, permissionId: byCode("presences.saisir") },  // FIX: peut consulter les absences du jour
     { roleId: roleSecretariat.id, permissionId: byCode("finances.voir") },     // FIX: peut voir les impayés d'un élève
     { roleId: roleSecretariat.id, permissionId: byCode("communication.envoyer") },

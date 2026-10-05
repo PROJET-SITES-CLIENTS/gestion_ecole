@@ -23,8 +23,9 @@ export async function GET(requête: Request, { params }: { params: Promise<{ cod
     if (!modele) return new Response('Type de document inconnu.', { status: 404 });
 
     // Permission (super_admin : tout voir)
-    if (modele.permission && session.utilisateur.type !== 'super_admin' && !session.permissions.has(modele.permission)) {
-      return new Response(`Permission requise : ${modele.permission}.`, { status: 403 });
+    const permsModele = typeof modele.permission === 'string' ? [modele.permission] : (modele.permission ?? []);
+    if (permsModele.length > 0 && session.utilisateur.type !== 'super_admin' && !permsModele.some((pm) => session.permissions.has(pm))) {
+      return new Response(`Permission requise : ${permsModele.join(' ou ')}.`, { status: 403 });
     }
 
     // Paramètres depuis la query string

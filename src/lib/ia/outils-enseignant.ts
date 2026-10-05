@@ -7,7 +7,7 @@
 
 import { db } from '@/lib/db';
 import { OutilIA } from './outils';
-import { resoudreClasse, resoudreMatiere, resoudreEleveSiPresent } from './resolution';
+import { resoudreClasse, resoudreMatiere, resoudreEleve } from './resolution';
 import * as biz from '@/lib/business';
 
 const P = (properties: Record<string, { type: string; description?: string; enum?: string[] }>, required?: string[]) => ({ type: 'object' as const, properties, required });
@@ -138,7 +138,7 @@ export const outilsEnseignant: OutilIA[] = [
   // ═══ DISPENSES ═══
   {
     nom: 'creer_dispense',
-    description: "Enregistre une dispense (sport, activité) pour un élève avec motif et dates — l'élève est identifié sans ambiguïté dans l'école (candidats listés si homonymes).",
+    description: "Enregistre une dispense (sport, activité) pour un élève avec motif et dates — l’élève est identifié sans ambiguïté dans l'école (candidats listés si homonymes).",
     permission: ['vie_scolaire.gerer', 'notes.saisir'],
     parametres: P({
       eleve: { type: 'string', description: 'Nom/prénom de l’élève' },
@@ -147,7 +147,7 @@ export const outilsEnseignant: OutilIA[] = [
       matiere: { type: 'string', description: 'Matière concernée (optionnel, ex: EPS)' },
     }, ['eleve', 'motif']),
     executer: async (ctx, args) => {
-      const re = await resoudreEleveSiPresent(ctx.ecoleId!, String(args.eleve));
+      const re = await resoudreEleve(ctx.ecoleId!, String(args.eleve));
       if (!re.trouve) return { erreur: re.erreur, candidats: re.candidats };
       let matiereId: string | undefined;
       if (args.matiere) {
@@ -165,6 +165,87 @@ export const outilsEnseignant: OutilIA[] = [
         ...(matiereId ? { matiereId } : {}),
       } as never);
       return { ...r, eleve: `${re.entite.prenom} ${re.entite.nom}`, du: debut.toISOString().slice(0, 10), au: fin.toISOString().slice(0, 10) };
+    },
+  },
+];
+
+export const outilsSecretariatIA: OutilIA[] = [
+  {
+    nom: 'relancer_pieces_dossier',
+    description: "Relance les parents d'un élève (notification) en listant les pièces encore manquantes à son dossier d'inscription. Sans élève = relance TOUTES les familles ayant un dossier incomplet.",
+    permission: ['eleves.ecrire', 'secretariat.gerer'],
+    parametres: P({ eleve: { type: 'string', description: "Nom/prénom de l’élève (vide = toutes les familles)" } }),
+    executer: async (ctx, args) => {
+      const { relancerPiecesDossierCore, relancerToutesPiecesCore } = await import('@/lib/business/secretariat');
+      if (!args.eleve) {
+        const r = await relancerToutesPiecesCore(ctx as never);
+        return { ...r, message: `${r.familles} famille(s) relancée(s).` };
+      }
+      const re = await resoudreEleve(ctx.ecoleId!, String(args.eleve));
+      if (!re.trouve) return { erreur: re.erreur, candidats: re.candidats };
+      const r = await relancerPiecesDossierCore(ctx as never, re.entite.id);
+      return { ...r, message: `Relance envoyée : ${r.piecesManquantes.join(', ')}.` };
+    },
+  },
+  {
+    nom: 'maj_coordonnees_famille',
+    description: "Met à jour les coordonnées d'une famille : adresse de l’élève, contact d’urgence (nom + téléphone), et téléphone/email/profession du parent rattaché.",
+    permission: ['eleves.ecrire', 'secretariat.gerer'],
+    parametres: P({
+      eleve: { type: 'string', description: "Nom/prénom de l’élève" },
+      adresse: { type: 'string', description: 'Nouvelle adresse (optionnel)' },
+      urgenceNom: { type: 'string', description: 'Contact d’urgence — nom (optionnel)' },
+      urgenceTelephone: { type: 'string', description: 'Contact d’urgence — téléphone (optionnel)' },
+      parentTelephone: { type: 'string', description: 'Téléphone du parent rattaché (optionnel)' },
+      parentEmail: { type: 'string', description: 'Email du parent (optionnel)' },
+    }, ['eleve']),
+    executer: async (ctx, args) => {
+      const re = await resoudreEleve(ctx.ecoleId!, String(args.eleve));
+      if (!re.trouve) return { erreur: re.erreur, candidats: re.candidats };
+      const eleve = await db.eleve.findUnique({ where: { id: re.entite.id }, include: { parents: { include: { parent: true } } } });
+      const parentId = eleve?.parents?.[0]?.parentId;
+      if (!parentId && (args.parentTelephone || args.parentEmail)) {
+        return { erreur: 'Aucun parent rattaché à cet élève — rattachez-le d’abord.' };
+      }
+      const { majCoordonneesFamilleCore } = await import('@/lib/business/secretariat');
+      const r = await majCoordonneesFamilleCore(ctx as never, {
+        eleveId: re.entite.id,
+        adresseEleve: args.adresse ? String(args.adresse) : undefined,
+        contactUrgenceNom: args.urgenceNom ? String(args.urgenceNom) : undefined,
+        contactUrgenceTelephone: args.urgenceTelephone ? String(args.urgenceTelephone) : undefined,
+        parentId: parentId ?? undefined,
+        parentTelephone: args.parentTelephone ? String(args.parentTelephone) : undefined,
+        parentEmail: args.parentEmail ? String(args.parentEmail) : undefined,
+      });
+      return { ...r, message: 'Coordonnées mises à jour.' };
+    },
+  },
+  {
+    nom: 'absents_du_jour',
+    description: "Liste les absents et retards du jour (tous classes) avec séance concernée et justificatif reçu ou non — pour renseigner les familles au guichet.",
+    permission: ['presences.saisir', 'eleves.ecrire', 'vie_scolaire.gerer'],
+    parametres: P({}),
+    executer: async (ctx) => {
+      const debut = new Date(); debut.setHours(0, 0, 0, 0);
+      const fin = new Date(debut); fin.setDate(fin.getDate() + 1);
+      const liste = await db.presence.findMany({
+        where: { dateSaisie: { gte: debut, lt: fin }, statut: { in: ['absent', 'retard'] }, eleve: { ecoleId: ctx.ecoleId!, deletedAt: null } },
+        take: 100,
+        include: {
+          eleve: { select: { nom: true, prenom: true, classeActuelle: { select: { libelle: true } } } },
+          seance: { select: { heureDebut: true, matiere: { select: { libelle: true } } } },
+          justification: { select: { statut: true } },
+        },
+        orderBy: { dateSaisie: 'desc' },
+      });
+      return {
+        absences: liste.length,
+        detail: liste.map((a) => ({
+          eleve: `${a.eleve.prenom} ${a.eleve.nom}`, classe: a.eleve.classeActuelle?.libelle ?? '—',
+          statut: a.statut, seance: a.seance ? `${a.seance.matiere?.libelle ?? ''} (${a.seance.heureDebut})` : '—',
+          justificatif: a.justification?.statut ?? 'aucun',
+        })),
+      };
     },
   },
 ];

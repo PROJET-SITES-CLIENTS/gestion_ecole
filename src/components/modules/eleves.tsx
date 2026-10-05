@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { useState } from 'react';
-import { KeyRound, Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2, Upload, Paperclip } from 'lucide-react';
+import { KeyRound, Users, Plus, Eye, Accessibility, FileCheck, AlertTriangle, Shield, BookMarked, FileText, Pencil, ArrowRightLeft, DoorOpen, UserPlus, Download, Trash2, Upload, Paperclip, Bell, Phone } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, ModalForm, CreateButton, SectionBlock, InfoRow, EmptyState, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,6 +41,9 @@ const TYPES_DOCUMENT_IMPORT: Array<{ value: string; label: string }> = [
 // AUDIT — périmètres RÉELS du portail connecté (les onglets distinguent
 // « hors périmètre » de « aucune donnée » au lieu d'un message trompeur)
 const PORTEES_FINANCES = ['direction', 'comptabilite', 'super_admin'];
+// AUDIT SECRÉTARIAT — suivi des échéances (dû/payé/restant, relances) :
+// le secrétariat voit l'onglet SANS le journal des paiements (non chargé)
+const PORTEES_ECHEANCES = [...PORTEES_FINANCES, 'secretariat'];
 const PORTEES_PEDAGOGIE = ['direction', 'enseignant', 'super_admin'];
 const PORTEES_DOSSIER = ['direction', 'secretariat', 'super_admin'];
 
@@ -63,7 +66,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
   const accesRgpd = portal === 'direction' || portal === 'secretariat';
   const peutEcrire = ['direction', 'secretariat', 'super_admin', 'assistant'].includes(portal ?? '');
   // AUDIT — périmètres réels pour des onglets honnêtes
-  const peutVoirFinances = PORTEES_FINANCES.includes(portal ?? '');
+  const peutVoirFinances = PORTEES_ECHEANCES.includes(portal ?? '');
   const peutVoirPedagogie = PORTEES_PEDAGOGIE.includes(portal ?? '') || portal === 'vie_scolaire';
   const peutVoirDossier = PORTEES_DOSSIER.includes(portal ?? '') || portal === 'vie_scolaire';
   const [selectedEleveId, setSelectedEleveId] = useState<string | null>(eleves[0]?.id ?? null);
@@ -176,7 +179,35 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         title="Élèves"
         subtitle={`${eleves.length} élèves · ${classes.length} classes`}
         actions={
-          peutEcrire ? (
+          <div className="flex items-center gap-2">
+          {(peutEcrire || portal === 'secretariat') && (
+            <Button
+              variant="outline" size="sm"
+              onClick={() => {
+                const lignes = [
+                  ['Matricule', 'Nom', 'Prénom', 'Sexe', 'Naissance', 'Classe', 'Statut'],
+                  ...elevesFiltres.map((e: any) => [
+                    e.matricule ?? '', e.nom ?? '', e.prenom ?? '', e.sexe ?? '',
+                    e.dateNaissance ? String(e.dateNaissance).slice(0, 10) : '',
+                    classes.find((c: any) => c.id === e.classeActuelleId)?.libelle ?? '',
+                    e.statut ?? '',
+                  ]),
+                ];
+                const csv = '\ufeff' + lignes.map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `eleves-${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              title="Exporter la liste filtrée en CSV (Excel)"
+            >
+              <Download className="h-4 w-4 mr-1" /> Exporter CSV
+            </Button>
+          )}
+          {peutEcrire ? (
           <ModalForm
             trigger={<CreateButton label="Inscrire un élève" />}
             title="Inscrire un nouvel élève"
@@ -190,7 +221,8 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
             ]}
             action={actions.inscrireEleve}
           />
-          ) : undefined
+          ) : null}
+          </div>
         }
       />
 
@@ -395,7 +427,18 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                           <div className={`text-sm font-semibold ${piecesManquantes === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
                             {piecesManquantes === 0 ? '✓ Dossier complet' : `Dossier incomplet — ${piecesManquantes} pièce(s) manquante(s)`}
                           </div>
-                          {piecesManquantes > 0 && <div className="text-xs text-amber-700 mt-1">Relancez la famille pour compléter le dossier avant la rentrée.</div>}
+                          {piecesManquantes > 0 && (
+                            <div className="text-xs text-amber-700 mt-1 flex flex-wrap items-center gap-2">
+                              <span>Relancez la famille pour compléter le dossier.</span>
+                              <Button
+                                variant="outline" size="sm" className="h-7 border-amber-300 text-amber-800"
+                                disabled={uploadFb.pending}
+                                onClick={() => uploadFb.run(() => actionsExt.relancerPiecesDossier(eleve.id), 'Relance envoyée aux parents.')}
+                              >
+                                <Bell className="h-3.5 w-3.5 mr-1" /> Relancer la famille
+                              </Button>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-2">
                           {piecesEleve.map((p: any) => {
@@ -558,6 +601,11 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   <TabsContent value="finances" className="space-y-4">
                     {!peutVoirFinances ? (
                       <p className="text-sm text-gray-500">Suivi financier réservé aux portails financiers (direction, comptabilité).</p>
+                    ) : portal === 'secretariat' && eleveEcheances.length === 0 ? (
+                      <div className="p-3 bg-amber-50 rounded text-sm text-amber-700 space-y-1">
+                        <div className="font-medium">Aucune échéance pour cet élève.</div>
+                        <div className="text-xs">Les échéances naissent des frais de scolarité définis par la comptabilité. Vous pouvez relancer la famille pour d'autres pièces via l'onglet Dossier.</div>
+                      </div>
                     ) : eleveEcheances.length === 0 ? (
                       <div className="p-3 bg-amber-50 rounded text-sm text-amber-700 space-y-1">
                         <div className="font-medium">Aucune échéance pour cet élève.</div>
@@ -946,6 +994,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                     defaultValues={{ eleveId: eleve.id, statut: eleve.statut }}
                     action={actions.changerStatutEleve}
                   />
+                  <CoordonneesFamille eleve={eleve} parents={parents.filter((pp: any) => (pp.eleves ?? []).some((lp: any) => lp.eleve?.id === eleve.id))} />
                   <ModalForm
                     trigger={<Button variant="outline" size="sm"><UserPlus className="h-4 w-4 mr-1" /> Rattacher un parent</Button>}
                     title={`Rattacher un parent — ${eleve.prenom} ${eleve.nom}`}
@@ -1078,5 +1127,45 @@ function ConsentementRow({ label, checked, date, onActivate, disabled }: { label
         <Badge variant="outline" className="bg-gray-100 text-gray-700">Non activé</Badge>
       )}
     </div>
+  );
+}
+
+
+// ====================================================================
+// AUDIT SECRÉTARIAT — coordonnées famille (adresse élève, contact
+// d'urgence, téléphone/email/profession du parent) : le guichet met à
+// jour sans passer par la direction.
+// ====================================================================
+function CoordonneesFamille({ eleve, parents }: { eleve: any; parents: any[] }) {
+  const parent = parents[0];
+  const urgence = (() => { try { return JSON.parse(eleve.contactUrgence ?? '{}'); } catch { return {}; } })();
+  const adresse = typeof eleve.adresse === 'string' && eleve.adresse.startsWith('{')
+    ? (() => { try { return JSON.parse(eleve.adresse)?.texte ?? ''; } catch { return ''; } })()
+    : (eleve.adresse ?? '');
+  return (
+    <ModalForm
+      trigger={<Button variant="outline" size="sm"><Phone className="h-4 w-4 mr-1" /> Coordonnées famille</Button>}
+      title={`Coordonnées — famille de ${eleve.prenom} ${eleve.nom}`}
+      fields={[
+        { name: 'eleveId', type: 'hidden', label: 'ID', defaultValue: eleve.id },
+        { name: 'adresseEleve', label: "Adresse de l'élève", defaultValue: adresse, placeholder: 'Quartier, rue, ville' },
+        { name: 'contactUrgenceNom', label: "Contact d'urgence — nom", defaultValue: urgence?.nom ?? '' },
+        { name: 'contactUrgenceTelephone', label: "Contact d'urgence — téléphone", defaultValue: urgence?.telephone ?? '' },
+        ...(parent ? [
+          { name: 'parentId', type: 'hidden' as const, label: 'Parent', defaultValue: parent.id },
+          { name: 'parentTelephone', label: `Téléphone (${parent.prenom ?? ''} ${parent.nom ?? ''})`.trim(), defaultValue: parent.telephone ?? '' },
+          { name: 'parentEmail', label: 'Email du parent', defaultValue: parent.email ?? '' },
+          { name: 'parentProfession', label: 'Profession du parent', defaultValue: parent.profession ?? '' },
+        ] : []),
+      ]}
+      defaultValues={{
+        eleveId: eleve.id,
+        adresseEleve: adresse,
+        contactUrgenceNom: urgence?.nom ?? '',
+        contactUrgenceTelephone: urgence?.telephone ?? '',
+        ...(parent ? { parentId: parent.id, parentTelephone: parent.telephone ?? '', parentEmail: parent.email ?? '', parentProfession: parent.profession ?? '' } : {}),
+      }}
+      action={actionsExt.majCoordonneesFamille}
+    />
   );
 }

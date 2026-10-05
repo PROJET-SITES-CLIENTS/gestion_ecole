@@ -3,7 +3,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
-import { ActionError, Ctx, assertPermission, assertTenant, logAction } from './commun';
+import { ActionError, Ctx, assertPermission, assertPermissionParmi, assertTenant, logAction, notifierParentsEtDirection } from './commun';
 
 /** Pièces standard exigées à l'inscription (checklist auto-créée). */
 export const PIECES_DOSSIER_STANDARD = [
@@ -137,4 +137,126 @@ export async function enregistrerReinscriptionCore(ctx: Ctx, input: { eleveId: s
   });
   await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'eleve.reinscription', 'reinscription', r.id, {});
   return { reinscriptionId: r.id, dejaInscrit: false };
+}
+
+// --------------------------------------------------------------------
+// AUDIT SECRÉTARIAT — relance familles pour pièces manquantes
+// --------------------------------------------------------------------
+
+/** Notifie les parents d'un élève en listant les pièces encore manquantes
+ *  à son dossier (canal in-app + direction en copie). */
+export async function relancerPiecesDossierCore(ctx: Ctx, eleveId: string) {
+  assertPermissionParmi(ctx, ['eleves.ecrire', 'secretariat.gerer']);
+  const eleve = await db.eleve.findUnique({
+    where: { id: eleveId },
+    include: { piecesDossier: true },
+  });
+  if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
+  assertTenant(eleve.ecoleId, ctx, 'Cet élève');
+  const manquantes = eleve.piecesDossier.filter((p) => p.statut !== 'recue');
+  if (manquantes.length === 0) {
+    throw new ActionError('Le dossier de cet élève est déjà complet — aucune relance nécessaire.', 'DOSSIER_COMPLET');
+  }
+  const libelles = manquantes.map((p) => LIBELLES_PIECES[p.type as keyof typeof LIBELLES_PIECES] ?? p.type);
+  const nb = await notifierParentsEtDirection(
+    db as never, eleve.ecoleId, eleve.id,
+    `Dossier incomplet — ${eleve.prenom} ${eleve.nom}`,
+    `Bonjour, le dossier de ${eleve.prenom} ${eleve.nom} est incomplet. Pièce(s) encore manquante(s) : ${libelles.join(', ')}. Merci de les déposer au secrétariat de l'école au plus tôt.`,
+  );
+  await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'dossier.relance_pieces', 'eleve', eleve.id, { manquantes: manquantes.map((p) => p.type), parentsNotifies: nb });
+  return { eleveId, piecesManquantes: libelles, parentsNotifies: nb };
+}
+
+/** Relance en masse : notifie toutes les familles ayant au moins une pièce
+ *  manquante (utile en début d'année). Retourne le détail par élève. */
+export async function relancerToutesPiecesCore(ctx: Ctx) {
+  assertPermissionParmi(ctx, ['eleves.ecrire', 'secretariat.gerer']);
+  if (!ctx.ecoleId) throw new ActionError('Aucune école associée.', 'ECOLE_ABSENTE');
+  const eleves = await db.eleve.findMany({
+    where: { ecoleId: ctx.ecoleId, deletedAt: null, statut: 'actif' },
+    include: { piecesDossier: true },
+  });
+  let familles = 0;
+  const detail: Array<{ eleve: string; manquantes: string[] }> = [];
+  for (const e of eleves) {
+    const manquantes = e.piecesDossier.filter((p) => p.statut !== 'recue');
+    if (manquantes.length === 0) continue;
+    const libelles = manquantes.map((p) => LIBELLES_PIECES[p.type as keyof typeof LIBELLES_PIECES] ?? p.type);
+    await notifierParentsEtDirection(
+      db as never, e.ecoleId, e.id,
+      `Dossier incomplet — ${e.prenom} ${e.nom}`,
+      `Bonjour, le dossier de ${e.prenom} ${e.nom} est incomplet. Pièce(s) manquante(s) : ${libelles.join(', ')}. Merci de les déposer au secrétariat.`,
+    );
+    familles++;
+    detail.push({ eleve: `${e.prenom} ${e.nom}`, manquantes: libelles });
+  }
+  await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'dossier.relance_masse', undefined, undefined, { familles });
+  return { familles, detail };
+}
+
+// --------------------------------------------------------------------
+// AUDIT SECRÉTARIAT — mise à jour des coordonnées famille
+// --------------------------------------------------------------------
+
+export type CoordonneesInput = {
+  eleveId: string;
+  adresseEleve?: string;
+  contactUrgenceNom?: string;
+  contactUrgenceTelephone?: string;
+  parentId?: string;
+  parentTelephone?: string;
+  parentEmail?: string;
+  parentProfession?: string;
+};
+
+/** Met à jour les coordonnées de la famille : adresse de l'élève, contact
+ *  d'urgence (nom + téléphone, stockés en JSON) et coordonnées du parent
+ *  rattaché (téléphone, email, profession). */
+export async function majCoordonneesFamilleCore(ctx: Ctx, input: CoordonneesInput) {
+  assertPermissionParmi(ctx, ['eleves.ecrire', 'secretariat.gerer']);
+  const eleve = await db.eleve.findUnique({ where: { id: input.eleveId } });
+  if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
+  assertTenant(eleve.ecoleId, ctx, 'Cet élève');
+  if (input.parentEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.parentEmail.trim())) {
+    throw new ActionError('Email du parent invalide.', 'CHAMP_INVALIDE');
+  }
+
+  // Contact d'urgence : conservé en JSON {nom, telephone}
+  let contactUrgence: string | null | undefined;
+  if (input.contactUrgenceNom != null || input.contactUrgenceTelephone != null) {
+    const actuel = (() => { try { return JSON.parse(eleve.contactUrgence ?? '{}'); } catch { return {}; } })();
+    contactUrgence = JSON.stringify({
+      nom: input.contactUrgenceNom?.trim() ?? actuel.nom ?? null,
+      telephone: input.contactUrgenceTelephone?.trim() ?? actuel.telephone ?? null,
+    });
+  }
+
+  await db.eleve.update({
+    where: { id: eleve.id },
+    data: {
+      ...(input.adresseEleve !== undefined ? { adresse: input.adresseEleve.trim() || null } : {}),
+      ...(contactUrgence !== undefined ? { contactUrgence } : {}),
+    },
+  });
+
+  let parentModifie: string | null = null;
+  if (input.parentId) {
+    const parent = await db.parentTuteur.findUnique({ where: { id: input.parentId } });
+    if (!parent) throw new ActionError('Parent introuvable.', 'INTROUVABLE');
+    assertTenant(parent.ecoleId, ctx, 'Ce parent');
+    await db.parentTuteur.update({
+      where: { id: parent.id },
+      data: {
+        ...(input.parentTelephone !== undefined ? { telephone: input.parentTelephone.trim() || null } : {}),
+        ...(input.parentEmail !== undefined ? { email: input.parentEmail.trim() || null } : {}),
+        ...(input.parentProfession !== undefined ? { profession: input.parentProfession.trim() || null } : {}),
+      },
+    });
+    parentModifie = `${parent.prenom ?? ''} ${parent.nom ?? ''}`.trim();
+  }
+  await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'famille.coordonnees_maj', 'eleve', eleve.id, {
+    champs: Object.keys(input).filter((k) => k !== 'eleveId'),
+    parent: parentModifie,
+  });
+  return { eleveId: eleve.id, parentModifie };
 }

@@ -548,6 +548,97 @@ const docsPedagogie: ModeleDoc[] = [
       };
     },
   },
+  // ------------------------------------------------------------------
+  // AUDIT SECRÉTARIAT — liste d'élèves par classe (impression guichet)
+  // ------------------------------------------------------------------
+  {
+    code: 'liste_eleves_classe', libelle: 'Liste des élèves d\'une classe', domaine: 'Scolarité & pédagogie',
+    description: 'Liste officielle des élèves actifs d\'une classe (matricule, identité, sexe, naissance, effectif G/F) — à imprimer ou afficher.',
+    entete: 'majeur', permission: 'eleves.lire',
+    parametres: [P.classe()],
+    generer: async (c) => {
+      const classe = await db.classe.findFirst({
+        where: { id: c.p.classeId, ecoleId: c.identite.ecoleId },
+        include: { niveau: true },
+      });
+      if (!classe) throw new ActionError('Classe introuvable dans votre école.', 'INTROUVABLE');
+      const eleves = await db.eleve.findMany({
+        where: { classeActuelleId: classe.id, deletedAt: null, statut: 'actif' },
+        orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+      });
+      const g = eleves.filter((e) => e.sexe === 'M').length;
+      const f = eleves.filter((e) => e.sexe === 'F').length;
+      const lignes = eleves.map((e, i) => `
+        <tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td>${echapper(e.matricule ?? '—')}</td>
+          <td style="text-transform:uppercase">${echapper(e.nom)}</td>
+          <td>${echapper(e.prenom)}</td>
+          <td style="text-align:center">${echapper(e.sexe ?? '—')}</td>
+          <td>${dateFr(e.dateNaissance)}</td>
+          <td style="width:18%"></td>
+        </tr>`).join('');
+      return {
+        titre: 'Liste des élèves',
+        sousTitre: `${echapper(classe.libelle)} — ${echapper(classe.niveau?.libelle ?? '')} · Année ${echapper(c.identite.anneeScolaire)}`,
+        corps: `
+        ${bandeauStats(c.identite, [
+          { libelle: 'Effectif total', valeur: String(eleves.length), accent: true },
+          { libelle: 'Garçons', valeur: String(g) },
+          { libelle: 'Filles', valeur: String(f) },
+        ])}
+        <table class="data">
+          <tr style="background:#e8f2ef">
+            <th style="text-align:center">N°</th><th>Matricule</th><th>Nom</th><th>Prénom</th><th style="text-align:center">Sexe</th><th>Né(e) le</th><th>Visa / Observation</th>
+          </tr>
+          ${lignes || '<tr><td colspan="7" style="text-align:center;color:#888">Aucun élève actif dans cette classe.</td></tr>'}
+        </table>
+        <p style="font-size:11px;color:#666;margin-top:14px">Document généré le ${dateCourte(new Date())} par la scolarité — confidentiel, usage interne.</p>
+        ${zoneSignature(c.identite, { qui: 'Le Secrétariat' })}`,
+      };
+    },
+  },
+  // ------------------------------------------------------------------
+  // AUDIT SECRÉTARIAT — registre des diplômés de l'année
+  // ------------------------------------------------------------------
+  {
+    code: 'registre_diplomes', libelle: 'Registre des diplômés (année)', domaine: 'Scolarité & pédagogie',
+    description: 'Registre officiel des élèves diplômés de l\'année scolaire (fin de cycle) — pour archives et suivi des certificats.',
+    entete: 'majeur', permission: 'bulletins.valider',
+    parametres: [],
+    generer: async (c) => {
+      const diplomes = await db.eleve.findMany({
+        where: { ecoleId: c.identite.ecoleId, statut: 'diplome', deletedAt: null },
+        orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+      });
+      const lignes = diplomes.map((e, i) => `
+        <tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td>${echapper(e.matricule ?? '—')}</td>
+          <td style="text-transform:uppercase">${echapper(e.nom)}</td>
+          <td>${echapper(e.prenom)}</td>
+          <td>${e.dateSortie ? dateFr(e.dateSortie) : '—'}</td>
+          <td style="width:26%">${echapper(e.motifSortie ?? 'fin de cycle')}</td>
+        </tr>`).join('');
+      return {
+        titre: 'Registre des diplômés',
+        sousTitre: `Année ${echapper(c.identite.anneeScolaire)}`,
+        corps: `
+        ${bandeauStats(c.identite, [
+          { libelle: 'Diplômés', valeur: String(diplomes.length), accent: true },
+          { libelle: 'Année scolaire', valeur: echapper(c.identite.anneeScolaire) },
+        ])}
+        <table class="data">
+          <tr style="background:#e8f2ef">
+            <th style="text-align:center">N°</th><th>Matricule</th><th>Nom</th><th>Prénom</th><th>Diplômé(e) le</th><th>Observation</th>
+          </tr>
+          ${lignes || '<tr><td colspan="6" style="text-align:center;color:#888">Aucun élève diplômé enregistré cette année.</td></tr>'}
+        </table>
+        <p style="font-size:11px;color:#666;margin-top:14px">Registre des certificats de fin d\'études délivrés — à conserver aux archives de l\'établissement.</p>
+        ${zoneSignature(c.identite, { qui: 'Le Chef d\'Établissement' })}`,
+      };
+    },
+  },
 ];
 
 export { selectMention, docsPedagogie };

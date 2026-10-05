@@ -30,7 +30,7 @@ export type ModeleDoc = {
   entete: 'majeur' | 'mineur' | 'financier';
   confidential?: boolean;
   filigrane?: string; // texte en filigrane (ex : 'Original')
-  permission?: string;
+  permission?: string | string[]; // une seule OU plusieurs (au moins une requise)
   parametres: ParamDoc[];
   generer(c: CtxDoc): Promise<{ titre: string; corps: string; sousTitre?: string }>;
 };

@@ -105,7 +105,7 @@ const docsVieScolaire: ModeleDoc[] = [
   {
     code: 'convocation_eleve', libelle: 'Convocation élève / parent', domaine: 'Vie scolaire & discipline',
     description: 'Convocation individuelle (discipline, résultats, entretien).',
-    entete: 'mineur', permission: 'vie_scolaire.gerer',
+    entete: 'mineur', permission: ['vie_scolaire.gerer', 'eleves.ecrire', 'secretariat.gerer'],
     parametres: [P.eleve(), P.texte('motif', 'Motif de la convocation'), P.date('date', 'Date'), P.texte('heure', 'Heure', 'Ex : 10h30'), P.texte('salle', 'Salle / bureau'), P.texte('presenceParent', 'Présence du parent', 'Ex : obligatoire', false)],
     generer: async (c) => {
       const el = await eleveComplet(c.identite.ecoleId, c.p.eleveId);

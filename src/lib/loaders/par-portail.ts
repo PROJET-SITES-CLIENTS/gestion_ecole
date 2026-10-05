@@ -680,6 +680,39 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
     promises.push((async () => {
       // SECRÉTARIAT : registre des visiteurs (accueil) — il peut y inscrire
       v.visiteurs = await db.visiteur.findMany({ where: { ecoleId }, orderBy: { dateHeureEntree: 'desc' }, take: 200 });
+      // AUDIT SECRÉTARIAT — guichet du quotidien : absents du jour (pour
+      // renseigner les familles au téléphone) + justificatifs reçus en
+      // attente de validation, et fournitures administratives (stock).
+      if (portal === 'secretariat') {
+        const debutJour = new Date(); debutJour.setHours(0, 0, 0, 0);
+        const finJour = new Date(debutJour); finJour.setDate(finJour.getDate() + 1);
+        const [absencesJour, justifsAttente, articlesStock] = await Promise.all([
+          db.presence.findMany({
+            where: {
+              dateSaisie: { gte: debutJour, lt: finJour },
+              statut: { in: ['absent', 'retard'] },
+              eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre },
+            },
+            take: 200,
+            include: {
+              eleve: { select: { id: true, nom: true, prenom: true, sexe: true, classeActuelle: { select: { libelle: true } } } },
+              seance: { select: { matiere: { select: { libelle: true } }, heureDebut: true } },
+              justification: { select: { statut: true } },
+            },
+            orderBy: { dateSaisie: 'desc' },
+          }),
+          db.justificationAbsence.findMany({
+            where: { statut: 'soumis', eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } },
+            orderBy: { dateSoumission: 'desc' },
+            take: 100,
+            include: { eleve: { select: { id: true, nom: true, prenom: true, classeActuelle: { select: { libelle: true } } } } },
+          }),
+          db.stockArticle.findMany({ where: { ecoleId }, orderBy: { nom: 'asc' }, take: 100 }),
+        ]);
+        v.absentsJour = absencesJour;
+        v.justificationsAttente = justifsAttente;
+        v.articlesStock = articlesStock;
+      }
     })());
   }
 
@@ -875,6 +908,7 @@ function vide(): Record<string, unknown> & { totaux: Record<string, number> } {
     examensOfficiels: [], inscriptionsExamen: [],
     documents: [], historiquesClasse: [], besoinsSpecifiques: [], amenagements: [],
     autorisationsSortie: [], sortiesAnticipees: [], visiteurs: [],
+    absentsJour: [], justificationsAttente: [],
     creneauxRdv: [], rdvs: [], reunionsCollectives: [], candidaturesAdmission: [],
     modelesMessage: [], utilisateurs: [],
     permissions: [], rolePermissions: [], utilisateurRoles: [], sessionsUtilisateur: [],

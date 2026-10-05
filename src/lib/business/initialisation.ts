@@ -134,7 +134,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
       surveillant: ['eleves.lire','presences.saisir','vie_scolaire.gerer','securite.gerer'],
       rh: ['eleves.lire','rh.gerer','communication.envoyer'],
       censeur: ['eleves.lire','bulletins.valider','presences.saisir','vie_scolaire.gerer','examens.gerer','edt.gerer','protection.gerer'],
-      secretariat: ['eleves.lire','eleves.ecrire','communication.envoyer'],
+      secretariat: ['eleves.lire','eleves.ecrire','presences.saisir','finances.voir','communication.envoyer','secretariat.gerer'],
       assistant_direction: ['eleves.lire','eleves.ecrire','presences.saisir','vie_scolaire.gerer','communication.envoyer'],
       infirmier: ['eleves.lire','sante.gerer'],
     };
@@ -142,7 +142,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     await tx.role.createMany({ data: ROLES.map((r) => ({ ecoleId: ecole.id, code: r.code, libelle: r.libelle })) });
     const rolesCrees = await tx.role.findMany({ where: { ecoleId: ecole.id } });
     const roleIds = new Map(rolesCrees.map((r) => [r.code, r.id]));
-    const PERMS = ['eleves.lire','eleves.ecrire','notes.saisir','bulletins.valider','finances.voir','finances.ecrire','finances.valider','presences.saisir','rh.gerer','communication.envoyer','admin.saas','vie_scolaire.gerer','securite.gerer','examens.gerer','services.gerer','edt.gerer','sante.gerer','salles.gerer','protection.gerer'];
+    const PERMS = ['eleves.lire','eleves.ecrire','notes.saisir','bulletins.valider','finances.voir','finances.ecrire','finances.valider','presences.saisir','rh.gerer','communication.envoyer','admin.saas','vie_scolaire.gerer','securite.gerer','examens.gerer','services.gerer','edt.gerer','sante.gerer','salles.gerer','protection.gerer','secretariat.gerer'];
     const permsExistants = await tx.permission.findMany({ where: { code: { in: PERMS } } });
     const manquants = PERMS.filter((c) => !permsExistants.some((p) => p.code === c));
     if (manquants.length) {

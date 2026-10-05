@@ -129,7 +129,7 @@ export async function listerCatalogueDocuments(): Promise<ActionResult> {
     return {
       ok: true,
       catalogue: CATALOGUE
-        .filter((m) => !m.permission || s.utilisateur.type === 'super_admin' || s.permissions.has(m.permission))
+        .filter((m) => !m.permission || s.utilisateur.type === 'super_admin' || (typeof m.permission === 'string' ? s.permissions.has(m.permission) : m.permission.some((pm) => s.permissions.has(pm))))
         .map((m) => ({
           code: m.code, libelle: m.libelle, domaine: m.domaine, description: m.description,
           entete: m.entete, confidential: !!m.confidential, parametres: m.parametres,

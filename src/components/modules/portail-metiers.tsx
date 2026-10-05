@@ -17,10 +17,13 @@ import { useEffect, useState } from 'react';
 import {
   Wallet, TrendingUp, TrendingDown, AlertTriangle, UserCheck, ClipboardList,
   GraduationCap, HeartPulse, CalendarDays, FileCheck, Users, Bell, Stethoscope,
-  CheckCircle2, Clock, PiggyBank, Award, Shield, Activity,
+  CheckCircle2, Clock, PiggyBank, Award, Shield, Activity, UserPlus, LogOut, Boxes, FileWarning,
 } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, useActionFeedback } from '@/components/shared-ui';
+import * as actions from '@/app/actions';
+import * as actionsExt from '@/app/actions/extensions';
 import { formatXOF, formatDate, formatDateTime } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import { toJour, toMois, nomComplet, etatAppels, joursEntre } from '@/lib/cockpit';
 
 type PortailMetier = 'comptabilite' | 'rh' | 'vie_scolaire' | 'secretariat' | 'sante' | 'assistant';
@@ -357,21 +360,158 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
       const c = creneauById.get(r.creneauRdvId);
       return c && new Date(c.date) >= (refDate ?? new Date()) && r.statut !== 'annule';
     });
-    const reunionsAVenir = reunions
-      .filter((r: any) => new Date(r.date) >= (refDate ?? new Date()))
-      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const elevesActifs = eleves.filter((e: any) => e.statut === 'actif');
     const documents = initialData.documents ?? [];
+    // AUDIT SECRÉTARIAT — guichet du quotidien
+    const retourSec = useActionFeedback();
+    const absentsJour = initialData.absentsJour ?? [];
+    const justifsAttente = initialData.justificationsAttente ?? [];
+    const articlesStock = initialData.articlesStock ?? [];
+    const piecesDossier = initialData.piecesDossier ?? [];
+    const dossiersIncomplets = new Set(piecesDossier.filter((p2: any) => p2.statut !== 'recue').map((p2: any) => p2.eleveId)).size;
+    const stocksAlerte = articlesStock.filter((a: any) => a.seuilAlerte != null && a.quantite <= a.seuilAlerte);
+    // M4 — effectifs par niveau + mouvements du mois
+    const debutMois = new Date(); debutMois.setDate(1); debutMois.setHours(0, 0, 0, 0);
+    const inscriptionsMois = elevesActifs.filter((e: any) => new Date(e.dateInscription) >= debutMois).length;
+    const sortiesMois = eleves.filter((e: any) => e.dateSortie && new Date(e.dateSortie) >= debutMois).length;
+    const diplomes = eleves.filter((e: any) => e.statut === 'diplome').sort((a: any, b: any) => new Date(b.dateSortie ?? 0).getTime() - new Date(a.dateSortie ?? 0).getTime());
+    const parNiveau = new Map<string, { niveau: string; classes: number; g: number; f: number }>();
+    for (const c of classes) {
+      const niv = niveauById.get(c.niveauId);
+      const cur = parNiveau.get(c.niveauId) ?? { niveau: niv?.libelle ?? c.niveauId, classes: 0, g: 0, f: 0 };
+      cur.classes++;
+      for (const e of elevesActifs.filter((el: any) => el.classeActuelleId === c.id)) {
+        if (e.sexe === 'M') cur.g++; else if (e.sexe === 'F') cur.f++;
+      }
+      parNiveau.set(c.niveauId, cur);
+    }
+    const peutEcrireDossier = initialData.session?.permissions?.includes?.('eleves.ecrire') ?? true;
 
     return (
       <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
         <PageHeader title={meta.titre} subtitle={`${meta.sous} · Année ${initialData.anneeScolaire?.libelle ?? '—'}`} />
-        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="mb-4">{retourSec.Message}</div>
+        <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
           <StatCard title="Élèves actifs" value={elevesActifs.length} sub={`${classes.length} classes`} icon={Users} color="emerald" />
-          <StatCard title="Candidatures en cours" value={candidaturesEnCours.length} sub={`${candidatures.length} au total`} icon={FileCheck} color={candidaturesEnCours.length ? 'amber' : 'gray'} />
+          <StatCard title="Absents du jour" value={absentsJour.filter((a: any) => a.statut === 'absent').length} sub={`${absentsJour.filter((a: any) => a.statut === 'retard').length} retard(s)`} icon={UserCheck} color={absentsJour.length ? 'rose' : 'gray'} />
+          <StatCard title="Dossiers incomplets" value={dossiersIncomplets} sub="pièces manquantes" icon={FileWarning} color={dossiersIncomplets ? 'amber' : 'gray'} />
+          <StatCard title="Candidatures en cours" value={candidaturesEnCours.length} icon={FileCheck} color={candidaturesEnCours.length ? 'amber' : 'gray'} />
           <StatCard title="RDV à venir" value={rdvsAVenir.length} sub="parents-enseignants" icon={CalendarDays} color="blue" />
-          <StatCard title="Réunions prévues" value={reunionsAVenir.length} sub="collectives" icon={CalendarDays} color="purple" />
+          <StatCard title="Fournitures en alerte" value={stocksAlerte.length} sub={`${articlesStock.length} articles`} icon={Boxes} color={stocksAlerte.length ? 'rose' : 'gray'} />
         </div>
+
+        {/* GUICHET DU JOUR : absents + justificatifs */}
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionBlock title="Absents et retards du jour" description="Pour renseigner les familles qui appellent au guichet">
+            {absentsJour.length === 0 ? (
+              <p className="text-sm text-gray-500">Aucune absence ni retard signalé aujourd&apos;hui (selon les appels des enseignants).</p>
+            ) : (
+              <DataTable
+                columns={[
+                  { key: 'eleve', label: 'Élève', render: (a) => a.eleve ? `${a.eleve.prenom} ${a.eleve.nom}` : '—' },
+                  { key: 'classe', label: 'Classe', render: (a) => a.eleve?.classeActuelle?.libelle ?? '—' },
+                  { key: 'statut', label: 'Statut', render: (a) => <StatusBadge statut={a.statut} /> },
+                  { key: 'matiere', label: 'Séance', render: (a) => a.seance ? `${a.seance.matiere?.libelle ?? ''} (${a.seance.heureDebut})` : '—' },
+                  { key: 'justif', label: 'Justificatif', render: (a) => a.justification ? <StatusBadge statut={a.justification.statut === 'valide' ? 'valide' : 'en_attente'} label={a.justification.statut === 'valide' ? 'Validé' : 'En attente'} /> : <span className="text-xs text-gray-400">aucun</span> },
+                ]}
+                rows={absentsJour.slice(0, 12)}
+                emptyLabel=""
+              />
+            )}
+          </SectionBlock>
+          <SectionBlock title="Justificatifs reçus — en attente de validation" description="Reçus au guichet ou déposés par les parents en ligne">
+            {justifsAttente.length === 0 ? (
+              <p className="text-sm text-gray-500">Aucun justificatif en attente.</p>
+            ) : (
+              <DataTable
+                columns={[
+                  { key: 'eleve', label: 'Élève', render: (j) => j.eleve ? `${j.eleve.prenom} ${j.eleve.nom}` : '—' },
+                  { key: 'date', label: 'Absent le', render: (j) => formatDate(j.dateAbsence) },
+                  { key: 'motif', label: 'Motif' },
+                  { key: 'actions', label: 'Actions', render: (j) => (
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" disabled={retourSec.pending} onClick={() => retourSec.run(() => actions.traiterJustification(j.id, 'valide'), 'Justificatif validé')}>Valider</Button>
+                      <Button size="sm" variant="outline" className="text-rose-600" disabled={retourSec.pending} onClick={() => retourSec.run(() => actions.traiterJustification(j.id, 'rejete'), 'Justificatif rejeté')}>Refuser</Button>
+                    </div>
+                  ) },
+                ]}
+                rows={justifsAttente.slice(0, 10)}
+                emptyLabel=""
+              />
+            )}
+          </SectionBlock>
+        </div>
+
+        {/* REGISTRE DES VISITEURS — écriture (accueil) */}
+        <SectionBlock
+          title="Registre des visiteurs — accueil"
+          description="Enregistrez chaque visiteur : pièce d'identité vérifiée et badge délivré"
+        >
+          <form className="flex flex-wrap items-center gap-1.5 mb-3" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const form = e.currentTarget; retourSec.run(async () => { const r = await actions.enregistrerVisiteur(fd); if (r?.ok) form.reset(); return r; }, 'Visiteur enregistré — badge délivré.'); }}>
+            <input name="nom" required placeholder="Nom du visiteur" className="h-8 border rounded px-2 text-sm w-40" />
+            <input name="motifVisite" required placeholder="Motif (parent, fournisseur…)" className="h-8 border rounded px-2 text-sm w-48" />
+            <select name="personneVisiteeId" className="h-8 border rounded px-2 text-sm w-40">
+              <option value="">Personne visitée…</option>
+              {personnels.slice(0, 50).map((pp: any) => <option key={pp.id} value={pp.id}>{pp.prenom} {pp.nom}</option>)}
+            </select>
+            <label className="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" name="pieceIdentiteVerifiee" className="h-3.5 w-3.5 accent-emerald-600" /> pièce vérifiée</label>
+            <Button type="submit" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700"><UserPlus className="h-3.5 w-3.5 mr-1" />Entrée</Button>
+          </form>
+          <DataTable
+            columns={[
+              { key: 'nom', label: 'Visiteur' },
+              { key: 'motifVisite', label: 'Motif' },
+              { key: 'pieceIdentiteVerifiee', label: 'Pièce', render: (v) => <StatusBadge statut={v.pieceIdentiteVerifiee ? 'valide' : 'en_attente'} label={v.pieceIdentiteVerifiee ? 'Vérifiée' : 'Non vérifiée'} /> },
+              { key: 'badgeNumero', label: 'Badge' },
+              { key: 'dateHeureEntree', label: 'Entrée', render: (v) => formatDateTime(v.dateHeureEntree) },
+              { key: 'dateHeureSortie', label: 'Sortie', render: (v) => v.dateHeureSortie ? formatDateTime(v.dateHeureSortie) : (
+                <Button size="sm" variant="outline" className="h-7" disabled={retourSec.pending} onClick={() => retourSec.run(() => actions.sortieVisiteur(v.id), 'Sortie enregistrée.')}>
+                  <LogOut className="h-3.5 w-3.5 mr-1" />Sortie
+                </Button>
+              ) },
+            ]}
+            rows={visiteurs.slice(0, 10)}
+            emptyLabel="Aucun visiteur"
+          />
+        </SectionBlock>
+
+        {/* M4 + M7 — effectifs et fournitures */}
+        <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SectionBlock title="Effectifs par niveau" description={`${elevesActifs.length} actifs · ${inscriptionsMois} inscription(s) et ${sortiesMois} sortie(s) ce mois`}>
+            <DataTable
+              columns={[
+                { key: 'niveau', label: 'Niveau' },
+                { key: 'classes', label: 'Classes' },
+                { key: 'g', label: 'Garçons' },
+                { key: 'f', label: 'Filles' },
+                { key: 'total', label: 'Total', render: (r) => <b>{r.g + r.f}</b> },
+              ]}
+              rows={[...parNiveau.values()]}
+              emptyLabel="Aucune classe"
+            />
+          </SectionBlock>
+          <SectionBlock title="Fournitures administratives" description={stocksAlerte.length ? `${stocksAlerte.length} article(s) sous le seuil d'alerte` : 'Stock du bureau'}>
+            {articlesStock.length === 0 ? (
+              <p className="text-sm text-gray-500">Aucun article de stock enregistré (géré par la comptabilité).</p>
+            ) : (
+              <DataTable
+                columns={[
+                  { key: 'nom', label: 'Article' },
+                  { key: 'quantite', label: 'Quantité', render: (a) => (
+                    <span className={a.seuilAlerte != null && a.quantite <= a.seuilAlerte ? 'text-rose-600 font-semibold' : ''}>
+                      {a.quantite}{a.unite ? ` ${a.unite}` : ''}
+                    </span>
+                  ) },
+                  { key: 'seuil', label: 'Seuil', render: (a) => a.seuilAlerte ?? '—' },
+                  { key: 'etat', label: 'État', render: (a) => a.seuilAlerte != null && a.quantite <= a.seuilAlerte ? <StatusBadge statut="absent" label="À commander" /> : <StatusBadge statut="valide" label="OK" /> },
+                ]}
+                rows={articlesStock}
+                emptyLabel=""
+              />
+            )}
+          </SectionBlock>
+        </div>
+
         <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title="Candidatures / admissions" description="Pipeline d'inscriptions">
             <DataTable
@@ -385,25 +525,54 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
               emptyLabel="Aucune candidature"
             />
           </SectionBlock>
-          <SectionBlock title="Rendez-vous parents-enseignants" description="Créneaux réservés">
-            <DataTable
-              columns={[
-                { key: 'parent', label: 'Parent', render: (r) => {
-                  const p = (initialData.parents ?? []).find((x: any) => x.id === r.parentId);
-                  return p ? `${p.prenom ?? ''} ${p.nom ?? ''}` : '—';
-                } },
-                { key: 'eleve', label: 'Élève', render: (r) => nomComplet(eleveById.get(r.eleveId)) },
-                { key: 'creneau', label: 'Créneau', render: (r) => {
-                  const c = creneauById.get(r.creneauRdvId);
-                  return c ? `${formatDate(c.date)} ${c.heureDebut}` : '—';
-                } },
-                { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
-              ]}
-              rows={rdvs.slice(0, 8)}
-              emptyLabel="Aucun rendez-vous"
-            />
+          <SectionBlock
+            title="Diplômés — registre"
+            description={`${diplomes.length} élève(s) diplômé(s)`}
+            action={peutEcrireDossier && dossiersIncomplets > 0 ? (
+              <Button
+                variant="outline" size="sm" className="border-amber-300 text-amber-800"
+                disabled={retourSec.pending}
+                onClick={() => retourSec.run(() => actionsExt.relancerToutesPieces(), undefined as never)}
+                title="Notifie toutes les familles ayant au moins une pièce manquante"
+              >
+                <Bell className="h-3.5 w-3.5 mr-1" /> Relancer les familles ({dossiersIncomplets})
+              </Button>
+            ) : undefined}
+          >
+            {diplomes.length === 0 ? (
+              <p className="text-sm text-gray-500">Aucun élève diplômé à ce jour (statut « diplôme » à la clôture de cycle).</p>
+            ) : (
+              <DataTable
+                columns={[
+                  { key: 'eleve', label: 'Élève', render: (d) => `${d.prenom} ${d.nom}` },
+                  { key: 'matricule', label: 'Matricule' },
+                  { key: 'sortie', label: 'Diplômé le', render: (d) => d.dateSortie ? formatDate(d.dateSortie) : '—' },
+                ]}
+                rows={diplomes.slice(0, 10)}
+                emptyLabel=""
+              />
+            )}
           </SectionBlock>
         </div>
+
+        <SectionBlock title="Rendez-vous parents-enseignants" description="Créneaux réservés">
+          <DataTable
+            columns={[
+              { key: 'parent', label: 'Parent', render: (r) => {
+                const p = (initialData.parents ?? []).find((x: any) => x.id === r.parentId);
+                return p ? `${p.prenom ?? ''} ${p.nom ?? ''}` : '—';
+              } },
+              { key: 'eleve', label: 'Élève', render: (r) => nomComplet(eleveById.get(r.eleveId)) },
+              { key: 'creneau', label: 'Créneau', render: (r) => {
+                const c = creneauById.get(r.creneauRdvId);
+                return c ? `${formatDate(c.date)} ${c.heureDebut}` : '—';
+              } },
+              { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
+            ]}
+            rows={rdvs.slice(0, 8)}
+            emptyLabel="Aucun rendez-vous"
+          />
+        </SectionBlock>
         <SectionBlock title="Réunions collectives" description="Conseils et rencontres prévues">
           <DataTable
             columns={[

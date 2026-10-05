@@ -65,6 +65,8 @@ import {
   statsAbsencesCore, notifierFamillesAbsencesCore,
   // AUDIT ENSEIGNANT — moteur de rythme pédagogique
   evaluerRythmeProgrammeCore, rythmeProgrammesCore,
+  // AUDIT SECRÉTARIAT — relances pièces, coordonnées familles
+  relancerPiecesDossierCore, relancerToutesPiecesCore, majCoordonneesFamilleCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -1434,4 +1436,46 @@ export async function evaluerRythmeProgramme(programmeId: string): Promise<Actio
 export async function rythmeProgrammes(): Promise<ActionResult> {
   try { const ctx = await ctxSession(); const r = await rythmeProgrammesCore(ctx); return { ok: true, rythmes: r }; }
   catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT SECRÉTARIAT — relances pièces dossier & coordonnées familles
+// ====================================================================
+
+export async function relancerPiecesDossier(eleveId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await relancerPiecesDossierCore(ctx, eleveId); revalidatePath('/'); return { ok: true, ...r, message: `Relance envoyée (${r.piecesManquantes.length} pièce(s) manquante(s)).` }; }
+  catch (e) { return echec(e); }
+}
+
+export async function relancerToutesPieces(): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await relancerToutesPiecesCore(ctx); return { ok: true, ...r, message: `${r.familles} famille(s) relancée(s).` }; }
+  catch (e) { return echec(e); }
+}
+
+export async function majCoordonneesFamille(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      eleveId: idReq,
+      adresseEleve: str,
+      contactUrgenceNom: str,
+      contactUrgenceTelephone: str,
+      parentId: str,
+      parentTelephone: str,
+      parentEmail: z.union([z.literal(''), z.string().email('email invalide')]).optional(),
+      parentProfession: str,
+    }).parse(Object.fromEntries(formData));
+    const r = await majCoordonneesFamilleCore(ctx, {
+      eleveId: d.eleveId,
+      adresseEleve: d.adresseEleve,
+      contactUrgenceNom: d.contactUrgenceNom,
+      contactUrgenceTelephone: d.contactUrgenceTelephone,
+      parentId: d.parentId || undefined,
+      parentTelephone: d.parentTelephone,
+      parentEmail: d.parentEmail,
+      parentProfession: d.parentProfession,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r, message: 'Coordonnées de la famille mises à jour.' };
+  } catch (e) { return echec(e); }
 }
