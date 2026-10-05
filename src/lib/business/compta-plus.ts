@@ -5,6 +5,7 @@
 
 import { db } from '@/lib/db';
 import { ActionError, Ctx, assertPermission, assertTenant, logAction } from './commun';
+import { genererEcrituresAutomatiquesCore } from './paie';
 
 /** Comptes complémentaires pour les briques avancées (idempotent). */
 const COMPTES_PLUS: Array<[string, string, string]> = [
@@ -152,6 +153,7 @@ export async function genererDotationsCore(ctx: Ctx, annee: number) {
   const immos = await db.immobilisation.findMany({ where: { ecoleId, statut: 'actif' } });
   let total = 0;
   const lignes: Array<{ compteId: string; libelle: string; debit: number; credit: number }> = [];
+  const dotationsParImmo = new Map<string, number>();
   for (const i of immos) {
     const anneeEcoulee = annee - i.dateAcquisition.getFullYear();
     if (anneeEcoulee < 0 || anneeEcoulee >= i.dureeAnnees) continue; // totalement amortie
@@ -160,6 +162,7 @@ export async function genererDotationsCore(ctx: Ctx, annee: number) {
     const dotation = Math.round((i.montantAcquisition / i.dureeAnnees) * prorata);
     if (dotation <= 0) continue;
     total += dotation;
+    dotationsParImmo.set(i.id, dotation);
     lignes.push({ compteId: (await compteNumero(ecoleId, '681')).id, libelle: `Dotation ${i.libelle.slice(0, 40)}`, debit: dotation, credit: 0 });
   }
   if (total <= 0) throw new ActionError(`Aucune dotation à passer pour ${annee}.`, 'SAISIE_VIDE');
@@ -167,8 +170,19 @@ export async function genererDotationsCore(ctx: Ctx, annee: number) {
   const e = await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, ecoleId, {
     journalCode: 'OD', piece, libelle: `Dotations aux amortissements ${annee}`, lignes,
   }), { timeout: 60000, maxWait: 15000 });
+  // AUDIT M4 — persistance du tableau d'amortissement (ligne par immo/année)
+  await db.ligneAmortissement.createMany({
+    data: [...dotationsParImmo.entries()].map(([immobilisationId, dotation]) => ({
+      ecoleId,
+      immobilisationId,
+      annee,
+      dotation,
+      cumul: dotation,
+    })),
+    skipDuplicates: true,
+  }).catch(() => undefined);
   await logAction(db, ecoleId, ctx.utilisateurId, 'immo.dotations', 'ecriture_comptable', e.id, { annee, total });
-  return { ecritureId: e.id, total };
+  return { ecritureId: e.id, total, lignesAmortissement: immos.length };
 }
 
 // --------------------------------------------------------------------
@@ -389,4 +403,88 @@ export async function genererBalanceCsvCore(ctx: Ctx, sectionId: string | null |
       `${c.numero};${c.libelle.replace(/;/g, ',')};${(c.debit / 100).toFixed(2)};${(c.credit / 100).toFixed(2)};${((c.debit - c.credit) / 100).toFixed(2)}`),
   ).join('\r\n');
   return { csv };
+}
+
+// --------------------------------------------------------------------
+// AUDIT COMPTA M1 — PROVISIONS POUR CRÉANCES DOUTEUSES (SYSCOHADA)
+// Échéances échues depuis plus de 90 jours non soldées → dotation
+// D 659 Charges provisionnées / C 431 Clients douteux, idempotente par
+// pièce PROV-<année>. Comptes créés à la volée si absents du plan.
+// --------------------------------------------------------------------
+
+export async function provisionnerCreancesDouteusesCore(ctx: Ctx) {
+  assertPermission(ctx, 'finances.valider');
+  if (!ctx.ecoleId) throw new ActionError('Aucune école associée.', 'ECOLE_ABSENTE');
+  const annee = new Date().getFullYear();
+  const piece = `PROV-${annee}`;
+  const deja = await db.ecritureComptable.findFirst({ where: { ecoleId: ctx.ecoleId, numeroPiece: piece } });
+  if (deja) throw new ActionError(`Les provisions ${annee} sont déjà passées (pièce ${piece}).`, 'DEJA_TRAITE');
+  // Créances +90 jours
+  const limite = new Date(Date.now() - 90 * 86400000);
+  const echues = await db.echeanceFrais.findMany({
+    where: { statut: { in: ['impayee', 'partiel'] }, dateEcheance: { lt: limite }, eleve: { ecoleId: ctx.ecoleId, deletedAt: null, statut: 'actif' } },
+    select: { montant: true, remise: true, montantPaye: true },
+  });
+  const totalDu = echues.reduce((sum, e) => sum + (e.montant - (e.remise ?? 0) - (e.montantPaye ?? 0)), 0);
+  if (echues.length === 0 || totalDu <= 0) {
+    throw new ActionError('Aucune créance douteuse (+90 jours) à provisionner.', 'RIEN_A_PROVISIONNER');
+  }
+  // Comptes 659/431 créés à la volée
+  async function compteOuCreer(numero: string, libelle: string, type: string) {
+    const existe = await db.compteComptable.findFirst({ where: { ecoleId: ctx.ecoleId!, numero } });
+    if (existe) return existe;
+    return db.compteComptable.create({ data: { ecoleId: ctx.ecoleId!, numero, libelle, type, solde: 0, devise: 'XOF', actif: true } });
+  }
+  const c659 = await compteOuCreer('659', 'Charges provisionnées d\u2019exploitation', 'charge');
+  const c431 = await compteOuCreer('431', 'Clients — créances douteuses', 'actif');
+  const journalOD = await db.journalComptable.findFirst({ where: { ecoleId: ctx.ecoleId, code: 'OD' } });
+  if (!journalOD) throw new ActionError('Journal OD introuvable — initialisez le plan comptable.', 'PLAN_VIDE');
+  await passerEcritureInterne(db as never, ctx, ctx.ecoleId!, {
+    journalCode: 'OD', libelle: `Provision créances douteuses ${annee} (${echues.length} créance(s) +90 j)`, piece,
+    lignes: [
+      { compteId: c659.id, libelle: 'Dotation aux provisions', debit: totalDu, credit: 0 },
+      { compteId: c431.id, libelle: 'Clients douteux', debit: 0, credit: totalDu },
+    ],
+  });
+  await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'compta.provisions_creances', undefined, undefined, { creances: echues.length, totalDu });
+  return { piece, creancesProvisionnees: echues.length, totalProvisionne: totalDu };
+}
+
+// --------------------------------------------------------------------
+// AUDIT COMPTA M2 — CLÔTURE MENSUELLE (revue périodique)
+// Rattrape toutes les écritures automatiques (encaissements + dépenses)
+// du mois puis produit la balance du mois. Sans verrouillage (revue).
+// --------------------------------------------------------------------
+
+export async function clotureMensuelleCore(ctx: Ctx, periode?: string) {
+  assertPermission(ctx, 'finances.valider');
+  const mois = periode ?? new Date().toISOString().slice(0, 7);
+  const r = await genererEcrituresAutomatiquesCore(ctx as never, mois);
+  const debut = new Date(mois + '-01T00:00:00');
+  const fin = new Date(debut); fin.setMonth(fin.getMonth() + 1);
+  const ecritures = await db.ecritureComptable.findMany({
+    where: { ecoleId: ctx.ecoleId!, date: { gte: debut, lt: fin }, statut: 'valide' },
+    include: { lignes: true },
+  });
+  const totalDebit = ecritures.reduce((s2, e) => s2 + e.lignes.reduce((x, l) => x + l.debit, 0), 0);
+  await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'compta.cloture_mensuelle', undefined, undefined, { mois, ecritures: ecritures.length });
+  return { periode: mois, ecrituresGenerees: r, ecrituresMois: ecritures.length, totalDebitMois: totalDebit, message: `Revue du mois ${mois} : ${ecritures.length} écriture(s), débit total ${(totalDebit / 100).toLocaleString('fr-FR')} F.` };
+}
+
+// --------------------------------------------------------------------
+// AUDIT COMPTA M5 — ÉTAT TVA (collectée/déductible/net à payer)
+// --------------------------------------------------------------------
+
+export async function etatTvaCore(ctx: Ctx, periode?: string) {
+  assertPermission(ctx, 'finances.voir');
+  const mois = periode ?? new Date().toISOString().slice(0, 7);
+  const debut = new Date(mois + '-01T00:00:00');
+  const fin = new Date(debut); fin.setMonth(fin.getMonth() + 1);
+  const lignes = await db.ligneEcriture.findMany({
+    where: { ecriture: { ecoleId: ctx.ecoleId!, date: { gte: debut, lt: fin }, statut: 'valide' }, compte: { numero: { in: ['443', '445'] } } },
+    include: { compte: true },
+  });
+  const tvaCollectee = lignes.filter((l) => l.compte.numero === '443').reduce((s2, l) => s2 + l.credit - l.debit, 0);
+  const tvaDeductible = lignes.filter((l) => l.compte.numero === '445').reduce((s2, l) => s2 + l.debit - l.credit, 0);
+  return { periode: mois, tvaCollectee, tvaDeductible, netAPayer: tvaCollectee - tvaDeductible };
 }

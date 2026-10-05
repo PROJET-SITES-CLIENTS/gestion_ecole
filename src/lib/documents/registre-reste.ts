@@ -568,6 +568,61 @@ const docsFinances: ModeleDoc[] = [
       };
     },
   },
+
+  // AUDIT COMPTA M3 - etats financiers imprimables
+  {
+    code: 'bilan_exercice', libelle: "Bilan de fin d’exercice (imprimable)", domaine: 'Finances',
+    description: 'Bilan simplifié SYSCOHADA imprimable : actif / passif depuis les soldes réels des comptes.',
+    entete: 'financier', permission: 'finances.voir',
+    parametres: [],
+    generer: async (c) => {
+      const comptes = await (db as any).compteComptable.findMany({ where: { ecoleId: c.identite.ecoleId, actif: true }, orderBy: { numero: 'asc' } });
+      const solde = (num: string) => comptes.find((x: any) => x.numero === num)?.solde ?? 0;
+      const actif: Array<[string, number]> = [['Tresorerie - Caisse (571)', solde('571')], ['Tresorerie - Banques (521)', solde('521')], ['Creances clients - familles (411)', solde('411')], ['Clients douteux (431)', solde('431')], ['Immobilisations brutes (241)', solde('241')], ['Amortissements cumules (281)', -solde('281')]];
+      const passif: Array<[string, number]> = [['Capital (101)', solde('101')], ['Resultat de l’exercice (120)', solde('120')], ['Reports a nouveau (110)', solde('110')], ['Fournisseurs (401)', solde('401')], ['Personnel - remunerations dues (421)', solde('421')], ['Etat - impots et taxes (441)', solde('441')], ['TVA a payer (443)', solde('443')]];
+      const totalA = actif.reduce((s2, [, v]) => s2 + v, 0);
+      const totalP = passif.reduce((s2, [, v]) => s2 + v, 0);
+      const fmt = (n: number) => (Math.abs(n) / 100).toLocaleString('fr-FR') + ' F CFA';
+      const ligne = (l: Array<[string, number]>) => l.map(([k, v]) => `<tr><td>${echapper(k)}</td><td style="text-align:right">${fmt(v)}</td></tr>`).join('');
+      return {
+        titre: 'Bilan de fin d’exercice',
+        sousTitre: `Exercice ${new Date().getFullYear()} - édité le ${dateCourte(new Date())}`,
+        corps: `
+        <div class="section-titre">ACTIF</div>
+        <table class="data">${ligne(actif)}<tr style="background:#e8f2ef"><td style="font-weight:700">TOTAL ACTIF</td><td style="text-align:right;font-weight:700">${fmt(totalA)}</td></tr></table>
+        <div class="section-titre">PASSIF</div>
+        <table class="data">${ligne(passif)}<tr style="background:#e8f2ef"><td style="font-weight:700">TOTAL PASSIF</td><td style="text-align:right;font-weight:700">${fmt(totalP)}</td></tr></table>
+        <p style="font-size:11px;color:#666;margin-top:12px">Bilan simplifié établi sur les soldes des comptes — pour signature de la direction.</p>
+        ${zoneSignature(c.identite, { qui: 'Le Chef d’Établissement' })}`,
+      };
+    },
+  },
+  {
+    code: 'compte_resultat_doc', libelle: 'Compte de résultat (imprimable)', domaine: 'Finances',
+    description: 'Compte de résultat SYSCOHADA imprimable : produits / charges et résultat net depuis les soldes réels.',
+    entete: 'financier', permission: 'finances.voir',
+    parametres: [],
+    generer: async (c) => {
+      const comptes = await (db as any).compteComptable.findMany({ where: { ecoleId: c.identite.ecoleId, actif: true } });
+      const solde = (num: string) => comptes.find((x: any) => x.numero === num)?.solde ?? 0;
+      const produits: Array<[string, string]> = [['701', 'Ventes de scolarites'], ['702', 'Ventes cantine'], ['703', 'Ventes transport'], ['771', 'Produits divers']];
+      const charges: Array<[string, string]> = [['601', 'Achats fournitures'], ['602', 'Achats materiel'], ['605', 'Achats denrees'], ['608', 'Energie/eau'], ['618', 'Autres charges'], ['624', 'Transport'], ['628', 'Entretien'], ['641', 'Remunerations du personnel'], ['644', 'Charges sociales'], ['659', 'Charges provisionnees'], ['671', 'Frais bancaires'], ['681', 'Dotations aux amortissements']];
+      const totalP2 = produits.reduce((s2, [n]) => s2 + solde(n), 0);
+      const totalC = charges.reduce((s2, [n]) => s2 + solde(n), 0);
+      const fmt = (n: number) => (n / 100).toLocaleString('fr-FR') + ' F CFA';
+      return {
+        titre: 'Compte de résultat',
+        sousTitre: `Exercice ${new Date().getFullYear()}`,
+        corps: `
+        <div class="section-titre">PRODUITS</div>
+        <table class="data">${produits.filter(([n]) => solde(n) !== 0).map(([n, l]) => `<tr><td>${echapper(l)} (${n})</td><td style="text-align:right">${fmt(solde(n))}</td></tr>`).join('') || '<tr><td colspan="2" style="color:#888">Aucun produit</td></tr>'}<tr style="background:#e8f2ef"><td style="font-weight:700">TOTAL PRODUITS</td><td style="text-align:right;font-weight:700">${fmt(totalP2)}</td></tr></table>
+        <div class="section-titre">CHARGES</div>
+        <table class="data">${charges.filter(([n]) => solde(n) !== 0).map(([n, l]) => `<tr><td>${echapper(l)} (${n})</td><td style="text-align:right">${fmt(solde(n))}</td></tr>`).join('') || '<tr><td colspan="2" style="color:#888">Aucune charge</td></tr>'}<tr style="background:#e8f2ef"><td style="font-weight:700">TOTAL CHARGES</td><td style="text-align:right;font-weight:700">${fmt(totalC)}</td></tr></table>
+        <table class="data" style="margin-top:10px"><tr style="background:#e8f2ef"><td style="font-weight:700">RESULTAT DE L’EXERCICE ${totalP2 - totalC >= 0 ? '(BENEFICE)' : '(PERTE)'}</td><td style="text-align:right;font-weight:700;font-size:1.05em">${fmt(totalP2 - totalC)}</td></tr></table>
+        ${zoneSignature(c.identite, { qui: 'Le Chef d’Établissement' })}`,
+      };
+    },
+  },
 ];
 
 // ====================================================================

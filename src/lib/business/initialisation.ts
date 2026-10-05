@@ -116,10 +116,10 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     });
 
     // 4) Rôles + permissions + matrice
-    const ROLES: Array<{ code: string; libelle: string }> = [
+    const ROLES: Array<{ code: string; libelle: string; twofaRequis?: boolean }> = [
       { code: 'direction', libelle: 'Direction' },
       { code: 'enseignant', libelle: 'Enseignant' },
-      { code: 'comptabilite', libelle: 'Comptabilité' },
+      { code: 'comptabilite', libelle: 'Comptabilité', twofaRequis: true },
       { code: 'surveillant', libelle: 'Surveillant' },
       { code: 'rh', libelle: 'Ressources Humaines' },
       { code: 'censeur', libelle: 'Censeur' },
@@ -130,7 +130,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     const MATRICE: Record<string, string[]> = {
       direction: ['eleves.lire','eleves.ecrire','bulletins.valider','finances.voir','finances.ecrire','finances.valider','rh.gerer','communication.envoyer','admin.saas','vie_scolaire.gerer','securite.gerer','examens.gerer','services.gerer','edt.gerer','sante.gerer','salles.gerer','protection.gerer'],
       enseignant: ['eleves.lire','notes.saisir','presences.saisir','vie_scolaire.gerer','edt.gerer'],
-      comptabilite: ['finances.voir','finances.ecrire','finances.valider'],
+      comptabilite: ['finances.voir','finances.ecrire','finances.valider', 'eleves.lire'],
       surveillant: ['eleves.lire','presences.saisir','vie_scolaire.gerer','securite.gerer'],
       rh: ['eleves.lire','rh.gerer','communication.envoyer'],
       censeur: ['eleves.lire','bulletins.valider','presences.saisir','vie_scolaire.gerer','examens.gerer','edt.gerer','protection.gerer', 'notes.saisir'],
@@ -139,7 +139,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
       infirmier: ['eleves.lire','sante.gerer'],
     };
     // BATCHÉ : 1 createMany par famille + relecture des ids
-    await tx.role.createMany({ data: ROLES.map((r) => ({ ecoleId: ecole.id, code: r.code, libelle: r.libelle })) });
+    await tx.role.createMany({ data: ROLES.map((r) => ({ ecoleId: ecole.id, code: r.code, libelle: r.libelle, ...(r.twofaRequis ? { twofaRequis: r.twofaRequis } : {}) })) });
     const rolesCrees = await tx.role.findMany({ where: { ecoleId: ecole.id } });
     const roleIds = new Map(rolesCrees.map((r) => [r.code, r.id]));
     const PERMS = ['eleves.lire','eleves.ecrire','notes.saisir','bulletins.valider','finances.voir','finances.ecrire','finances.valider','presences.saisir','rh.gerer','communication.envoyer','admin.saas','vie_scolaire.gerer','securite.gerer','examens.gerer','services.gerer','edt.gerer','sante.gerer','salles.gerer','protection.gerer','secretariat.gerer'];

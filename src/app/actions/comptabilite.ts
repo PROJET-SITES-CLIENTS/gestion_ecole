@@ -12,7 +12,8 @@ import { db } from '@/lib/db';
 import { avecRetryBdd } from '@/lib/retry-bdd';
 import { versCentimes } from '@/lib/format';
 import {
-  configurerSectionsCore, listerSectionsCore, initialiserPlanComptableCore,
+  configurerSectionsCore, listerSectionsCore, initialiserPlanComptableCore, creerFournisseurCore,
+  provisionnerCreancesDouteusesCore, clotureMensuelleCore, etatTvaCore,
   ouvrirCaisseCore, operationCaisseCore, fermerCaisseCore,
   creerCommandeCore, changerStatutCommandeCore, enregistrerReceptionCore,
   enregistrerFactureFournisseurCore, payerFournisseurCore,
@@ -252,5 +253,34 @@ export async function creerBudget(formData: FormData): Promise<ActionResult> {
 
 export async function cloturerExercice(dateDebut: string, dateFin: string): Promise<ActionResult> {
   try { const { ctx } = await ctxSession(); const r = await cloturerExerciceComptableCore(ctx, new Date(dateDebut), new Date(dateFin)); revalidatePath('/'); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function creerFournisseur(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      nom: z.string().min(2), type: z.string().optional(), contact: z.string().optional(),
+      email: z.string().email().optional().or(z.literal('')), telephone: z.string().optional(),
+      adresse: z.string().optional(), rib: z.string().optional(),
+    }).parse(Object.fromEntries(formData));
+    const r = await creerFournisseurCore(ctx.ctx, { ...d, email: d.email || undefined });
+    revalidatePath('/');
+    return { ok: true, ...r, message: `Fournisseur « ${r.nom} » créé.` };
+  } catch (e) { return echec(e); }
+}
+
+export async function provisionnerCreances(): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await provisionnerCreancesDouteusesCore(ctx.ctx); revalidatePath('/'); return { ok: true, ...r, message: `Provisions passées : ${r.creancesProvisionnees} créance(s), ${(r.totalProvisionne / 100).toLocaleString('fr-FR')} F (pièce ${r.piece}).` }; }
+  catch (e) { return echec(e); }
+}
+
+export async function clotureMensuelle(periode?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await clotureMensuelleCore(ctx.ctx, periode); return { ok: true, ...r }; }
+  catch (e) { return echec(e); }
+}
+
+export async function etatTva(periode?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await etatTvaCore(ctx.ctx, periode); return { ok: true, ...r }; }
   catch (e) { return echec(e); }
 }

@@ -56,7 +56,7 @@ export const PERMISSIONS_STANDARDS: Array<{ code: string; libelle: string; modul
 const MATRICE_ROLES: Record<string, string[]> = {
   direction: ['eleves.lire', 'eleves.ecrire', 'bulletins.valider', 'finances.voir', 'finances.ecrire', 'finances.valider', 'rh.gerer', 'communication.envoyer', 'admin.saas', 'vie_scolaire.gerer', 'securite.gerer', 'examens.gerer', 'services.gerer', 'edt.gerer', 'sante.gerer', 'salles.gerer', 'protection.gerer'],
   enseignant: ['eleves.lire', 'notes.saisir', 'presences.saisir', 'vie_scolaire.gerer', 'edt.gerer'],
-  comptabilite: ['finances.voir', 'finances.ecrire', 'finances.valider'],
+  comptabilite: ['finances.voir', 'finances.ecrire', 'finances.valider', 'eleves.lire'],
   surveillant: ['eleves.lire', 'presences.saisir', 'vie_scolaire.gerer', 'securite.gerer'],
   rh: ['eleves.lire', 'rh.gerer', 'communication.envoyer'],
   censeur: ['eleves.lire', 'bulletins.valider', 'presences.saisir', 'vie_scolaire.gerer', 'examens.gerer', 'edt.gerer', 'protection.gerer', 'notes.saisir'],

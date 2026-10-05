@@ -97,7 +97,7 @@ const MODULES: ModuleDef[] = [
   { id: 'documents', label: 'Documents', icon: FileText, portals: ['super_admin', 'direction', 'secretariat', 'comptabilite', 'rh', 'sante', 'enseignant', 'vie_scolaire', 'assistant'] },
   { id: 'etablissement', label: 'Paramètres', icon: Settings2, portals: ['super_admin', 'direction'] },
   { id: 'saas', label: 'Couche SaaS', icon: Building2, portals: ['super_admin'] },
-  { id: 'eleves', label: 'Élèves', icon: Users, portals: ['super_admin', 'direction', 'enseignant', 'secretariat', 'assistant'] },
+  { id: 'eleves', label: 'Élèves', icon: Users, portals: ['super_admin', 'direction', 'enseignant', 'secretariat', 'assistant', 'comptabilite'] },
   { id: 'personnel', label: 'Personnel', icon: GraduationCap, portals: ['super_admin', 'direction', 'rh'] },
   { id: 'pedagogique', label: 'Pédagogique', icon: BookOpen, portals: ['super_admin', 'direction', 'enseignant'] },
   { id: 'conseils', label: 'Conseils de classe', icon: Gavel, portals: ['direction', 'super_admin'] },

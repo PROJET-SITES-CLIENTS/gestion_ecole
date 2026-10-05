@@ -15,7 +15,7 @@ import { ActionError, Ctx, assertPermission, assertTenant, logAction, tranchesSe
 // --------------------------------------------------------------------
 
 export async function configurerSectionsCore(ctx: Ctx, separees: boolean) {
-  assertPermission(ctx, 'admin.saas');
+  assertPermission(ctx, 'finances.valider');
   const ecoleId = ctx.ecoleId!;
   const existantes = await db.sectionComptable.findMany({ where: { ecoleId } });
   if (existantes.length) throw new ActionError('Sections déjà configurées.', 'DEJA_EXISTANT');
@@ -64,7 +64,7 @@ export async function initialiserPlanComptableCore(ctx: Ctx) {
     data: PLAN_ECOLE.map(([numero, libelle, type]) => ({ ecoleId, numero, libelle, type, solde: 0, devise: 'XOF', actif: true })),
   });
   // Journals standards
-  const journaux = [['VE', 'Ventes (recettes)', 'ventes'], ['AC', 'Achats', 'achats'], ['CA', 'Caisse', 'caisse'], ['BQ', 'Banque', 'banque'], ['OD', 'Opérations diverses', 'divers']];
+  const journaux = [['VE', 'Ventes (recettes)', 'ventes'], ['ACH', 'Achats', 'achats'], ['CA', 'Caisse', 'caisse'], ['BQ', 'Banque', 'banque'], ['OD', 'Opérations diverses', 'divers']];
   for (const [code, libelle, type] of journaux) {
     await db.journalComptable.upsert({
       where: { ecoleId_code: { ecoleId, code } },
@@ -505,4 +505,30 @@ export async function etatCaisseCore(ctx: Ctx) {
   const entrees = session.operations.filter((o) => o.type === 'entree').reduce((s, o) => s + o.montant, 0);
   const sorties = session.operations.filter((o) => o.type === 'sortie').reduce((s, o) => s + o.montant, 0);
   return { session, operations: session.operations, entrees, sorties };
+}
+
+// --------------------------------------------------------------------
+// AUDIT COMPTA — création de fournisseur (la chaîne achats en avait besoin)
+// --------------------------------------------------------------------
+
+export async function creerFournisseurCore(ctx: Ctx, input: { nom: string; type?: string; contact?: string; email?: string; telephone?: string; adresse?: string; rib?: string }) {
+  assertPermission(ctx, 'finances.ecrire');
+  if (!ctx.ecoleId) throw new ActionError('Aucune école associée.', 'ECOLE_ABSENTE');
+  if (!input.nom?.trim()) throw new ActionError('Le nom du fournisseur est obligatoire.', 'CHAMP_MANQUANT');
+  const existant = await db.fournisseur.findFirst({ where: { ecoleId: ctx.ecoleId, nom: input.nom.trim(), statut: 'actif' } });
+  if (existant) throw new ActionError(`Le fournisseur « ${input.nom.trim()} » existe déjà.`, 'DOUBLON');
+  const f = await db.fournisseur.create({
+    data: {
+      ecoleId: ctx.ecoleId,
+      nom: input.nom.trim(),
+      type: input.type ?? 'fournisseur_prestataire',
+      contact: input.contact?.trim() || null,
+      email: input.email?.trim() || null,
+      telephone: input.telephone?.trim() || null,
+      adresse: input.adresse?.trim() || null,
+      rib: input.rib?.trim() || null,
+    },
+  });
+  await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'fournisseur.creation', 'fournisseur', f.id, { nom: f.nom });
+  return { fournisseurId: f.id, nom: f.nom };
 }

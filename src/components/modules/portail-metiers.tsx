@@ -105,6 +105,23 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
   // ============================ COMPTABILITÉ ============================
   if (portal === 'comptabilite') {
     const encaisseMois = paiements.filter((p: any) => moisActif && toMois(p.datePaiement) === moisActif).reduce((s: number, p: any) => s + p.montant, 0);
+    // AUDIT COMPTA — retards pour relance cockpit
+    const aujCpta = new Date();
+    const retardsPaiementCpta = (() => {
+      const parEleve = new Map<string, { eleveId: string; eleve: string; classe: string; restant: number }>();
+      for (const ech of (initialData.echeances ?? [])) {
+        if (!['impayee', 'partiel'].includes(ech.statut ?? '')) continue;
+        if (new Date(ech.dateEcheance) >= aujCpta) continue;
+        const el = (initialData.eleves ?? []).find((x: any) => x.id === ech.eleveId);
+        if (!el) continue;
+        const restant = (ech.montant ?? 0) - (ech.remise ?? 0) - (ech.montantPaye ?? 0);
+        if (restant <= 0) continue;
+        const cur = parEleve.get(ech.eleveId) ?? { eleveId: ech.eleveId, eleve: `${el.prenom} ${el.nom}`, classe: (initialData.classes ?? []).find((c: any) => c.id === el.classeActuelleId)?.libelle ?? '—', restant: 0 };
+        cur.restant += restant;
+        parEleve.set(ech.eleveId, cur);
+      }
+      return [...parEleve.values()].sort((a, b) => b.restant - a.restant);
+    })();
     const depensesMois = depenses.filter((d: any) => moisActif && toMois(d.dateDepense) === moisActif).reduce((s: number, d: any) => s + d.montant, 0);
     const aValider = depenses.filter((d: any) => !d.validee);
     const retardataires = refDate
@@ -132,7 +149,16 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
           <StatCard title="Restant dû scolarité" value={formatXOF(restantDu, devise)} sub={`${retardataires.length} échéance(s) en retard`} icon={PiggyBank} color={retardataires.length ? 'rose' : 'emerald'} />
           <StatCard title="Solde du mois" value={formatXOF(encaisseMois - depensesMois, devise)} sub="recettes − dépenses" icon={Wallet} color={encaisseMois - depensesMois >= 0 ? 'emerald' : 'rose'} />
         </div>
-        <SectionBlock title="Retards de paiement — à relancer" description="Trié par ancienneté de retard">
+        <SectionBlock title="Retards de paiement — à relancer" description="Trié par ancienneté de retard"
+          action={
+            retardsPaiementCpta.length > 0 ? (
+              <Button variant="outline" size="sm" className="border-amber-300 text-amber-800"
+                onClick={() => { if (window.confirm(`Relancer ${retardsPaiementCpta.length} famille(s) pour impayés ?`)) actionsExt.relancerTousImpayes().then((r: any) => { if (r?.ok) alert(r.message ?? 'Relances envoyées.'); }); }}>
+                <Bell className="h-3.5 w-3.5 mr-1" /> Relancer les familles
+              </Button>
+            ) : undefined
+          }
+        >
           <DataTable
             columns={[
               { key: 'eleve', label: 'Élève' },

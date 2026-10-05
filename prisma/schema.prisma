@@ -152,6 +152,7 @@ model Ecole {
   groupes                    Groupe[]
   avoirScolarites            AvoirScolarite[]
   deleguesClasse  DelegueClasse[]
+  lignesAmortissement LigneAmortissement[]
 }
 
 model PlanTarifaire {
@@ -308,6 +309,7 @@ model Immobilisation {
   sectionComptableId String?
   createdAt          DateTime  @default(now())
   @@index([ecoleId, statut])
+  lignesAmortissement LigneAmortissement[]
 }
 
 model RapprochementBancaire {
@@ -4049,5 +4051,21 @@ model DelegueClasse {
   dateDesignation DateTime @default(now())
 
   @@unique([classeId, eleveId, annee])
+  @@index([ecoleId, annee])
+}
+
+// AUDIT COMPTA M4 — lignes d'amortissement persistées (tableau par immobilisation)
+model LigneAmortissement {
+  id              String   @id @default(cuid())
+  ecoleId         String
+  ecole           Ecole    @relation(fields: [ecoleId], references: [id])
+  immobilisationId String
+  immobilisation  Immobilisation @relation(fields: [immobilisationId], references: [id])
+  annee           Int
+  dotation        Int // centimes
+  cumul           Int // centimes
+  datePassage     DateTime @default(now())
+
+  @@unique([immobilisationId, annee])
   @@index([ecoleId, annee])
 }

@@ -570,6 +570,21 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
           db.budget.findMany({ where: { ecoleId }, include: { lignes: true, anneeScolaire: true }, orderBy: { dateDebut: 'desc' } }),
         ]);
         v.immobilisations = immobilisations; v.rapprochementsBancaires = rapprochementsBancaires; v.budgets = budgets;
+        // AUDIT COMPTA — l'onglet Comptabilité du module Finances doit être
+        // alimenté pour le PORTAIL comptable (pas seulement direction/v4)
+        if (portal === 'comptabilite') {
+          const [ecrituresComptable, journauxComptables, comptesComptables] = await Promise.all([
+            db.ecritureComptable.findMany({
+              where: { ecoleId }, orderBy: { date: 'desc' }, take: 200,
+              include: { lignes: { include: { compte: true } }, journal: true },
+            }),
+            db.journalComptable.findMany({ where: { ecoleId } }),
+            db.compteComptable.findMany({ where: { ecoleId }, orderBy: { numero: 'asc' } }),
+          ]);
+          v.ecrituresComptable = ecrituresComptable;
+          (v as any).journauxComptables = journauxComptables;
+          (v as any).comptesComptables = comptesComptables;
+        }
       }
     })());
   }

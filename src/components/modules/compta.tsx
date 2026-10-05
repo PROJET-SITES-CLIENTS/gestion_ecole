@@ -13,6 +13,7 @@ import { ModalForm, CreateButton } from '@/components/shared-ui';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as ext from '@/app/actions/comptabilite';
+import * as ext2 from '@/app/actions/completions';
 
 const fmt = (c: number) => `${(c / 100).toLocaleString('fr-FR')} F`;
 
@@ -88,6 +89,22 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             <SectionBlock title="Plan comptable" description="Génération du plan SYSCOHADA adapté aux écoles (caisse, banque, clients, fournisseurs, achats, ventes scolarité…) + journaux standards.">
               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending} onClick={() => run(retours.c, 'Plan comptable créé', () => ext.initialiserPlanComptable())}>
                 <Plus className="h-3.5 w-3.5 mr-1" />Initialiser le plan comptable
+              </Button>
+              <Button
+                variant="outline" size="sm" className="ml-2" disabled={pending}
+                onClick={() => run(retours.c, 'Plan complété : comptes 241/281/681/110 + journal Paie.', () => ext.completerPlanComptable())}
+                title="Ajoute les comptes d'immobilisations/amortissements et le journal de paie"
+              >
+                Compléter le plan
+              </Button>
+            </SectionBlock>
+          )}
+          {/* AUDIT COMPTA — bouton Compléter le plan quand le plan de base existe déjà */}
+          {data.planInitialise && !(data.comptes ?? []).some((c: any) => c.numero === '241') && (
+            <SectionBlock title="Extension du plan comptable" description="Comptes d'immobilisations (241), amortissements cumulés (281), dotations (681), reports à nouveau (110) + journal de paie (PA)">
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending}
+                onClick={() => run(retours.c, 'Plan complété : comptes 241/281/681/110 + journal Paie.', () => ext.completerPlanComptable())}>
+                <Plus className="h-3.5 w-3.5 mr-1" />Compléter le plan
               </Button>
             </SectionBlock>
           )}
@@ -182,7 +199,36 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             {(data.commandes ?? []).map((c: any) => (
               <div key={c.id} className="border rounded-lg p-3 mb-3">
                 <div className="flex flex-wrap justify-between gap-2 items-center mb-2">
-                  <div className="text-sm"><b>{c.numero}</b> — {c.fournisseur?.nom} · {fmt(c.montantTotal)}</div>
+                  <div className="text-sm"><b>{c.numero}</b> — {c.fournisseur?.nom} · {fmt(c.montantTotal)}<SectionBlock title="Fournisseurs — répertoire" description={`${fournisseurs.length} fournisseur(s) actif(s)`}>
+              <ModalForm
+                trigger={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1" />Nouveau fournisseur</Button>}
+                title="Créer un fournisseur"
+                fields={[
+                  { name: 'nom', label: 'Nom / raison sociale', required: true },
+                  { name: 'type', label: 'Type', type: 'select', options: [{ value: 'fournisseur_prestataire', label: 'Fournisseur / prestataire' }, { value: 'sous_traitant', label: 'Sous-traitant' }] },
+                  { name: 'contact', label: 'Personne de contact' },
+                  { name: 'telephone', label: 'Téléphone' },
+                  { name: 'email', label: 'Email' },
+                  { name: 'rib', label: 'RIB' },
+                  { name: 'adresse', label: 'Adresse', type: 'textarea' },
+                ]}
+                action={ext.creerFournisseur}
+              />
+              <div className="mt-3">
+                <DataTable
+                  columns={[
+                    { key: 'nom', label: 'Fournisseur' },
+                    { key: 'type', label: 'Type' },
+                    { key: 'contact', label: 'Contact', render: (f: any) => f.contact ?? '—' },
+                    { key: 'telephone', label: 'Téléphone', render: (f: any) => f.telephone ?? '—' },
+                    { key: 'rib', label: 'RIB', render: (f: any) => f.rib ?? '—' },
+                  ]}
+                  rows={fournisseurs}
+                  emptyLabel="Aucun fournisseur — créez-en un pour démarrer le cycle achats"
+                />
+              </div>
+            </SectionBlock>
+          </div>
                   <div className="flex items-center gap-2"><StatusBadge statut={c.statut} />
                     {c.statut === 'brouillon' && <button className="text-xs text-emerald-700 font-semibold" disabled={pending} onClick={() => run(retours.c, 'Commande envoyée', () => ext.envoyerCommande(c.id))}>Envoyer</button>}
                   </div>
@@ -316,6 +362,21 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
           />
         </SectionBlock>
 
+        {/* AUDIT COMPTA — import du relevé bancaire CSV + rapprochement automatique
+            (matching montant à ±3 jours) : la porte d'entrée UI enfin câblée */}
+        <SectionBlock
+          title="Relevé bancaire — import & rapprochement automatique"
+          description="Collez le relevé (format CSV : date;montant;libelle — une ligne par opération) puis lancez le matching automatique contre les paiements (montant identique à ±3 jours)"
+        >
+          <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); const contenu = String(new FormData(e.currentTarget).get('contenu') ?? ''); if (!contenu.trim()) return; run(retours.r, 'Relevé importé — lancez le rapprochement automatique.', () => { const fd = new FormData(); fd.set('contenu', contenu); return ext2.importerReleve(fd); }); }}>
+            <textarea name="contenu" rows={4} placeholder={'2026-09-30;1500000;VIREMENT SCOLARITE\n2026-09-28;-250000;CHEQUE 4452 FOURNISSEUR'} className="w-full border rounded-md p-2 text-xs font-mono" />
+            <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending}>Importer le relevé</Button>
+          </form>
+          <Button variant="outline" size="sm" className="mt-2" disabled={pending}
+            onClick={() => run(retours.r, 'Rapprochement automatique exécuté — voir le résultat.', () => ext2.rapprocherAuto())}>
+            Rapprochement automatique (±3 jours)
+          </Button>
+        </SectionBlock>
         <SectionBlock title="Rapprochement bancaire" description="Compare le solde du compte 521 aux relevés — écarts explicables et ajustement (frais bancaires 671)">
           <div className="mb-3">
             <ModalForm
@@ -378,6 +439,26 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
           ))}
         </SectionBlock>
 
+        {/* AUDIT COMPTA - revue mensuelle, provisions creances douteuses, etat TVA */}
+        <SectionBlock
+          title="Revue mensuelle & provisions"
+          description="Cloture mensuelle (recriture des ecarts + balance), provisions pour creances douteuses (+90 j), etat TVA du mois"
+        >
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending}
+              onClick={() => run(retours.c, 'Revue mensuelle executee - ecritures rattrappees.', () => ext.clotureMensuelle())}>
+              Cloture mensuelle (revue)
+            </Button>
+            <Button variant="outline" size="sm" disabled={pending}
+              onClick={() => { if (window.confirm('Passer les provisions sur creances echues +90 jours ? (D 659 / C 431)')) run(retours.c, 'Provisions passees.', () => ext.provisionnerCreances()); }}>
+              Provisions creances douteuses
+            </Button>
+            <Button variant="outline" size="sm" disabled={pending}
+              onClick={() => run(retours.r, 'Etat TVA calcule - voir le resultat.', () => ext.etatTva())}>
+              Etat TVA du mois
+            </Button>
+          </div>
+        </SectionBlock>
         <SectionBlock title="Clôture d'exercice & exports" description="Solde des comptes de gestion vers 120 Résultat — exports FEC/balance pour l'expert-comptable">
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => ext.cloturerExercice(
