@@ -74,10 +74,11 @@ export async function invoquerAssistant(opts: {
   const ecole = await db.ecole.findUnique({ where: { id: opts.ctx.ecoleId! }, select: { nom: true } });
   const nbOutilsAction = outils.filter((t) => CATALOGUE_IA.find((c) => c.nom === t.nom)).length;
 
-  // PLAFOND : les modèles gratuits saturent au-delà de ~60 définitions
-  // (61 Ko de payload → réponses vides « impossible »). On envoie les 60
-  // premiers — le filtre par permissions a déjà éliminé les hors-périmètre.
-  let tools = versOutilsOpenAI(outils.slice(0, 60));
+  // TOUS les outils sont envoyés au tour 0 : la stratégie 2-phase gère la
+  // saturation du modèle thinking (après l'appel d'outil → synthèse SANS
+  // outils). Le plafond à 60 coupait les outils CRUD (supprimer/modifier)
+  // qui sont en fin de catalogue.
+  let tools = versOutilsOpenAI(outils);
   const systeme = `Tu es ARIA, l'assistante intelligente de ScolaGestion pour l'école « ${ecole?.nom ?? ''} ».
 Tu parles FRANÇAIS, de façon naturelle et directe, comme un collaborateur compétent.
 Tu aides « ${opts.nomUtilisateur ?? 'l\'utilisateur'} » (portail : ${opts.portail ?? 'interne'}).
