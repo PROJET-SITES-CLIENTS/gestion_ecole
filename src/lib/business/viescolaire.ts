@@ -129,7 +129,7 @@ export type SortieInput = {
 };
 
 export async function sortieEleveCore(ctx: Ctx, input: SortieInput) {
-  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire', 'vie_scolaire.gerer']);
   const eleve = await eleveDuTenant(input.eleveId, ctx);
   if (isNaN(input.date?.getTime())) throw new ActionError('Date de sortie invalide.', 'DATE_INVALIDE');
   if (!/^\d{2}:\d{2}$/.test(input.heure ?? '')) throw new ActionError('Heure de sortie invalide (format HH:MM).', 'CHAMP_INVALIDE');
@@ -215,7 +215,7 @@ export type VisiteurInput = {
 };
 
 export async function enregistrerVisiteurCore(ctx: Ctx, ecoleId: string, input: VisiteurInput) {
-  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire', 'vie_scolaire.gerer']);
   if (!input.nom?.trim()) throw new ActionError('Le nom du visiteur est obligatoire.', 'CHAMP_MANQUANT');
   if (!input.motifVisite?.trim()) throw new ActionError('Le motif de visite est obligatoire.', 'CHAMP_MANQUANT');
   if (!input.pieceVerifiee) {
@@ -240,7 +240,7 @@ export async function enregistrerVisiteurCore(ctx: Ctx, ecoleId: string, input: 
 
 /** F3 — sortie d'un visiteur (le registre des présents devient fiable). */
 export async function sortieVisiteurCore(ctx: Ctx, visiteurId: string) {
-  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire']);
+  assertPermissionParmi(ctx, ['securite.gerer', 'eleves.ecrire', 'vie_scolaire.gerer']);
   const v = await db.visiteur.findUnique({ where: { id: visiteurId } });
   if (!v) throw new ActionError('Visiteur introuvable.', 'INTROUVABLE');
   assertTenant(v.ecoleId, ctx, 'Ce visiteur');
@@ -262,7 +262,7 @@ export type AutorisationInput = {
 };
 
 export async function creerAutorisationSortieCore(ctx: Ctx, input: AutorisationInput) {
-  assertPermission(ctx, 'securite.gerer');
+  assertPermissionParmi(ctx, ['securite.gerer', 'vie_scolaire.gerer']);
   const eleve = await eleveDuTenant(input.eleveId, ctx);
   if (!input.nomPersonneAutorisee?.trim()) throw new ActionError('Le nom de la personne autorisée est obligatoire.', 'CHAMP_MANQUANT');
   if (input.lienAvecEleve && !['pere', 'mere', 'tuteur_legal', 'oncle', 'tante', 'grand_parent', 'autre'].includes(input.lienAvecEleve)) {
@@ -301,7 +301,7 @@ export async function creerAutorisationSortieCore(ctx: Ctx, input: AutorisationI
 
 /** Désactivation d'une autorisation (personne qui ne doit plus récupérer l'élève). */
 export async function desactiverAutorisationSortieCore(ctx: Ctx, autorisationId: string) {
-  assertPermission(ctx, 'securite.gerer');
+  assertPermissionParmi(ctx, ['securite.gerer', 'vie_scolaire.gerer']);
   const a = await db.autorisationSortie.findUnique({ where: { id: autorisationId }, include: { eleve: true } });
   if (!a) throw new ActionError('Autorisation introuvable.', 'INTROUVABLE');
   assertTenant(a.eleve.ecoleId, ctx, 'Cette autorisation');

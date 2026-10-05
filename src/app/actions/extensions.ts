@@ -48,7 +48,7 @@ import {
   // RH SUITE — sortie, renouvellement, pilotage
   quitterPersonnelCore, renouvelerContratCore, statsRhCore, creerEvaluationPersonnelCore,
   // VIE SCOLAIRE+ — retards, stats discipline, surveillances, conseils, visa
-  enregistrerRetardCore, justifierRetardCore, statsDisciplineCore, creerSurveillanceCore,
+  enregistrerRetardCore, justifierRetardCore, statsDisciplineCore, creerSurveillanceCore, reintegrerEleveCore,
   creerConseilDisciplineCore, deciderConseilDisciplineCore, viserCahierTexteCore,
   // PÉDAGOGIE — génération en masse, synthèse annuelle, système trimestres/semestres
   genererBulletinsClasseCore, syntheseAnnuelleCore, configurerSystemePeriodesCore,
@@ -1565,5 +1565,47 @@ export async function creerEvaluationPersonnel(formData: FormData): Promise<Acti
     });
     revalidatePath('/');
     return { ok: true, ...r, message: `Évaluation enregistrée — moyenne ${r.moyenne}/5. Le compte rendu imprimable est disponible dans Documents.` };
+  } catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT CENSEUR — réintégration après exclusion temporaire
+// ====================================================================
+
+export async function reintegrerEleve(eleveId: string, commentaire?: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await reintegrerEleveCore(ctx, eleveId, commentaire); revalidatePath('/'); return { ok: true, ...r, message: 'Élève réintégré — parents et direction notifiés.' }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT CENSEUR — délégués de classe (désignation annuelle)
+// ====================================================================
+
+export async function designerDelegue(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({ classeId: idReq, eleveId: idReq, role: z.enum(['delegue', 'suppleant']).optional(), annee: str }).parse(Object.fromEntries(formData));
+    const classe = await db.classe.findUnique({ where: { id: d.classeId } });
+    if (!classe) return { ok: false, error: 'Classe introuvable.' };
+    const eleve = await db.eleve.findUnique({ where: { id: d.eleveId } });
+    if (!eleve || eleve.classeActuelleId !== classe.id) return { ok: false, error: 'Cet élève n’appartient pas à cette classe.' };
+    const annee = d.annee || new Date().toISOString().slice(0, 4);
+    const r = await db.delegueClasse.upsert({
+      where: { classeId_eleveId_annee: { classeId: d.classeId, eleveId: d.eleveId, annee } },
+      create: { ecoleId: classe.ecoleId, classeId: d.classeId, eleveId: d.eleveId, role: d.role ?? 'delegue', annee, designeParId: ctx.utilisateurId },
+      update: { role: d.role ?? 'delegue', designeParId: ctx.utilisateurId, dateDesignation: new Date() },
+    });
+    revalidatePath('/');
+    return { ok: true, ...r, message: `Délégué désigné pour ${classe.libelle}.` };
+  } catch (e) { return echec(e); }
+}
+
+export async function retirerDelegue(delegueId: string): Promise<ActionResult> {
+  try {
+    const d = await db.delegueClasse.findUnique({ where: { id: delegueId } });
+    if (!d) return { ok: false, error: 'Délégué introuvable.' };
+    await db.delegueClasse.delete({ where: { id: delegueId } });
+    revalidatePath('/');
+    return { ok: true, message: 'Délégué retiré.' };
   } catch (e) { return echec(e); }
 }

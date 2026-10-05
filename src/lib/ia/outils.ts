@@ -695,7 +695,7 @@ const outilsAction: OutilIA[] = [
     permission: 'vie_scolaire.gerer',
     parametres: P({
       eleve: { type: 'string', description: 'Nom de l\'élève (extrait)' }, type: { type: 'string', description: 'Type (comportement, violence, absentéisme…)' },
-      description: { type: 'string', description: 'Description des faits' }, gravite: { type: 'string', description: '', enum: ['leger', 'serieux', 'grave'] },
+      description: { type: 'string', description: 'Description des faits' }, gravite: { type: 'string', description: '', enum: ['leger', 'modere', 'grave', 'tres_grave'] },
     }, ['eleve', 'description', 'gravite']),
     executer: async (ctx, args) => {
       const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, AND: String(String(args.eleve)).trim().split(/\s+/).filter(Boolean).map(term => ({ OR: [{ nom: { contains: term, mode: 'insensitive' } }, { prenom: { contains: term, mode: 'insensitive' } }] })) } });
@@ -884,7 +884,7 @@ const outilsAction: OutilIA[] = [
   {
     nom: 'enregistrer_visiteur',
     description: "Enregistre un visiteur à l'accueil (badge automatique, pièce vérifiée).",
-    permission: 'eleves.ecrire',
+    permission: ['eleves.ecrire', 'securite.gerer', 'vie_scolaire.gerer'],
     parametres: P({ nom: { type: 'string', description: 'Nom du visiteur' }, motifVisite: { type: 'string', description: 'Motif de la visite' }, pieceVerifiee: { type: 'boolean', description: 'Pièce d\'identité vérifiée ?' } }, ['nom', 'motifVisite', 'pieceVerifiee']),
     executer: async (ctx, args) => {
       return biz.enregistrerVisiteurCore(ctx as never, ctx.ecoleId!, {

@@ -533,6 +533,17 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.conseilDiscipline.findMany({ where: { ecoleId }, orderBy: { dateConseil: 'desc' }, take: 50, include: { eleve: true } }),
       ]);
       v.retards = retards; v.surveillancesExamens = surveillancesExamens; v.conseilsDiscipline = conseilsDiscipline;
+      // AUDIT CENSEUR — visa des cahiers de textes (contrôle pédagogique)
+      // et conseils de classe (le censeur les préside — bulletins.valider)
+      v.cahiersTexte = await db.cahierTexte.findMany({
+        where: { ecoleId }, orderBy: { dateCreation: 'desc' }, take: 60,
+        include: { classe: true, matiere: true, entrees: { orderBy: { dateCours: 'desc' }, take: 20 } },
+      });
+      v.conseilsClasse = await db.conseilClasse.findMany({
+        where: { ecoleId }, include: { classe: true, membres: true, deliberations: { include: { votes: true } } },
+        orderBy: { date: 'desc' }, take: 30,
+      });
+      v.deleguesClasse = await db.delegueClasse.findMany({ where: { ecoleId }, include: { classe: true, eleve: { select: { id: true, prenom: true, nom: true } } } });
     })());
   }
 

@@ -20,6 +20,10 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
   const portal = initialData.session?.portal;
   const estCadreVieScolaire = ['direction', 'super_admin', 'vie_scolaire', 'secretariat'].includes(portal ?? '');
   const retards = initialData.retards ?? [];
+  const classes = initialData.classes ?? [];
+  // AUDIT CENSEUR — visa cahiers + réintégrations
+  const cahiersTexte = initialData.cahiersTexte ?? [];
+  const elevesExclus = (initialData.eleves ?? []).filter((e: any) => e.statut === 'exclu');
   const surveillancesExamens = initialData.surveillancesExamens ?? [];
   const conseilsDiscipline = initialData.conseilsDiscipline ?? [];
   const [stats, setStats] = useState<any>(null);
@@ -57,6 +61,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
                 { value: 'leger', label: 'Léger' },
                 { value: 'modere', label: 'Modéré' },
                 { value: 'grave', label: 'Grave' },
+                { value: 'tres_grave', label: 'Très grave' },
               ], required: true },
               { name: 'description', label: 'Description', type: 'textarea', required: true },
             ]}
@@ -123,6 +128,7 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
                 { value: 'retenue', label: 'Retenue' },
                 { value: 'exclusion', label: 'Exclusion' },
                 { value: 'convocation', label: 'Convocation parent' },
+                    { value: 'travail_interet', label: 'Travail dé-intérêt' },
               ], required: true },
               { name: 'description', label: 'Description', type: 'textarea', required: true },
             ]}
@@ -273,16 +279,75 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
             { key: 'statut', label: 'Statut', render: (c: any) => <StatusBadge statut={c.statut === 'tenu' ? 'valide' : 'en_attente'} /> },
             { key: 'decision', label: 'Décision', render: (c: any) => c.decision ?? '—' },
             { key: 'action', label: '', render: (c: any) => c.statut !== 'tenu' ? (
-              <Button variant="outline" size="sm" onClick={() => {
-                const decision = window.prompt('Décision du conseil :');
-                if (decision) actionsExt.deciderConseilDiscipline(c.id, decision);
-              }}>Statuer</Button>
+              <ModalForm
+                trigger={<Button variant="outline" size="sm">Statuer</Button>}
+                title={`Décision du conseil — ${c.eleve?.prenom ?? ''} ${c.eleve?.nom ?? ''}`}
+                fields={[
+                  { name: 'decision', label: 'Décision du conseil', type: 'textarea', required: true, placeholder: 'Exclusion de 3 jours + travail dé-intérêt, famille reçue...' },
+                ]}
+                action={async (fd: FormData) => actionsExt.deciderConseilDiscipline(c.id, String(fd.get('decision') ?? ''))}
+              />
             ) : null },
           ]}
           rows={conseilsDiscipline}
           emptyLabel="Aucun conseil programmé"
         />
       </SectionBlock>
+      )}
+
+      {/* ═══ AUDIT CENSEUR — VISA DES CAHIERS DE TEXTES (contrôle pédagogique) ═══ */}
+      <SectionBlock
+        title="Visa des cahiers de textes"
+        description="Contrôlez que les cours suivent le programme : chaque cahier visé est horodaté (mention, date, remarque)"
+      >
+        <DataTable
+          columns={[
+            { key: 'classe', label: 'Classe', render: (ct: any) => ct.classe?.libelle ?? '—' },
+            { key: 'matiere', label: 'Matière', render: (ct: any) => ct.matiere?.libelle ?? '—' },
+            { key: 'entrees', label: 'Entrées', render: (ct: any) => `${(ct.entrees ?? []).length} entrée(s)` },
+            { key: 'visa', label: 'Visa', render: (ct: any) => ct.visaCenseurId ? (
+              <span className="text-xs text-emerald-700">✓ visé le {ct.visaDate ? new Date(ct.visaDate).toLocaleDateString('fr-FR') : '—'}{ct.visaRemarque ? ` — ${ct.visaRemarque}` : ''}</span>
+            ) : <span className="text-xs text-amber-700">en attente</span> },
+            { key: 'action', label: '', render: (ct: any) => !ct.visaCenseurId ? (
+              <Button
+                variant="outline" size="sm" className="h-7"
+                disabled={retourVie.pending}
+                onClick={() => { const remarque = window.prompt('Remarque du visa (optionnel) :'); retourVie.run(() => actionsExt.viserCahierTexte(ct.id, remarque ?? undefined), 'Cahier visé.'); }}
+              >
+                Viser
+              </Button>
+            ) : null },
+          ]}
+          rows={cahiersTexte}
+          emptyLabel="Aucun cahier de textes ouvert"
+        />
+      </SectionBlock>
+
+      {/* ═══ AUDIT CENSEUR — RÉINTÉGRATION après exclusion temporaire ═══ */}
+      {elevesExclus.length > 0 && (
+        <SectionBlock
+          title="Élèves exclus — réintégration"
+          description="Le retour en cours après une exclusion temporaire (parents et direction notifiés automatiquement)"
+        >
+          <DataTable
+            columns={[
+              { key: 'eleve', label: 'Élève', render: (e: any) => `${e.prenom} ${e.nom}` },
+              { key: 'classe', label: 'Classe', render: (e: any) => classes.find((c: any) => c.id === e.classeActuelleId)?.libelle ?? '—' },
+              { key: 'motif', label: 'Motif', render: (e: any) => e.motifSortie ?? '—' },
+              { key: 'action', label: '', render: (e: any) => (
+                <Button
+                  size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={retourVie.pending}
+                  onClick={() => { if (window.confirm(`Réintégrer ${e.prenom} ${e.nom} ?`)) retourVie.run(() => actionsExt.reintegrerEleve(e.id), 'Élève réintégré.'); }}
+                >
+                  Réintégrer
+                </Button>
+              ) },
+            ]}
+            rows={elevesExclus}
+            emptyLabel=""
+          />
+        </SectionBlock>
       )}
     </div>
   );

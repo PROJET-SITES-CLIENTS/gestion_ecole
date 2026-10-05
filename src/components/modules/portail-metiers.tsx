@@ -257,6 +257,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
 
   // ============================ VIE SCOLAIRE (censeur / surveillant) ============================
   if (portal === 'vie_scolaire') {
+    const retourVs = useActionFeedback();
     const visiteursPresents = visiteurs.filter((v: any) => !v.dateHeureSortie);
     const sortiesDuJour = jourActif ? sortiesAnticipees.filter((s: any) => toJour(s.dateSortie) === jourActif || toJour(s.date) === jourActif) : [];
     const incidentsRecents = [...incidents].sort((a: any, b: any) => new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime());
@@ -281,7 +282,27 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
           <StatCard title="Absents" value={absentsJour.length} sub={`${retardsJour.length} retard(s)`} icon={AlertTriangle} color={absentsJour.length ? 'rose' : 'gray'} />
           <StatCard title="Appel non fait" value={appels?.manquants.length ?? 0} sub={appels?.appelees.length ? `${appels.appelees.length} classe(s) appelée(s)` : 'aucune classe appelée'} icon={ClipboardList} color={appels?.manquants.length ? 'rose' : 'emerald'} />
           <StatCard title="Visiteurs sur site" value={visiteursPresents.length} sub="entrés non sortis" icon={Shield} color="blue" />
-        </div>
+        
+        {/* AUDIT — actions rapides du poste de surveillance (guichet terrain) */}
+        <div className="flex flex-wrap items-end gap-3 mb-2">
+          <form className="flex items-end gap-1.5" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); retourVs.run(() => actionsExt.enregistrerRetard(fd), 'Retard enregistré — billet édité.'); (e.target as HTMLFormElement).reset(); }}>
+            <label className="text-xs space-y-1">
+              <span className="text-gray-600">Retard (billet auto B-####)</span>
+              <select name="eleveId" required className="h-8 rounded-md border border-gray-200 px-2 text-sm w-48">
+                <option value="">— Élève —</option>
+                {eleves.map((el: any) => <option key={el.id} value={el.id}>{el.prenom} {el.nom}</option>)}
+              </select>
+            </label>
+            <input name="dureeMinutes" type="number" min="1" max="240" placeholder="min" className="h-8 w-16 border rounded px-2 text-sm" />
+            <Button type="submit" size="sm" className="h-8 bg-amber-600 hover:bg-amber-700" disabled={retourVs.pending}>Noter</Button>
+          </form>
+          <form className="flex items-end gap-1.5" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); retourVs.run(() => actions.enregistrerVisiteur(fd), 'Visiteur enregistré — badge délivré.'); (e.target as HTMLFormElement).reset(); }}>
+            <input name="nom" required placeholder="Nom du visiteur" className="h-8 border rounded px-2 text-sm w-40" />
+            <input name="motifVisite" required placeholder="Motif" className="h-8 border rounded px-2 text-sm w-36" />
+            <label className="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" name="pieceIdentiteVerifiee" className="h-3.5 w-3.5 accent-emerald-600" /> pièce ✓</label>
+            <Button type="submit" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" disabled={retourVs.pending}>Visiteur</Button>
+          </form>
+        </div></div>
         <div className="overflow-x-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionBlock title={`Absents ${estAujourdhui ? "du jour" : 'du dernier relevé'}`} description={taux != null ? `Taux de présence : ${taux}%` : 'Aucun pointage'}>
             <DataTable

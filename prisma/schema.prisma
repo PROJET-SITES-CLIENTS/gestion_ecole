@@ -151,6 +151,7 @@ model Ecole {
   familles                   Famille[]
   groupes                    Groupe[]
   avoirScolarites            AvoirScolarite[]
+  deleguesClasse  DelegueClasse[]
 }
 
 model PlanTarifaire {
@@ -463,6 +464,7 @@ model Classe {
   salle                 Salle?            @relation("ClasseSallePrincipale", fields: [salleId], references: [id], onDelete: SetNull)
 
   eleves                Eleve[]
+  delegues              DelegueClasse[]
   seances               Seance[]
   evaluations           Evaluation[]
   historiqueClasses     EleveHistoriqueClasse[]
@@ -669,6 +671,7 @@ model Eleve {
   reinscriptions Reinscription[]
   retards          Retard[]
   conseilsDiscipline ConseilDiscipline[]
+  deleguesClasse DelegueClasse[]
 }
 
 model Famille {
@@ -4027,4 +4030,24 @@ model SanctionPersonnel {
   notificationEcrite Boolean @default(true)
   createdAt   DateTime @default(now())
   @@index([ecoleId, personnelId])
+}
+
+// --------------------------------------------------------------------
+// AUDIT CENSEUR — délégués de classe (désignation annuelle)
+// --------------------------------------------------------------------
+model DelegueClasse {
+  id        String   @id @default(cuid())
+  ecoleId   String
+  ecole     Ecole    @relation(fields: [ecoleId], references: [id])
+  classeId  String
+  classe    Classe   @relation(fields: [classeId], references: [id])
+  eleveId   String
+  eleve     Eleve    @relation(fields: [eleveId], references: [id])
+  role      String   @default("delegue") // delegue / suppleant
+  annee     String
+  designeParId String?
+  dateDesignation DateTime @default(now())
+
+  @@unique([classeId, eleveId, annee])
+  @@index([ecoleId, annee])
 }

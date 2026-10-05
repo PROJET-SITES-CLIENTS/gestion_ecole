@@ -133,7 +133,7 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
       comptabilite: ['finances.voir','finances.ecrire','finances.valider'],
       surveillant: ['eleves.lire','presences.saisir','vie_scolaire.gerer','securite.gerer'],
       rh: ['eleves.lire','rh.gerer','communication.envoyer'],
-      censeur: ['eleves.lire','bulletins.valider','presences.saisir','vie_scolaire.gerer','examens.gerer','edt.gerer','protection.gerer'],
+      censeur: ['eleves.lire','bulletins.valider','presences.saisir','vie_scolaire.gerer','examens.gerer','edt.gerer','protection.gerer', 'notes.saisir'],
       secretariat: ['eleves.lire','eleves.ecrire','presences.saisir','finances.voir','communication.envoyer','secretariat.gerer'],
       assistant_direction: ['eleves.lire','eleves.ecrire','presences.saisir','vie_scolaire.gerer','communication.envoyer'],
       infirmier: ['eleves.lire','sante.gerer'],

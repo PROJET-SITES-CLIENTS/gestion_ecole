@@ -4,7 +4,7 @@
 // ====================================================================
 
 import { db } from '@/lib/db';
-import { ActionError, Ctx, assertPermission, assertTenant, logAction, notifierParentsEtDirection } from './commun';
+import { ActionError, Ctx, assertPermission, assertPermissionParmi, assertTenant, logAction, notifierParentsEtDirection } from './commun';
 
 // --------------------------------------------------------------------
 // 1. REGISTRE DES RETARDS (surveillant) — billet numéroté + notification
@@ -224,4 +224,27 @@ export async function viserCahierTexteCore(ctx: Ctx, cahierId: string, remarque?
   });
   await logAction(db, c.ecoleId, ctx.utilisateurId, 'cahier.visa_censeur', 'cahier_texte', cahierId, {});
   return { cahierId };
+}
+
+// --------------------------------------------------------------------
+// AUDIT CENSEUR — réintégration après exclusion temporaire
+// --------------------------------------------------------------------
+
+export async function reintegrerEleveCore(ctx: Ctx, eleveId: string, commentaire?: string) {
+  assertPermissionParmi(ctx, ['vie_scolaire.gerer', 'eleves.ecrire']);
+  const eleve = await db.eleve.findUnique({ where: { id: eleveId } });
+  if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
+  assertTenant(eleve.ecoleId, ctx, 'Cet élève');
+  if (eleve.statut !== 'exclu') throw new ActionError('Cet élève n\u2019est pas exclu (statut : ' + eleve.statut + ').', 'STATUT_INVALIDE');
+  await db.eleve.update({
+    where: { id: eleveId },
+    data: { statut: 'actif', motifSortie: null, dateSortie: null },
+  });
+  await notifierParentsEtDirection(
+    db as never, eleve.ecoleId, eleveId,
+    `Réintégration — ${eleve.prenom} ${eleve.nom}`,
+    `${eleve.prenom} ${eleve.nom} est réintégré(e) dans son cursus à compter de ce jour${commentaire ? ` (${commentaire.trim().slice(0, 120)})` : ''}. Bienvenue à nouveau.`,
+  );
+  await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'eleve.reintegration', 'eleve', eleveId, { commentaire: commentaire ?? null });
+  return { eleveId, statut: 'actif' };
 }

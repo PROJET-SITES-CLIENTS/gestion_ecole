@@ -168,6 +168,41 @@ export default function ConseilsModule({ initialData }: { initialData: any }) {
           );
         })}
       </div>
+
+      {/* ═══ AUDIT CENSEUR — délégués de classe ═══ */}
+      <SectionBlock
+        title="Délégués de classe"
+        description="Désignation annuelle des délégués et suppléants (représentation au conseil de classe)"
+        action={
+          <ModalForm
+            trigger={<CreateButton label="Désigner un délégué" />}
+            title="Désigner un délégué de classe"
+            fields={[
+              { name: 'classeId', label: 'Classe', type: 'select', required: true, options: (initialData.classes ?? []).map((c: any) => ({ value: c.id, label: c.libelle })) },
+              { name: 'eleveId', label: 'Élève', type: 'select', required: true, options: (initialData.eleves ?? []).map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })) },
+              { name: 'role', label: 'Rôle', type: 'select', options: [{ value: 'delegue', label: 'Délégué' }, { value: 'suppleant', label: 'Suppléant' }] },
+            ]}
+            action={actionsExt.designerDelegue}
+          />
+        }
+      >
+        <DataTable
+          columns={[
+            { key: 'classe', label: 'Classe', render: (d: any) => d.classe?.libelle ?? '—' },
+            { key: 'eleve', label: 'Élève', render: (d: any) => d.eleve ? `${d.eleve.prenom} ${d.eleve.nom}` : '—' },
+            { key: 'role', label: 'Rôle', render: (d: any) => <StatusBadge statut={d.role === 'delegue' ? 'valide' : 'en_attente'} label={d.role === 'delegue' ? 'Délégué' : 'Suppléant'} /> },
+            { key: 'annee', label: 'Année' },
+            { key: 'action', label: '', render: (d: any) => (
+              <Button size="sm" variant="ghost" className="h-7 text-rose-600"
+                onClick={() => { if (window.confirm('Retirer ce délégué ?')) actionsExt.retirerDelegue(d.id); }}>
+                Retirer
+              </Button>
+            ) },
+          ]}
+          rows={initialData.deleguesClasse ?? []}
+          emptyLabel="Aucun délégué désigné"
+        />
+      </SectionBlock>
     </div>
   );
 }

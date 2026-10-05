@@ -383,5 +383,21 @@ export const outilsSecretariatFull: OutilIA[] = [
       };
     },
   },
+
+  // ═══ CENSEUR — réintégration après exclusion ═══
+  {
+    nom: 'reintegrer_eleve',
+    description: "Réintègre un élève exclu temporairement (retour en cours) — parents et direction notifiés automatiquement.",
+    permission: ['vie_scolaire.gerer', 'eleves.ecrire'],
+    parametres: P({ eleve: { type: 'string', description: 'Nom/prénom de l’élève exclu' }, commentaire: { type: 'string', description: 'Commentaire (optionnel)' } }),
+    executer: async (ctx, args) => {
+      const re = await resoudreEleve(ctx.ecoleId!, String(args.eleve));
+      if (!re.trouve) return { erreur: re.erreur, candidats: re.candidats };
+      const { reintegrerEleveCore } = await import('@/lib/business/viescolaire-plus');
+      const r = await reintegrerEleveCore(ctx as never, re.entite.id, args.commentaire ? String(args.commentaire) : undefined);
+      return { ...r, eleve: `${re.entite.prenom} ${re.entite.nom}`, message: 'Élève réintégré — parents et direction notifiés.' };
+    },
+  },
 ];
+
 

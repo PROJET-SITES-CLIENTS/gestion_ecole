@@ -327,7 +327,14 @@ export default function AppShell({ initialData }: { initialData: any }) {
     });
   }
 
-  const visibleModules = useMemo(() => MODULES.filter((m) => m.portals.includes(portal)), [portal]);
+  const visibleModules = useMemo(() => MODULES.filter((m) => m.portals.includes(portal)).filter((m) => {
+    // AUDIT — pas de modules « vitrines » aux écritures refusées : un portail
+    // vie_scolaire ne voit Examens/Salles QUE s'il en a les permissions métier
+    const perms = initialData.session?.permissions;
+    if (portal === 'vie_scolaire' && m.id === 'examens') return perms?.has?.('examens.gerer') ?? false;
+    if (portal === 'vie_scolaire' && m.id === 'salles') return (perms?.has?.('edt.gerer') ?? false) || (perms?.has?.('salles.gerer') ?? false);
+    return true;
+  }), [portal, initialData.session?.permissions]);
 
   const school = initialData.ecole;
   const notifications = initialData.notifications ?? [];
