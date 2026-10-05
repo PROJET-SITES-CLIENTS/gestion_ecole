@@ -1,6 +1,10 @@
 'use client';
 
-// Composants UI partagés utilisés par tous les modules.
+// ====================================================================
+// DESIGN SYSTEM PREMIUM — ScolaGestion v2
+// Composants partagés : épurés, raffinés, ultra haut de gamme.
+// Palette indigo/violet, glassmorphism, micro-animations.
+// ====================================================================
 
 import { ReactNode, useCallback, useState, useTransition, isValidElement, cloneElement } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,12 +16,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, X, Eye, Pencil, ChevronDown } from 'lucide-react';
+import { Plus, X, Eye, Pencil, ChevronDown, Inbox } from 'lucide-react';
 import { statutColor, statutLabel } from '@/lib/format';
 
 // --------------------------------------------------------------------
-// F5.3 — feedback uniforme des actions directes (boutons useTransition) :
-// finies les erreurs avalées silencieusement. Retourne { run, message, pending }.
+// FEEDBACK — retour visuel premium des actions
 // --------------------------------------------------------------------
 export function useActionFeedback() {
   const [message, setMessage] = useState<string | null>(null);
@@ -36,86 +39,132 @@ export function useActionFeedback() {
     },
     [startTransition],
   );
-  return { run, message, pending, Message: message ? <div role="status" className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">{message}</div> : null };
+  return {
+    run, message, pending,
+    Message: message ? (
+      <div
+        role="status"
+        className={`animate-fade-up rounded-xl border px-4 py-2.5 text-sm font-medium backdrop-blur-sm ${
+          message.startsWith('✓')
+            ? 'border-emerald-200/60 bg-emerald-50/80 text-emerald-700 shadow-[0_2px_12px_rgba(16,185,129,0.08)]'
+            : 'border-rose-200/60 bg-rose-50/80 text-rose-700 shadow-[0_2px_12px_rgba(239,68,68,0.08)]'
+        }`}
+      >
+        {message}
+      </div>
+    ) : null,
+  };
 }
 
+// --------------------------------------------------------------------
+// PAGE HEADER — titre avec gradient subtil
+// --------------------------------------------------------------------
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
-        {subtitle && <p className="hidden sm:block text-sm text-gray-500 mt-1">{subtitle}</p>}
+    <div className="animate-fade-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="min-w-0">
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:block h-8 w-1 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <div>
+            <h1 className="text-[1.65rem] font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent leading-tight">
+              {title}
+            </h1>
+            {subtitle && <p className="hidden sm:block text-[0.82rem] text-slate-500 mt-1 leading-relaxed">{subtitle}</p>}
+          </div>
+        </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
     </div>
   );
 }
 
-export function StatCard({ title, value, sub, icon, color = 'emerald' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
-  const colorMap: Record<string, string> = {
-    emerald: 'bg-emerald-50 text-emerald-700',
-    rose: 'bg-rose-50 text-rose-700',
-    amber: 'bg-amber-50 text-amber-700',
-    blue: 'bg-blue-50 text-blue-700',
-    purple: 'bg-purple-50 text-purple-700',
-    gray: 'bg-gray-100 text-gray-700',
+// --------------------------------------------------------------------
+// STAT CARD — premium avec icône en dégradé et hover lift
+// --------------------------------------------------------------------
+export function StatCard({ title, value, sub, icon, color = 'indigo' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
+  const gradients: Record<string, { bg: string; icon: string; glow: string }> = {
+    indigo: { bg: 'from-indigo-500/10 to-violet-500/5', icon: 'from-indigo-500 to-violet-500', glow: 'shadow-[0_4px_16px_rgba(99,102,241,0.15)]' },
+    emerald: { bg: 'from-emerald-500/10 to-teal-500/5', icon: 'from-emerald-500 to-teal-500', glow: 'shadow-[0_4px_16px_rgba(16,185,129,0.15)]' },
+    rose: { bg: 'from-rose-500/10 to-pink-500/5', icon: 'from-rose-500 to-pink-500', glow: 'shadow-[0_4px_16px_rgba(239,68,68,0.15)]' },
+    amber: { bg: 'from-amber-500/10 to-orange-500/5', icon: 'from-amber-500 to-orange-500', glow: 'shadow-[0_4px_16px_rgba(245,158,11,0.15)]' },
+    blue: { bg: 'from-blue-500/10 to-cyan-500/5', icon: 'from-blue-500 to-cyan-500', glow: 'shadow-[0_4px_16px_rgba(59,130,246,0.15)]' },
+    purple: { bg: 'from-purple-500/10 to-fuchsia-500/5', icon: 'from-purple-500 to-fuchsia-500', glow: 'shadow-[0_4px_16px_rgba(168,85,247,0.15)]' },
+    gray: { bg: 'from-slate-400/10 to-slate-500/5', icon: 'from-slate-500 to-slate-600', glow: '' },
   };
-  // Tolère les DEUX conventions d'appel : composant (icon={Wallet}) et
-  // élément déjà instancié (icon={<Wallet className/>}) — sinon le rendu
-  // crash (« Element type is invalid ») dans les portails parent/élève.
+  const g = gradients[color] ?? gradients.indigo;
   const Icon = typeof icon === 'function' || typeof icon === 'string' ? icon : null;
-  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-5 w-5" /> : null;
+  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-[1.15rem] w-[1.15rem]" /> : null;
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{title}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-            {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
-          </div>
-          {icone && (
-            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorMap[color]}`}>
-              {cloneElement(icone as any, { className: 'h-5 w-5' })}
-            </div>
-          )}
+    <div className={`premium-card ${g.glow} p-5`}>
+      <div className={`absolute inset-0 rounded-[inherit] bg-gradient-to-br ${g.bg} pointer-events-none`} />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.68rem] text-slate-500 font-semibold uppercase tracking-[0.08em]">{title}</p>
+          <p className="text-[1.7rem] font-bold tracking-tight text-slate-900 mt-1.5 leading-none tabular-nums">{value}</p>
+          {sub && <p className="text-[0.72rem] text-slate-400 mt-1.5 font-medium">{sub}</p>}
         </div>
-      </CardContent>
-    </Card>
+        {icone && (
+          <div className={`flex-shrink-0 h-11 w-11 rounded-[0.8rem] bg-gradient-to-br ${g.icon} flex items-center justify-center text-white shadow-lg`}>
+            {cloneElement(icone as any, { className: 'h-[1.15rem] w-[1.15rem]' })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
+// --------------------------------------------------------------------
+// STATUS BADGE — pill avec glow
+// --------------------------------------------------------------------
 export function StatusBadge({ statut, label }: { statut: string; label?: string }) {
-  return <Badge variant="outline" className={`text-xs ${statutColor(statut)}`}>{label ?? statutLabel(statut)}</Badge>;
+  return <Badge variant="outline" className={`badge-glow text-[0.7rem] font-semibold px-2.5 py-0.5 rounded-full ${statutColor(statut)}`}>{label ?? statutLabel(statut)}</Badge>;
 }
 
+// --------------------------------------------------------------------
+// DATA TABLE — premium avec header glassmorphe et hover states
+// --------------------------------------------------------------------
 export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total, onLoadMore, loadingMore }: {
   columns: { key: string; label: string; render?: (row: any) => ReactNode }[];
   rows: any[];
   emptyLabel?: string;
-  total?: number; // F14 — compte total serveur quand la liste est plafonnée
-  onLoadMore?: () => void; // F14 — charger la suite (action paginée)
+  total?: number;
+  onLoadMore?: () => void;
   loadingMore?: boolean;
 }) {
   const plafonne = typeof total === 'number' && rows.length < total;
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+    <div className="rounded-2xl border border-slate-200/70 overflow-hidden bg-white/80 backdrop-blur-sm shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.03)]">
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 max-h-[60vh] overflow-y-auto">
         <Table>
-          <TableHeader className="sticky top-0 bg-gray-50 z-10">
-            <TableRow>
-              {columns.map(c => <TableHead key={c.key} className="text-xs font-semibold uppercase tracking-wider text-gray-600">{c.label}</TableHead>)}
+          <TableHeader className="sticky top-0 z-10">
+            <TableRow className="border-b border-slate-200/80 [&>th]:bg-slate-50/95 [&>th]:backdrop-blur-sm">
+              {columns.map(c => (
+                <TableHead key={c.key} className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-slate-500 py-3 px-3">
+                  {c.label}
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center text-gray-500 py-8">{emptyLabel}</TableCell>
+                <TableCell colSpan={columns.length} className="text-center py-14">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
+                      <Inbox className="h-5 w-5 text-slate-400" />
+                    </div>
+                    <p className="text-sm text-slate-400 font-medium">{emptyLabel}</p>
+                  </div>
+                </TableCell>
               </TableRow>
             ) : rows.map((r, i) => (
-              <TableRow key={r.id ?? i}>
+              <TableRow
+                key={r.id ?? i}
+                className="table-row-premium border-b border-slate-100/60 [&>td]:py-2.5 [&>td]:px-3 hover:bg-indigo-50/30"
+                style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
+              >
                 {columns.map(c => (
-                  <TableCell key={c.key} className="text-sm">
+                  <TableCell key={c.key} className="text-[0.82rem] text-slate-700">
                     {c.render ? c.render(r) : (r as any)[c.key] ?? '—'}
                   </TableCell>
                 ))}
@@ -125,13 +174,13 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
         </Table>
       </div>
       {(plafonne || typeof total === 'number') && (
-        <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-          <span>
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 backdrop-blur-sm px-4 py-2.5 text-xs text-slate-500">
+          <span className="font-medium tabular-nums">
             {rows.length} affiché(s){typeof total === 'number' ? ` sur ${total}` : ''}
           </span>
           {plafonne && onLoadMore && (
-            <Button size="sm" variant="outline" onClick={onLoadMore} disabled={loadingMore}>
-              <ChevronDown className="h-4 w-4 mr-1" />
+            <Button size="sm" variant="outline" className="h-7 border-indigo-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300" onClick={onLoadMore} disabled={loadingMore}>
+              <ChevronDown className="h-3.5 w-3.5 mr-1" />
               {loadingMore ? 'Chargement…' : 'Charger plus'}
             </Button>
           )}
@@ -141,13 +190,14 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
   );
 }
 
+// --------------------------------------------------------------------
+// FORM FIELD
+// --------------------------------------------------------------------
 export function FormField({ label, children, required, hidden }: { label: string; children: ReactNode; required?: boolean; hidden?: boolean }) {
-  if (hidden) {
-    return <>{children}</>;
-  }
+  if (hidden) return <>{children}</>;
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-gray-700">{label} {required && <span className="text-rose-500">*</span>}</Label>
+      <Label className="text-[0.75rem] font-semibold text-slate-600 tracking-wide">{label} {required && <span className="text-rose-400">*</span>}</Label>
       {children}
     </div>
   );
@@ -164,6 +214,9 @@ type FieldDef = {
   step?: string;
 };
 
+// --------------------------------------------------------------------
+// MODAL FORM — dialog premium avec animation
+// --------------------------------------------------------------------
 export function ModalForm({
   trigger, title, fields, action, defaultValues,
 }: {
@@ -185,8 +238,6 @@ export function ModalForm({
     startTransition(async () => {
       const resultat = await action(formData);
       if (resultat && resultat.ok === false) {
-        // L'opération a été REFUSÉE (validation/règle métier) : on affiche
-        // l'erreur et on garde le formulaire ouvert pour correction.
         setErreur(resultat.error ?? 'Opération refusée.');
         return;
       }
@@ -197,26 +248,26 @@ export function ModalForm({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border-slate-200/70 shadow-[0_24px_80px_-16px_rgba(0,0,0,0.12)]">
+        <DialogHeader className="pb-0">
+          <DialogTitle className="text-base font-bold tracking-tight text-slate-800">{title}</DialogTitle>
         </DialogHeader>
         {erreur && (
-          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+          <div className="animate-fade-up rounded-xl border border-rose-200/60 bg-rose-50/80 px-3.5 py-2.5 text-sm text-rose-700 backdrop-blur-sm" role="alert">
             {erreur}
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3.5 pt-2">
           {fields.map(f => (
             <FormField key={f.name} label={f.label} required={f.required} hidden={f.type === 'hidden'}>
               {f.type === 'textarea' ? (
-                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} />
+                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} className="input-premium rounded-xl border-slate-200 text-sm min-h-[72px]" />
               ) : f.type === 'select' ? (
                 <select
                   name={f.name}
                   defaultValue={valueOf(f) ?? ''}
                   required={f.required}
-                  className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="input-premium w-full h-10 rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm"
                 >
                   <option value="">— Choisir —</option>
                   {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -231,16 +282,26 @@ export function ModalForm({
                   defaultValue={valueOf(f)}
                   required={f.required}
                   step={f.step ?? (f.type === 'number' ? '0.01' : undefined)}
+                  className="input-premium rounded-xl border-slate-200 text-sm h-10"
                 />
               )}
             </FormField>
           ))}
-          <DialogFooter>
+          <DialogFooter className="pt-2 gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={pending}>Annuler</Button>
+              <Button type="button" variant="outline" className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 h-9" disabled={pending}>Annuler</Button>
             </DialogClose>
-            <Button type="submit" disabled={pending} className="bg-emerald-600 hover:bg-emerald-700">
-              {pending ? 'Enregistrement…' : 'Enregistrer'}
+            <Button
+              type="submit"
+              disabled={pending}
+              className="btn-premium rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-[0_4px_16px_rgba(99,102,241,0.25)] h-9 font-semibold"
+            >
+              {pending ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Enregistrement…
+                </span>
+              ) : 'Enregistrer'}
             </Button>
           </DialogFooter>
         </form>
@@ -249,43 +310,62 @@ export function ModalForm({
   );
 }
 
+// --------------------------------------------------------------------
+// SECTION BLOCK — carte premium avec header glassmorphe
+// --------------------------------------------------------------------
 export function SectionBlock({ title, description, children, action }: { title: string; description?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <Card className="mb-6">
-      <CardHeader className="pb-3 flex flex-row items-center justify-between">
-        <div>
-          <CardTitle className="text-base">{title}</CardTitle>
-          {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+    <div className="premium-card mb-5">
+      <div className="flex flex-row items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-slate-100/80 bg-gradient-to-r from-slate-50/50 to-transparent rounded-t-[inherit]">
+        <div className="min-w-0">
+          <h3 className="text-[0.92rem] font-bold tracking-tight text-slate-800">{title}</h3>
+          {description && <p className="text-[0.72rem] text-slate-400 mt-0.5 leading-relaxed">{description}</p>}
         </div>
         {action}
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
   );
 }
 
+// --------------------------------------------------------------------
+// EMPTY STATE — avec icône et animation
+// --------------------------------------------------------------------
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="text-center py-12 px-4 border border-dashed border-gray-200 rounded-lg bg-gray-50">
-      <h3 className="text-sm font-medium text-gray-900">{title}</h3>
-      {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div className="animate-fade-up text-center py-14 px-6 rounded-2xl border-2 border-dashed border-slate-200/70 bg-gradient-to-b from-slate-50/50 to-transparent">
+      <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-50 flex items-center justify-center shadow-inner mb-4">
+        <Inbox className="h-6 w-6 text-indigo-300" />
+      </div>
+      <h3 className="text-sm font-semibold text-slate-600">{title}</h3>
+      {description && <p className="text-xs text-slate-400 mt-1.5 max-w-sm mx-auto leading-relaxed">{description}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
 
+// --------------------------------------------------------------------
+// INFO ROW
+// --------------------------------------------------------------------
 export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex justify-between py-2 border-b border-gray-100 last:border-0">
-      <dt className="text-sm text-gray-500">{label}</dt>
-      <dd className="text-sm font-medium text-gray-900 text-right">{value ?? '—'}</dd>
+    <div className="flex justify-between items-center py-2.5 border-b border-slate-100/70 last:border-0">
+      <dt className="text-[0.78rem] text-slate-400 font-medium">{label}</dt>
+      <dd className="text-[0.82rem] font-semibold text-slate-800 text-right">{value ?? '—'}</dd>
     </div>
   );
 }
 
+// --------------------------------------------------------------------
+// CREATE BUTTON — gradient premium
+// --------------------------------------------------------------------
 export const CreateButton = ({ label, onClick }: { label: string; onClick?: () => void }) => (
-  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 gap-1" onClick={onClick}>
-    <Plus className="h-4 w-4" /> {label}
+  <Button
+    size="sm"
+    className="btn-premium rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-[0_4px_16px_rgba(99,102,241,0.25)] gap-1.5 font-semibold h-8"
+    onClick={onClick}
+  >
+    <Plus className="h-3.5 w-3.5" /> {label}
   </Button>
 );
 
