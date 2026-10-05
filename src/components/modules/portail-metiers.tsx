@@ -192,7 +192,7 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
   if (portal === 'rh') {
     const actifs = personnels.filter((p: any) => p.statut === 'actif');
     const aValider = conges.filter((c: any) => c.statut === 'demande');
-    const enCours = refDate ? conges.filter((c: any) => c.statut === 'accepte' && new Date(c.dateDebut) <= refDate && refDate <= new Date(c.dateFin)) : [];
+    const enCours = refDate ? conges.filter((c: any) => c.statut === 'valide' && new Date(c.dateDebut) <= refDate && refDate <= new Date(c.dateFin)) : [];
     const masseSalariale = bulletinsPaie.filter((b: any) => b.periode === moisActif).reduce((s: number, b: any) => s + (b.netAPayer ?? 0), 0);
     const parContrat = new Map<string, number>();
     actifs.forEach((p: any) => parContrat.set(p.typeContrat ?? 'non précisé', (parContrat.get(p.typeContrat ?? 'non précisé') ?? 0) + 1));

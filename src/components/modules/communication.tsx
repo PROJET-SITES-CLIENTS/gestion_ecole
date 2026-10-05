@@ -423,7 +423,7 @@ export default function CommunicationModule({ initialData }: { initialData: any 
     ...niveaux.map((n: any) => ({ value: 'niveau:' + n.id, label: 'Niveau ' + n.libelle })),
   ];
 
-  const peutGererCourrier = ['direction', 'secretariat', 'super_admin'].includes(initialData.session?.portal ?? '');
+  const peutGererCourrier = ['direction', 'secretariat', 'super_admin', 'rh'].includes(initialData.session?.portal ?? '');
   function renderCourrier() {
     return (
       <SectionBlock

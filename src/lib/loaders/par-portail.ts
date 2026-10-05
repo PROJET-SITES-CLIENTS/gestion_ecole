@@ -844,6 +844,18 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       v.pointagesJour = await db.pointagePersonnel.findMany({ where: { ecoleId, date: jourUTC }, include: { personnel: true } });
     })());
   }
+  // AUDIT RH — le recrutement est LE métier RH : offres + candidatures chargées
+  // pour le portail rh (les cores n'exigent que rh.gerer).
+  if (portal === 'rh') {
+    promises.push((async () => {
+      const [offresEmploi, candidaturesRecrutement] = await Promise.all([
+        db.offreEmploi.findMany({ where: { ecoleId }, orderBy: { dateOuverture: 'desc' }, include: { candidatures: true } }),
+        db.candidature.findMany({ where: { offre: { ecoleId } }, orderBy: { dateReception: 'desc' }, take: 200 }),
+      ]);
+      v.offresEmploi = offresEmploi;
+      v.candidaturesRecrutement = candidaturesRecrutement;
+    })());
+  }
   if (v4) {
     promises.push((async () => {
       const [tickets, signalementsMineurs, verificationsAntecedents, offresEmploi, stages, devoirs, cahiersTexte, conseilsClasse, dispenses, budgets, ecrituresComptable, fournisseurs, facturesFournisseur, avoirsEcole, conversations, annonces, smsLogs, pushNotificationLogs, demandesEffacement, consentementsImage, domainePersonnalises, quotaUsages, plansAccompagnement, webhookSortants, exportsDonnees, registreTraitements, documentsGeneres] = await Promise.all([

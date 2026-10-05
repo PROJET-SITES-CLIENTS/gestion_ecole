@@ -30,7 +30,7 @@ export async function quitterPersonnelCore(ctx: Ctx, input: {
       where: { id: input.personnelId },
       data: {
         statut: 'sorti', dateSortie: input.dateSortie,
-        motifSortie: `${input.motifSortie}${input.commentaire ? ` — ${input.commentaire.trim().slice(0, 180)}` : ''}`,
+        motifSortie: `${input.motifSortie}${input.preavisJours ? ` — préavis : ${input.preavisJours} j` : ''}${input.commentaire ? ` — ${input.commentaire.trim().slice(0, 180)}` : ''}`,
       },
     });
     // Clôture du contrat actif
@@ -130,10 +130,25 @@ export async function statsRhCore(ctx: Ctx) {
   const sanctionsAnnee = await db.sanctionPersonnel.count({
     where: { ecoleId, dateFaits: { gte: new Date(maintenant.getFullYear(), 0, 1) } },
   });
+  // AUDIT RH — turnover : sorties de l'année civile / effectif total de l'année
+  const debutAnnee = new Date(maintenant.getFullYear(), 0, 1);
+  const sortisAnnee = await db.personnel.count({
+    where: { ecoleId, deletedAt: null, statut: { not: 'actif' }, dateSortie: { gte: debutAnnee } },
+  });
+  // AUDIT RH — absentéisme : jours de congés MALADIE validés cette année
+  const congesMaladie = await db.conge.findMany({
+    where: { personnel: { ecoleId }, statut: 'valide', type: 'maladie', dateDebut: { gte: debutAnnee } },
+    select: { dateDebut: true, dateFin: true },
+  });
+  const joursMaladieAnnee = congesMaladie.reduce(
+    (s2, cg) => s2 + Math.max(1, Math.round((cg.dateFin.getTime() - cg.dateDebut.getTime()) / 864e5) + 1), 0,
+  );
   return {
     total: personnels.length,
     actifs: actifs.length,
     sortis: personnels.filter((p) => p.statut !== 'actif').length,
+    turnoverPourcent: personnels.length > 0 ? Number(((sortisAnnee / personnels.length) * 100).toFixed(1)) : 0,
+    joursMaladieAnnee,
     masseSalarialeMensuelle: masseSalariale,
     cotisationPatronaleEstimee: Math.round(masseSalariale * 0.084),
     parTypeContrat: [...parTypeContrat.entries()].map(([type, v]) => ({ type, ...v })),
@@ -142,5 +157,59 @@ export async function statsRhCore(ctx: Ctx) {
     finsContratsImminentes: finsImminentes,
     congesEnCours, formationsEnCours, sanctionsAnnee,
     repartition: { hommes: actifs.filter((p) => p.sexe === 'M').length, femmes: actifs.filter((p) => p.sexe === 'F').length },
+  };
+}
+
+// --------------------------------------------------------------------
+// AUDIT RH — ÉVALUATION DU PERSONNEL (entretien annuel saisissable)
+// --------------------------------------------------------------------
+
+export async function creerEvaluationPersonnelCore(ctx: Ctx, input: {
+  personnelId: string; periode: string; criteres: Array<{ critere: string; note: number }>;
+  commentaireGlobal?: string; evaluateurId?: string;
+}) {
+  assertPermission(ctx, 'rh.gerer');
+  const p = await db.personnel.findUnique({ where: { id: input.personnelId } });
+  if (!p) throw new ActionError('Personnel introuvable.', 'INTROUVABLE');
+  assertTenant(p.ecoleId, ctx, 'Ce personnel');
+  if (!input.periode?.trim()) throw new ActionError('Période obligatoire (ex: 2026-S1).', 'CHAMP_MANQUANT');
+  if (!Array.isArray(input.criteres) || input.criteres.length === 0) {
+    throw new ActionError('Au moins un critère noté est requis.', 'CHAMP_MANQUANT');
+  }
+  for (const c of input.criteres) {
+    if (!c.critere?.trim() || !Number.isFinite(c.note) || c.note < 0 || c.note > 5) {
+      throw new ActionError('Chaque critère exige un libellé et une note 0-5.', 'CHAMP_INVALIDE');
+    }
+  }
+  // L'évaluateur est TOUJOURS l'utilisateur connecté (jamais falsifiable)
+  const moi = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, deletedAt: null } });
+  const ev = await db.evaluationPersonnel.create({
+    data: {
+      personnelId: p.id,
+      evaluateurId: input.evaluateurId ?? moi?.id ?? ctx.utilisateurId,
+      periode: input.periode.trim(),
+      criteres: JSON.stringify(input.criteres),
+      commentaireGlobal: input.commentaireGlobal?.trim() || null,
+      dateEvaluation: new Date(),
+    },
+  });
+  await logAction(db, p.ecoleId, ctx.utilisateurId, 'rh.evaluation_creee', 'evaluation_personnel', ev.id, {
+    personnel: `${p.prenom} ${p.nom}`, periode: input.periode, moyenne: (input.criteres.reduce((s2, c) => s2 + c.note, 0) / input.criteres.length).toFixed(2),
+  });
+  // Notifier le salarié
+  if (p.utilisateurId) {
+    await db.notification.create({
+      data: {
+        ecoleId: p.ecoleId, destinataireType: 'personnel', destinataireId: p.utilisateurId,
+        sujet: `Entretien d'évaluation enregistré — ${input.periode}`,
+        corps: `Votre entretien d'évaluation de la période ${input.periode} a été enregistré. Le compte rendu est disponible auprès des RH.`,
+        canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
+      },
+    }).catch(() => undefined);
+  }
+  return {
+    evaluationId: ev.id,
+    moyenne: Number((input.criteres.reduce((s2, c) => s2 + c.note, 0) / input.criteres.length).toFixed(2)),
+    nbCriteres: input.criteres.length,
   };
 }

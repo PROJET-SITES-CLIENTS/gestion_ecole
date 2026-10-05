@@ -1712,6 +1712,7 @@ async function main() {
     { roleId: roleSurveillant.id, permissionId: byCode("vie_scolaire.gerer") },
     // --- Portails métiers (chaque poste = ses permissions propres) ---
     { roleId: roleRh.id, permissionId: byCode("rh.gerer") },
+    { roleId: roleRh.id, permissionId: byCode("eleves.lire") }, // aligné sur la matrice standard
     { roleId: roleRh.id, permissionId: byCode("communication.envoyer") },
     { roleId: roleCenseur.id, permissionId: byCode("eleves.lire") },
     { roleId: roleCenseur.id, permissionId: byCode("notes.saisir") },         // FIX: le censeur peut générer les bulletins via IA

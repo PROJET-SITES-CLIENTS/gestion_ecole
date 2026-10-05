@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import * as actions from '@/app/actions';
 import * as actionsExt from '@/app/actions/extensions';
+import * as actionsComp from '@/app/actions/completions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { formatXOF, formatDate, initiales } from '@/lib/format';
@@ -26,9 +27,11 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
   const evaluationsRh = initialData.evaluationsRh ?? [];
   const bulletinsPaie = initialData.bulletinsPaie ?? [];
   const soldesConge = initialData.soldesConge ?? [];
+  const pointagesJour = initialData.pointagesJour ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(personnels[0]?.id ?? null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const { run, Message, pending } = useActionFeedback();
+  const feedback = { run, Message, pending };
 
   // B1 — PAIE : génération mensuelle + workflow brouillon → validé → payé
   const moisCourant = new Date().toISOString().slice(0, 7);
@@ -367,6 +370,33 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                   {estDirection || portal === 'rh' ? (
                     <>
                       <ModalForm
+                        trigger={<Button variant="outline" size="sm">Évaluer (entretien)</Button>}
+                        title={`Entretien d'évaluation — ${personnel.prenom} ${personnel.nom}`}
+                        fields={[
+                          { name: 'personnelId', type: 'hidden', label: 'ID', defaultValue: personnel.id },
+                          { name: 'periode', label: 'Période évaluée', required: true, defaultValue: `${new Date().getFullYear()}-S${new Date().getMonth() < 6 ? 1 : 2}` },
+                          { name: 'critere_1', label: 'Critère 1 (ex: Ponctualité et assiduité)', required: true },
+                          { name: 'note_1', label: 'Note /5 — critère 1', type: 'number', step: '0.5', required: true },
+                          { name: 'critere_2', label: 'Critère 2 (ex: Qualité du travail)' },
+                          { name: 'note_2', label: 'Note /5 — critère 2', type: 'number', step: '0.5' },
+                          { name: 'critere_3', label: 'Critère 3 (ex: Collaboration)' },
+                          { name: 'note_3', label: 'Note /5 — critère 3', type: 'number', step: '0.5' },
+                          { name: 'critere_4', label: 'Critère 4 (ex: Rapport aux élèves)' },
+                          { name: 'note_4', label: 'Note /5 — critère 4', type: 'number', step: '0.5' },
+                          { name: 'commentaireGlobal', label: 'Appréciation générale', type: 'textarea' },
+                        ]}
+                        action={actionsExt.creerEvaluationPersonnel}
+                      />
+                      {personnel.utilisateurId && (
+                        <Button
+                          variant="outline" size="sm"
+                          disabled={feedback.pending}
+                          onClick={() => { if (!window.confirm('Réinitialiser le mot de passe de ce compte ? Un mot de passe temporaire sera généré et affiché une seule fois.')) return; feedback.run(() => actionsExt.reinitialiserMotDePasseAdmin(personnel.utilisateurId!), 'Mot de passe réinitialisé (voir le résultat).'); }}
+                        >
+                          Réinitialiser le mot de passe
+                        </Button>
+                      )}
+                      <ModalForm
                         trigger={<Button variant="outline" size="sm">Modifier</Button>}
                         title={`Modifier — ${personnel.prenom} ${personnel.nom}`}
                         fields={[
@@ -590,6 +620,54 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
         </div>
         </div>
       </div>
+      {/* AUDIT RH — POINTAGES du jour : la porte d'entrée UI de la chaîne
+          pointage → heures supplémentaires → variable de paie */}
+      <SectionBlock
+        title="Pointages du jour — présence du personnel"
+        description="Pointez les arrivées et départs ; retards et heures supplémentaires alimentent la paie (conversion en variable)"
+      >
+        <DataTable
+          columns={[
+            { key: 'personnel', label: 'Personnel', render: (pt: any) => `${pt.personnel?.prenom ?? ''} ${pt.personnel?.nom ?? ''}` },
+            { key: 'arrivee', label: 'Arrivée', render: (pt: any) => pt.heureArrivee ?? '—' },
+            { key: 'depart', label: 'Départ', render: (pt: any) => pt.heureDepart ?? '—' },
+            { key: 'retard', label: 'Retard', render: (pt: any) => pt.retardMin ? <span className={pt.retardMin > 15 ? 'text-rose-600 font-semibold' : 'text-amber-600'}>{pt.retardMin} min</span> : '✓' },
+            { key: 'actions', label: 'Actions', render: (pt: any) => !pt.heureDepart ? (
+              <Button size="sm" variant="outline" className="h-7" disabled={pending}
+                onClick={() => { const fd = new FormData(); fd.set('personnelId', pt.personnelId); fd.set('sens', 'depart'); run(() => actionsComp.pointerPersonnel(fd), 'Départ pointé.'); }}>
+                Pointer le départ
+              </Button>
+            ) : <span className="text-xs text-gray-400">journée complétée</span> },
+          ]}
+          rows={pointagesJour}
+          emptyLabel="Aucun pointage aujourd'hui — pointez les arrivées ci-dessous."
+        />
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <form className="flex items-end gap-1.5" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); fd.set('sens', 'arrivee'); run(() => actionsComp.pointerPersonnel(fd), 'Arrivée pointée.'); (e.target as HTMLFormElement).reset(); }}>
+            <label className="text-xs space-y-1">
+              <span className="text-gray-600">Pointer une arrivée</span>
+              <select name="personnelId" required className="h-8 rounded-md border border-gray-200 px-2 text-sm w-56">
+                <option value="">— Choisir le personnel —</option>
+                {personnels.filter((pp: any) => pp.statut === 'actif').map((pp: any) => (
+                  <option key={pp.id} value={pp.id} disabled={pointagesJour.some((pt: any) => pt.personnelId === pp.id)}>{pp.prenom} {pp.nom}{pointagesJour.some((pt: any) => pt.personnelId === pp.id) ? ' (pointé)' : ''}</option>
+                ))}
+              </select>
+            </label>
+            <Button type="submit" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" disabled={pending}>Pointer</Button>
+          </form>
+          <form className="flex items-end gap-1.5" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); run(() => actionsComp.convertirHeuresSup(fd), 'Heures sup. converties en variable de paie.'); }}>
+            <label className="text-xs space-y-1">
+              <span className="text-gray-600">Heures sup. → paie</span>
+              <select name="personnelId" required className="h-8 rounded-md border border-gray-200 px-2 text-sm w-48">
+                <option value="">— Personnel —</option>
+                {personnels.filter((pp: any) => pp.statut === 'actif').map((pp: any) => <option key={pp.id} value={pp.id}>{pp.prenom} {pp.nom}</option>)}
+              </select>
+            </label>
+            <input name="periode" defaultValue={moisCourant} className="h-8 border rounded px-2 text-sm w-24" title="Période (AAAA-MM)" />
+            <Button type="submit" size="sm" variant="outline" className="h-8" disabled={pending}>Convertir</Button>
+          </form>
+        </div>
+      </SectionBlock>
       {/* RH SUITE — pilotage, fins de contrats, sorties */}
       <SectionBlock
         title="Pilotage RH"
@@ -615,6 +693,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                 { name: 'personnelId', label: 'Personnel', type: 'select', required: true, options: personnels.filter((p: any) => p.statut === 'actif').map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })) },
                 { name: 'motifSortie', label: 'Motif', type: 'select', required: true, options: [
                   { value: 'demission', label: 'Démission' }, { value: 'fin_contrat', label: 'Fin de contrat' },
+                          { value: 'mutualisation', label: 'Mutualisation / regroupement' }, { value: 'deces', label: 'Décès' },
                   { value: 'retraite', label: 'Retraite' }, { value: 'licenciement', label: 'Licenciement' },
                 ] },
                 { name: 'dateSortie', label: 'Date effective', type: 'date', required: true },

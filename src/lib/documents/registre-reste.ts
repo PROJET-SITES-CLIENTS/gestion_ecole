@@ -799,6 +799,58 @@ const docsRh: ModeleDoc[] = [
     },
   },
 
+  // ------------------------------------------------------------------
+  // AUDIT RH — SOLDE DE TOUT COMPTE (obligation légale à tout départ)
+  // ------------------------------------------------------------------
+  {
+    code: 'solde_tout_compte', libelle: 'Solde de tout compte', domaine: 'RH & personnel',
+    description: "Reçu de solde de tout compte à la rupture du contrat : prorata du salaire, indemnité compensatrice de congés non pris, rappel des éléments variables. À faire signer par le salarié.",
+    entete: 'financier', permission: 'rh.gerer', confidential: true,
+    parametres: [P.personnel()],
+    generer: async (c) => {
+      const pers = await (db as any).personnel.findFirst({
+        where: { id: c.p.personnelId, ecoleId: c.identite.ecoleId },
+        include: { contrats: { where: { actif: false }, orderBy: { dateDebut: 'desc' }, take: 1 } },
+      });
+      if (!pers) throw new ActionError('Personnel introuvable.', 'INTROUVABLE');
+      if (pers.statut === 'actif') throw new ActionError('Ce personnel est encore actif — enregistrez sa sortie avant d’éditer le solde de tout compte.', 'PERSONNEL_ACTIF');
+      const sortie = pers.dateSortie ? new Date(pers.dateSortie) : new Date();
+      const contrat = pers.contrats?.[0];
+      const salaireBrut = (contrat?.salaireBrut ?? pers.salaireBrut ?? 0) as number; // centimes
+      // Prorata du mois de sortie (jours présents dans le mois)
+      const debutMois = new Date(sortie.getFullYear(), sortie.getMonth(), 1);
+      const joursMois = new Date(sortie.getFullYear(), sortie.getMonth() + 1, 0).getDate();
+      const joursTravailles = Math.max(1, Math.min(joursMois, sortie.getDate()));
+      const prorata = Math.round(salaireBrut * (joursTravailles / joursMois));
+      // Indemnité de congés non pris (base 30 jours/mois de salaire)
+      const solde = await (db as any).soldeConge.findFirst({ where: { personnelId: pers.id }, orderBy: { annee: 'desc' } });
+      const joursNonPris = solde?.joursRestants ?? 0;
+      const indemniteConges = Math.round((salaireBrut / 30) * joursNonPris);
+      const total = prorata + indemniteConges;
+      const fmt = (n: number) => (n / 100).toLocaleString('fr-FR') + ' F CFA';
+      return {
+        titre: 'Reçu de solde de tout compte',
+        sousTitre: `${echapper(pers.prenom)} ${echapper(String(pers.nom).toUpperCase())} — sortie du ${dateFr(sortie)}`,
+        corps: `
+        ${tableauKV([
+          ['Salarié', `${echapper(pers.prenom)} ${echapper(String(pers.nom).toUpperCase())}`],
+          ['Matricule', echapper(pers.matricule ?? '—')],
+          ['Motif de départ', echapper(pers.motifSortie ?? '—')],
+          ['Date de sortie', dateFr(sortie)],
+        ])}
+        ${tableauKV([
+          ['Prorata de salaire (${joursTravailles}/${joursMois} jours)', fmt(prorata)],
+          ['Indemnité compensatrice de congés (${joursNonPris} jour(s) non pris)', fmt(indemniteConges)],
+        ], 'Décompte des sommes dues')}
+        <table class="data">
+          <tr style="background:#e8f2ef"><td style="font-weight:600">NET PAYÉ AU TITRE DU SOLDE DE TOUT COMPTE</td><td style="text-align:right;font-weight:700;font-size:1.05em">${fmt(total)}</td></tr>
+        </table>
+        <p style="font-size:11px;color:#444;margin-top:12px">Je reconnais avoir reçu de l'établissement la somme de ${fmt(total)} au titre du solde de tout compte et déclare n'avoir aucune réserve à formuler. Fait pour servir et valoir ce que de droit.</p>
+        ${doubleSignature(c.identite, { qui: 'Le Salarié' }, { qui: 'Le Chef d’Établissement' })}`,
+      };
+    },
+  },
+
 // ====================================================================
 // VIE SCOLAIRE+ — billet de retard, convocation conseil de discipline
 // ====================================================================
@@ -860,8 +912,8 @@ const docsRh: ModeleDoc[] = [
           lieu: 'Salle de réunion de la direction',
           ordreDuJour: ["Exposé des faits", "Audition de l'élève", "Audition des représentants légaux", "Avis des membres du conseil", "Décision du chef d'établissement"],
           obligatoire: true,
-          signataire: "Le Chef d'Établissement",
-        }) + zoneSignature(c.identite, { qui: "Le Chef d'Établissement" })}
+          signataire: "Le Chef d’Établissement",
+        }) + zoneSignature(c.identite, { qui: "Le Chef d’Établissement" })}
         <div class="section-titre">Faits reprochés</div>
         <div style="font-size:10.6pt;white-space:pre-wrap">${echapper(conseil.faits)}</div>`,
       };

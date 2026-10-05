@@ -174,6 +174,23 @@ export async function modifierPersonnelCore(ctx: Ctx, personnelId: string, donne
   assertTenant(pers.ecoleId, ctx, 'Ce personnel');
   if (donnees.nom !== undefined && !donnees.nom.trim()) throw new ActionError('Le nom ne peut pas être vide.', 'CHAMP_INVALIDE');
   if (donnees.salaireBrut !== undefined && donnees.salaireBrut < 0) throw new ActionError('Le salaire ne peut pas être négatif.', 'CHAMP_INVALIDE');
+  // AUDIT RH — historisation : un changement de salaire ou de type de contrat
+  // clôture le contrat courant et en ouvre un nouveau (l'historique des
+  // salaires dans ContratPersonnel reste ainsi complet, comme le renouvellement)
+  if (donnees.salaireBrut !== undefined || donnees.typeContrat !== undefined) {
+    const contratActif = await db.contratPersonnel.findFirst({ where: { personnelId, actif: true }, orderBy: { dateDebut: 'desc' } });
+    if (contratActif) {
+      await db.contratPersonnel.update({ where: { id: contratActif.id }, data: { actif: false, dateFin: new Date() } });
+    }
+    await db.contratPersonnel.create({
+      data: {
+        personnelId,
+        typeContrat: donnees.typeContrat ?? contratActif?.typeContrat ?? pers.typeContrat ?? 'CDI',
+        salaireBrut: donnees.salaireBrut ?? pers.salaireBrut ?? contratActif?.salaireBrut ?? 0,
+        dateDebut: new Date(),
+      },
+    });
+  }
   const maj = await db.personnel.update({
     where: { id: personnelId },
     data: {

@@ -192,7 +192,7 @@ export const outilsSecretariatFull: OutilIA[] = [
   },
   {
     nom: 'annuler_reinscription',
-    description: "Annule la réinscription d'un élève pour l'année en cours (saisie par erreur).",
+    description: "Annule la réinscription d'un élève pour l’année en cours (saisie par erreur).",
     permission: ['eleves.ecrire', 'secretariat.gerer'],
     parametres: P({ eleve: { type: 'string', description: 'Nom/prénom de l’élève' } }, ['eleve']),
     executer: async (ctx, args) => {
@@ -319,4 +319,69 @@ export const outilsSecretariatFull: OutilIA[] = [
       };
     },
   },
+
+  // ═══ RH — évaluation du personnel (entretien annuel) ═══
+  {
+    nom: 'creer_evaluation_personnel',
+    description: "Enregistre l'entretien annuel d'évaluation d'un membre du personnel : critères notés sur 5 (ex: « Ponctualité: 4; Qualité pédagogique: 3.5 ») + appréciation. Le compte rendu imprimable est ensuite disponible (évaluation_personnel dans Documents).",
+    permission: ['rh.gerer'],
+    parametres: P({
+      personnel: { type: 'string', description: 'Nom/prénom du personnel' },
+      periode: { type: 'string', description: 'Période évaluée (ex: 2026-S1)' },
+      criteres: { type: 'string', description: 'Critères notés « critère: note » séparés par des points-virgules (notes sur 5)' },
+      appreciation: { type: 'string', description: 'Appréciation générale (optionnelle)' },
+    }, ['personnel', 'periode', 'criteres']),
+    executer: async (ctx, args) => {
+      const { resoudrePersonnel } = await import('./resolution');
+      const rp = await resoudrePersonnel(ctx.ecoleId!, String(args.personnel));
+      if (!rp.trouve) return { erreur: rp.erreur, candidats: rp.candidats };
+      const criteres = String(args.criteres).split(';').map((x) => x.trim()).filter(Boolean).map((paire) => {
+        const m = paire.match(/^(.+?):\s*([\d.,]+)$/);
+        if (!m) return null;
+        return { critere: m[1].trim(), note: parseFloat(m[2].replace(',', '.')) };
+      }).filter((c): c is { critere: string; note: number } => Boolean(c) && Number.isFinite((c as any).note));
+      if (criteres.length === 0) return { erreur: 'Format des critères invalide — ex: « Ponctualité: 4; Qualité: 3,5 ».' };
+      const { creerEvaluationPersonnelCore } = await import('@/lib/business/rh-suite');
+      const r = await creerEvaluationPersonnelCore(ctx as never, {
+        personnelId: rp.entite.id, periode: String(args.periode), criteres,
+        ...(args.appreciation ? { commentaireGlobal: String(args.appreciation) } : {}),
+      });
+      return { ...r, personnel: `${rp.entite.prenom} ${rp.entite.nom}`, message: `Évaluation enregistrée — moyenne ${r.moyenne}/5 sur ${r.nbCriteres} critère(s).` };
+    },
+  },
+  // ═══ RH — pointage du personnel ═══
+  {
+    nom: 'pointer_personnel',
+    description: "Pointe l'arrivée ou le départ d'un membre du personnel (maintenant). Les retards et heures supplémentaires alimentent ensuite la paie.",
+    permission: ['rh.gerer', 'presences.saisir'],
+    parametres: P({
+      personnel: { type: 'string', description: 'Nom/prénom du personnel' },
+      sens: { type: 'string', enum: ['arrivee', 'depart'], description: 'Arrivée ou départ' },
+    }, ['personnel', 'sens']),
+    executer: async (ctx, args) => {
+      const { resoudrePersonnel } = await import('./resolution');
+      const rp = await resoudrePersonnel(ctx.ecoleId!, String(args.personnel));
+      if (!rp.trouve) return { erreur: rp.erreur, candidats: rp.candidats };
+      const { pointerPersonnelCore } = await import('@/lib/business/quotidien');
+      const r = await pointerPersonnelCore(ctx as never, rp.entite.id, String(args.sens) as never, new Date());
+      return { ...r, personnel: `${rp.entite.prenom} ${rp.entite.nom}`, sens: String(args.sens), message: `${String(args.sens) === 'arrivee' ? 'Arrivée' : 'Départ'} pointé(e).` };
+    },
+  },
+  // ═══ RH — stats enrichies (turnover, absentéisme) ═══
+  {
+    nom: 'stats_rh',
+    description: "Statistiques RH complètes : effectifs, masse salariale, coût patronal, répartition par contrat, ancienneté, fins de contrats imminentes (60 j), TURNOVER de l’année et jours de congés maladie (absentéisme).",
+    permission: ['rh.gerer'],
+    parametres: P({}),
+    executer: async (ctx) => {
+      const { statsRhCore } = await import('@/lib/business/rh-suite');
+      const r = await statsRhCore(ctx as never);
+      return {
+        ...r,
+        masseSalarialeF: `${((r.masseSalarialeMensuelle ?? 0) / 100).toLocaleString('fr-FR')} F CFA/mois`,
+        interpretation: 'turnoverPourcent = sorties de l’année / effectif ; joursMaladieAnnee = absentéisme maladie (congés validés).',
+      };
+    },
+  },
 ];
+

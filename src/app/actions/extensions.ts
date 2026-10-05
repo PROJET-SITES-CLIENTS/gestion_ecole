@@ -46,7 +46,7 @@ import {
   // AUDIT ENSEIGNANT — règles de calcul des moyennes
   majRegleCalculCore, majModeEvaluationCycleCore,
   // RH SUITE — sortie, renouvellement, pilotage
-  quitterPersonnelCore, renouvelerContratCore, statsRhCore,
+  quitterPersonnelCore, renouvelerContratCore, statsRhCore, creerEvaluationPersonnelCore,
   // VIE SCOLAIRE+ — retards, stats discipline, surveillances, conseils, visa
   enregistrerRetardCore, justifierRetardCore, statsDisciplineCore, creerSurveillanceCore,
   creerConseilDisciplineCore, deciderConseilDisciplineCore, viserCahierTexteCore,
@@ -1538,5 +1538,32 @@ export async function annulerReunionCollective(reunionId: string): Promise<Actio
     await logAction(db, r.classe.ecoleId, ctx.utilisateurId, 'reunion.annulation', 'reunion_collective', reunionId, { classe: r.classe.libelle });
     revalidatePath('/');
     return { ok: true, message: 'Réunion supprimée.' };
+  } catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT RH — évaluation du personnel (entretien annuel)
+// ====================================================================
+
+export async function creerEvaluationPersonnel(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const brut = Object.fromEntries(formData);
+    const d = z.object({
+      personnelId: idReq, periode: strReq, commentaireGlobal: str,
+      critere_1: strReq, note_1: z.coerce.number().min(0).max(5),
+      critere_2: str, note_2: z.coerce.number().min(0).max(5).optional(),
+      critere_3: str, note_3: z.coerce.number().min(0).max(5).optional(),
+      critere_4: str, note_4: z.coerce.number().min(0).max(5).optional(),
+    }).parse(brut);
+    const criteres = [1, 2, 3, 4]
+      .map((i) => ({ critere: (d as any)[`critere_${i}`], note: (d as any)[`note_${i}`] }))
+      .filter((c) => c.critere?.trim() && Number.isFinite(c.note));
+    const r = await creerEvaluationPersonnelCore(ctx, {
+      personnelId: d.personnelId, periode: d.periode, criteres,
+      commentaireGlobal: d.commentaireGlobal || undefined,
+    });
+    revalidatePath('/');
+    return { ok: true, ...r, message: `Évaluation enregistrée — moyenne ${r.moyenne}/5. Le compte rendu imprimable est disponible dans Documents.` };
   } catch (e) { return echec(e); }
 }
