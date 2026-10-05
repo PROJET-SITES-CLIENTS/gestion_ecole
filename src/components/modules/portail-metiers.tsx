@@ -19,7 +19,7 @@ import {
   GraduationCap, HeartPulse, CalendarDays, FileCheck, Users, Bell, Stethoscope,
   CheckCircle2, Clock, PiggyBank, Award, Shield, Activity, UserPlus, LogOut, Boxes, FileWarning,
 } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, useActionFeedback } from '@/components/shared-ui';
+import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, ModalForm, useActionFeedback } from '@/components/shared-ui';
 import * as actions from '@/app/actions';
 import * as actionsExt from '@/app/actions/extensions';
 import { formatXOF, formatDate, formatDateTime } from '@/lib/format';
@@ -386,6 +386,30 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
       parNiveau.set(c.niveauId, cur);
     }
     const peutEcrireDossier = initialData.session?.permissions?.includes?.('eleves.ecrire') ?? true;
+    // AUDIT SECRÉTARIAT — retards de paiement (échéances échues non soldées)
+    const echeancesSec = initialData.echeances ?? [];
+    const auj = new Date();
+    const retardsPaiement = (() => {
+      const parEleve = new Map<string, { eleveId: string; eleve: string; classe: string; echeances: number; restant: number }>();
+      for (const ech of echeancesSec) {
+        if (!['impayee', 'partiel'].includes(ech.statut ?? '')) continue;
+        if (new Date(ech.dateEcheance) >= auj) continue;
+        const el = eleves.find((x: any) => x.id === ech.eleveId);
+        if (!el) continue;
+        const restant = (ech.montant ?? 0) - (ech.remise ?? 0) - (ech.montantPaye ?? 0);
+        if (restant <= 0) continue;
+        const cur = parEleve.get(ech.eleveId) ?? {
+          eleveId: ech.eleveId, eleve: `${el.prenom} ${el.nom}`,
+          classe: classes.find((c: any) => c.id === el.classeActuelleId)?.libelle ?? '—',
+          echeances: 0, restant: 0,
+        };
+        cur.echeances++;
+        cur.restant += restant;
+        parEleve.set(ech.eleveId, cur);
+      }
+      return [...parEleve.values()].sort((a, b) => b.restant - a.restant);
+    })();
+    const nbRetardPaiement = retardsPaiement.length;
 
     return (
       <div className="p-4 lg:p-6 max-w-full lg:max-w-7xl mx-auto">
@@ -419,7 +443,34 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
               />
             )}
           </SectionBlock>
-          <SectionBlock title="Justificatifs reçus — en attente de validation" description="Reçus au guichet ou déposés par les parents en ligne">
+          <SectionBlock
+            title="Justificatifs reçus — en attente de validation"
+            description="Reçus au guichet ou déposés par les parents en ligne"
+            action={
+              <ModalForm
+                trigger={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><FileCheck className="h-3.5 w-3.5 mr-1" />Justificatif papier (guichet)</Button>}
+                title="Enregistrer un justificatif déposé au guichet"
+                fields={[
+                  { name: 'presenceId', label: 'Absence précise (passera en « excusé » après validation)', type: 'select', options: [
+                    { value: '', label: '— Générale (sans séance précise) —' },
+                    ...absentsJour.filter((a: any) => a.statut === 'absent' && !a.justification).slice(0, 60).map((a: any) => ({
+                      value: a.id,
+                      label: `${a.eleve ? `${a.eleve.prenom} ${a.eleve.nom}` : '?'} — ${formatDate(a.dateSaisie)}${a.seance ? ` (${a.seance.matiere?.libelle ?? ''})` : ''}`,
+                    })),
+                  ] },
+                  { name: 'eleveId', label: 'Élève (si absence générale)', type: 'select', required: false, options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })) },
+                  { name: 'dateAbsence', label: "Date de l'absence", type: 'date', required: true, defaultValue: new Date().toISOString().slice(0, 10) },
+                  { name: 'motif', label: 'Motif', type: 'select', required: true, options: [
+                    { value: 'maladie', label: 'Maladie' }, { value: 'familial', label: 'Raison familiale' },
+                    { value: 'rendez_vous_medical', label: 'Rendez-vous médical' }, { value: 'ceremonie', label: 'Cérémonie' },
+                    { value: 'transport', label: 'Problème de transport' }, { value: 'autre', label: 'Autre' },
+                  ] },
+                  { name: 'description', label: 'Précisions (verso du justificatif)', type: 'textarea' },
+                ]}
+                action={actions.justifierAbsence}
+              />
+            }
+          >
             {justifsAttente.length === 0 ? (
               <p className="text-sm text-gray-500">Aucun justificatif en attente.</p>
             ) : (
@@ -573,7 +624,24 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             emptyLabel="Aucun rendez-vous"
           />
         </SectionBlock>
-        <SectionBlock title="Réunions collectives" description="Conseils et rencontres prévues">
+        <SectionBlock
+          title="Réunions collectives"
+          description="Créez une réunion : les parents de la classe sont notifiés automatiquement"
+          action={
+            <ModalForm
+              trigger={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><CalendarDays className="h-3.5 w-3.5 mr-1" />Nouvelle réunion</Button>}
+              title="Programmer une réunion collective"
+              fields={[
+                { name: 'classeId', label: 'Classe', type: 'select', required: true, options: classes.map((c: any) => ({ value: c.id, label: c.libelle })) },
+                { name: 'date', label: 'Date', type: 'date', required: true },
+                { name: 'heure', label: 'Heure', required: true, placeholder: '10:00' },
+                { name: 'lieu', label: 'Lieu', required: true, placeholder: 'Salle de réunion' },
+                { name: 'description', label: 'Objet', placeholder: 'Rencontre parents-professeurs du 1er trimestre' },
+              ]}
+              action={actionsExt.creerReunionCollective}
+            />
+          }
+        >
           <DataTable
             columns={[
               { key: 'classe', label: 'Classe', render: (r) => classeById.get(r.classeId)?.code ?? '—' },
@@ -581,10 +649,50 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
               { key: 'heure', label: 'Heure' },
               { key: 'lieu', label: 'Lieu' },
               { key: 'description', label: 'Description', render: (r) => r.description ?? '—' },
+              { key: 'actions', label: '', render: (r) => (
+                <Button size="sm" variant="ghost" className="h-7 text-rose-600" disabled={retourSec.pending}
+                  onClick={() => { if (window.confirm('Supprimer cette réunion ?')) retourSec.run(() => actionsExt.annulerReunionCollective(r.id), 'Réunion supprimée.'); }}>
+                  Supprimer
+                </Button>
+              ) },
             ]}
             rows={reunions}
             emptyLabel="Aucune réunion planifiée"
           />
+        </SectionBlock>
+        {/* AUDIT SECRÉTARIAT — retards de paiement : vue globale + relance */}
+        <SectionBlock
+          title="Retards de paiement — à relancer"
+          description="Élèves ayant au moins une échéance échue non soldée"
+          action={
+            nbRetardPaiement > 0 ? (
+              <Button variant="outline" size="sm" className="border-amber-300 text-amber-800" disabled={retourSec.pending}
+                onClick={() => retourSec.run(() => actionsExt.relancerTousImpayes(), undefined as never)}>
+                <Bell className="h-3.5 w-3.5 mr-1" /> Relancer les {nbRetardPaiement} famille(s)
+              </Button>
+            ) : undefined
+          }
+        >
+          {retardsPaiement.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun retard de paiement — toutes les échéances échues sont soldées. ✓</p>
+          ) : (
+            <DataTable
+              columns={[
+                { key: 'eleve', label: 'Élève', render: (r) => r.eleve },
+                { key: 'classe', label: 'Classe', render: (r) => r.classe },
+                { key: 'echeances', label: 'Échéances échues' },
+                { key: 'restant', label: 'Restant dû', render: (r) => <b className="text-rose-700">{(r.restant / 100).toLocaleString('fr-FR')} F</b> },
+                { key: 'actions', label: '', render: (r) => (
+                  <Button size="sm" variant="outline" className="h-7 border-amber-300 text-amber-800" disabled={retourSec.pending}
+                    onClick={() => retourSec.run(() => actionsExt.relancerImpayesEleve(r.eleveId), 'Relance envoyée.')}>
+                    Relancer
+                  </Button>
+                ) },
+              ]}
+              rows={retardsPaiement.slice(0, 12)}
+              emptyLabel=""
+            />
+          )}
         </SectionBlock>
         <SectionBlock title="Derniers documents élèves" description={`${documents.length} document(s)`}>
           <DataTable

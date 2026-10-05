@@ -151,6 +151,23 @@ export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: Inscri
         return { eleveId: eleve.id, matricule };
       }, { timeout: 30000, maxWait: 10000 });
       await emettreWebhookInscription(ecoleId, résultat.eleveId, résultat.matricule);
+      // AUDIT — la direction est notifiée in-app de chaque nouvelle inscription
+      try {
+        const { getDirectionUserId } = await import('./commun');
+        const dirId = await getDirectionUserId(ecoleId);
+        const classeLib = input.classeId ? (await db.classe.findUnique({ where: { id: input.classeId }, select: { libelle: true } }))?.libelle : null;
+        const inscrit = await db.eleve.findUnique({ where: { id: résultat.eleveId }, select: { prenom: true, nom: true } });
+        if (inscrit) {
+          await (db as any).notification.create({
+            data: {
+              ecoleId, destinataireType: 'personnel', destinataireId: dirId,
+              sujet: 'Nouvelle inscription — ' + inscrit.prenom + ' ' + inscrit.nom,
+              corps: inscrit.prenom + ' ' + inscrit.nom + ' (' + résultat.matricule + ') vient dêtre inscrit(e)' + (classeLib ? ' en ' + classeLib : '') + '. Dossier initialisé : 5 pièces à recueillir.',
+              canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
+            },
+          });
+        }
+      } catch { /* notification non bloquante */ }
       return résultat;
     } catch (e: any) {
       if (e instanceof ActionError) throw e;

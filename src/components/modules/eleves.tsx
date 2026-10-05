@@ -181,6 +181,14 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         actions={
           <div className="flex items-center gap-2">
           {(peutEcrire || portal === 'secretariat') && (
+            <form className="inline" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const f = (e.currentTarget.elements.namedItem('fichierCsv') as HTMLInputElement); if (f?.files?.[0]) { uploadFb.run(() => ext.importerElevesCsv(fd), 'Import CSV terminé — voir le rapport.'); } }}>
+              <label className="inline-flex items-center gap-1 text-xs cursor-pointer border rounded-md px-2 h-8 hover:bg-gray-50" title="Importer des élèves depuis un CSV (nom,prénom,dateNaissance,sexe,classe)">
+                <Upload className="h-3.5 w-3.5" /> Importer CSV
+                <input type="file" name="fichierCsv" accept=".csv" className="hidden" onChange={(e) => (e.target.form as HTMLFormElement)?.requestSubmit()} />
+              </label>
+            </form>
+          )}
+          {(peutEcrire || portal === 'secretariat') && (
             <Button
               variant="outline" size="sm"
               onClick={() => {
@@ -627,6 +635,17 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                             <div className={`text-lg font-semibold ${restantDu > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{formatMontant(restantDu)}</div>
                           </div>
                         </div>
+                        {restantDu > 0 && (
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline" size="sm" className="border-amber-300 text-amber-800"
+                              disabled={uploadFb.pending}
+                              onClick={() => uploadFb.run(() => actionsExt.relancerImpayesEleve(eleve.id), 'Relance d\'impayés envoyée aux parents.')}
+                            >
+                              <Bell className="h-3.5 w-3.5 mr-1" /> Relancer pour impayés
+                            </Button>
+                          </div>
+                        )}
                         <div className="space-y-2">
                           {eleveEcheances.map((e: any) => {
                             const net = e.montant - (e.remise ?? 0);
@@ -1088,6 +1107,18 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                   action={actions.demanderEffacement}
                 />
 
+              {(parents.filter((pp: any) => (pp.eleves ?? []).some((lp: any) => lp.eleve?.id === eleve.id) && !pp.utilisateurId)[0]) ? (
+                <ModalForm
+                  title={`Créer le compte parent — ${parents.filter((pp: any) => (pp.eleves ?? []).some((lp: any) => lp.eleve?.id === eleve.id))[0].prenom ?? ''} ${parents.filter((pp: any) => (pp.eleves ?? []).some((lp: any) => lp.eleve?.id === eleve.id))[0].nom ?? ''}`}
+                  trigger={<Button variant="outline" size="sm"><KeyRound className="h-4 w-4 mr-1" /> Créer le compte parent</Button>}
+                  fields={[
+                    { name: 'parentId', label: 'Parent', type: 'hidden', defaultValue: parents.filter((pp: any) => (pp.eleves ?? []).some((lp: any) => lp.eleve?.id === eleve.id) && !pp.utilisateurId)[0].id },
+                    { name: 'email', label: 'Email du parent', type: 'email', required: true },
+                    { name: 'motDePasse', label: 'Mot de passe initial (min 8)', type: 'password', required: true },
+                  ]}
+                  action={ext.creerCompteParent}
+                />
+              ) : null}
               {!eleve.utilisateurId ? (
                 <ModalForm
                   title={`Créer le compte portail — ${eleve.prenom} ${eleve.nom}`}

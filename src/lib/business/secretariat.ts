@@ -260,3 +260,67 @@ export async function majCoordonneesFamilleCore(ctx: Ctx, input: CoordonneesInpu
   });
   return { eleveId: eleve.id, parentModifie };
 }
+
+// --------------------------------------------------------------------
+// AUDIT SECRÉTARIAT — relance impayés notifiant les FAMILLES
+// --------------------------------------------------------------------
+
+/** Notifie les parents d'un élève avec le détail de ses échéances en retard
+ *  (montant restant, dates échues) + la direction en copie. */
+export async function relancerImpayesEleveCore(ctx: Ctx, eleveId: string) {
+  assertPermissionParmi(ctx, ['finances.voir', 'eleves.ecrire', 'secretariat.gerer']);
+  const eleve = await db.eleve.findUnique({ where: { id: eleveId } });
+  if (!eleve) throw new ActionError('Élève introuvable.', 'INTROUVABLE');
+  assertTenant(eleve.ecoleId, ctx, 'Cet élève');
+  const aujourdhui = new Date();
+  const enRetard = await db.echeanceFrais.findMany({
+    where: { eleveId, statut: { in: ['impayee', 'partiel'] }, dateEcheance: { lt: aujourdhui } },
+    include: { frais: { select: { libelle: true } } },
+    orderBy: { dateEcheance: 'asc' },
+  });
+  if (enRetard.length === 0) {
+    throw new ActionError('Aucune échéance en retard pour cet élève — relance inutile.', 'AUCUN_RETARD');
+  }
+  const totalRestant = enRetard.reduce((s, e) => s + (e.montant - (e.remise ?? 0) - (e.montantPaye ?? 0)), 0);
+  const detail = enRetard.map((e) => `${e.frais?.libelle ?? 'Échéance'} du ${e.dateEcheance.toISOString().slice(0, 10)}`).join(', ');
+  const nb = await notifierParentsEtDirection(
+    db as never, eleve.ecoleId, eleve.id,
+    `Rappel de scolarité — ${eleve.prenom} ${eleve.nom}`,
+    `Bonjour, nous vous rappelons que le dossier de ${eleve.prenom} ${eleve.nom} présente ${enRetard.length} échéance(s) échue(s) : ${detail}. Montant total restant dû : ${(totalRestant / 100).toLocaleString('fr-FR')} F CFA. Merci de vous rapprocher de la comptabilité pour régulariser.`,
+  );
+  await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'impayes.relance', 'eleve', eleve.id, { echeances: enRetard.length, totalRestant });
+  return { eleveId, echeancesEnRetard: enRetard.length, totalRestant, parentsNotifies: nb };
+}
+
+/** Relance en masse : toutes les familles ayant au moins une échéance échue
+ *  non soldée. Retourne le détail. */
+export async function relancerTousImpayesCore(ctx: Ctx) {
+  assertPermissionParmi(ctx, ['finances.voir', 'eleves.ecrire', 'secretariat.gerer']);
+  if (!ctx.ecoleId) throw new ActionError('Aucune école associée.', 'ECOLE_ABSENTE');
+  const aujourdhui = new Date();
+  const enRetard = await db.echeanceFrais.findMany({
+    where: { statut: { in: ['impayee', 'partiel'] }, dateEcheance: { lt: aujourdhui }, eleve: { ecoleId: ctx.ecoleId, deletedAt: null, statut: 'actif' } },
+    include: { frais: { select: { libelle: true } }, eleve: true },
+    orderBy: { dateEcheance: 'asc' },
+  });
+  const parEleve = new Map<string, typeof enRetard>();
+  for (const e of enRetard) {
+    (parEleve.get(e.eleveId) ?? parEleve.set(e.eleveId, [] as typeof enRetard).get(e.eleveId)!).push(e);
+  }
+  let familles = 0;
+  const detail: Array<{ eleve: string; echeances: number; restant: number }> = [];
+  for (const [eleveId, echs] of parEleve) {
+    const el = echs[0].eleve;
+    const restant = echs.reduce((s, e) => s + (e.montant - (e.remise ?? 0) - (e.montantPaye ?? 0)), 0);
+    const detailTxt = echs.map((e) => `${e.frais?.libelle ?? 'Échéance'} du ${e.dateEcheance.toISOString().slice(0, 10)}`).join(', ');
+    await notifierParentsEtDirection(
+      db as never, ctx.ecoleId, eleveId,
+      `Rappel de scolarité — ${el.prenom} ${el.nom}`,
+      `Bonjour, le dossier de ${el.prenom} ${el.nom} présente ${echs.length} échéance(s) échue(s) : ${detailTxt}. Restant dû : ${(restant / 100).toLocaleString('fr-FR')} F CFA. Merci de régulariser auprès de la comptabilité.`,
+    );
+    familles++;
+    detail.push({ eleve: `${el.prenom} ${el.nom}`, echeances: echs.length, restant });
+  }
+  await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'impayes.relance_masse', undefined, undefined, { familles });
+  return { familles, detail };
+}

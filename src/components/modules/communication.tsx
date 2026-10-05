@@ -400,6 +400,7 @@ function SectionTickets({ tickets }: { tickets: any[] }) {
 }
 
 export default function CommunicationModule({ initialData }: { initialData: any }) {
+  const retourCourrier = useActionFeedback();
   const courriers = initialData.courriers ?? [];
   const notifications = initialData.notifications ?? [];
   const modeles = initialData.modelesMessage ?? [];
@@ -488,6 +489,7 @@ export default function CommunicationModule({ initialData }: { initialData: any 
           rows={courriers}
           emptyLabel="Aucun courrier enregistré"
         />
+      {retourCourrier.Message}
       </SectionBlock>
     );
   }

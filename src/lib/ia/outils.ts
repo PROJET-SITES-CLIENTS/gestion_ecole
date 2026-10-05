@@ -248,26 +248,7 @@ const outilsLecture: OutilIA[] = [
       };
     },
   },
-  {
-    nom: 'absences_du_jour',
-    description: "Absences et retards du jour (ou d'une date), par classe — utile pour la vie scolaire et les relances.",
-    permission: 'presences.saisir',
-    parametres: P({ date: { type: 'string', description: 'Date ISO (AAAA-MM-JJ), défaut : aujourd\'hui' } }),
-    executer: async (ctx, args) => {
-      const d = args.date ? new Date(String(args.date)) : new Date();
-      const debut = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const fin = new Date(debut.getTime() + 86400000);
-      const presences = await db.presence.findMany({
-        where: { statut: { in: ['absent', 'retard'] }, seance: { date: { gte: debut, lt: fin }, classe: { ecoleId: ctx.ecoleId! } } },
-        include: { eleve: { include: { classeActuelle: true } }, seance: { include: { matiere: true, classe: true } } },
-      });
-      return presences.map((p) => ({
-        eleve: `${p.eleve.prenom} ${p.eleve.nom}`, classe: p.eleve.classeActuelle?.libelle ?? p.seance.classe?.libelle,
-        statut: p.statut, matiere: p.seance.matiere?.libelle ?? '—', heure: p.seance.heureDebut,
-      }));
-    },
-  },
-  {
+    {
     nom: 'bulletins_classe',
     description: 'Résultats d\'une classe pour une période : moyenne, rang et mention de chaque élève.',
     permission: 'bulletins.valider',
@@ -1207,7 +1188,7 @@ const outilsAction: OutilIA[] = [
   {
     nom: 'justifier_absence',
     description: "Justifie une absence pour un élève (certificat médical, mot des parents).",
-    permission: 'vie_scolaire.gerer',
+    permission: ['vie_scolaire.gerer', 'presences.saisir', 'eleves.ecrire', 'secretariat.gerer'],
     parametres: P({
       eleve: { type: 'string', description: 'Nom de l\'élève' },
       motif: { type: 'string', description: 'Motif de la justification (ex: Maladie)' },
@@ -1241,7 +1222,7 @@ const outilsAction: OutilIA[] = [
   {
     nom: 'justifier_retard',
     description: "Justifie un retard d'élève existant.",
-    permission: 'vie_scolaire.gerer',
+    permission: ['vie_scolaire.gerer', 'presences.saisir', 'eleves.ecrire', 'secretariat.gerer'],
     parametres: P({
        retardId: { type: 'string', description: 'ID du retard (obtenu via rechercher_eleve ou stats)' }
     }, ['retardId']),
@@ -2004,8 +1985,9 @@ const outilsConfiguration: OutilIA[] = [
 import { outilsCRUD } from "./outils-crud";
 import { outilsAudit } from "./outils-audit";
 import { outilsEnseignant, outilsSecretariatIA } from "./outils-enseignant";
+import { outilsSecretariatFull } from "./outils-secretariat";
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA];
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA, ...outilsSecretariatFull];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {

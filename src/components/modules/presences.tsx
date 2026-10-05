@@ -239,6 +239,13 @@ export default function PresencesModule({ initialData }: { initialData: any }) {
             title="Justifier une absence"
             fields={[
               { name: 'eleveId', label: 'Élève', type: 'select', options: eleves.map((e: any) => ({ value: e.id, label: `${e.prenom} ${e.nom}` })), required: true },
+              { name: 'presenceId', label: 'Absence précise (elle passera en « excusé » à la validation)', type: 'select', options: [
+                { value: '', label: '— Générale —' },
+                ...presences.filter((pp: any) => pp.statut === 'absent' && !justifications.some((jj: any) => jj.presenceId === pp.id)).slice(0, 100).map((pp: any) => {
+                  const el = eleves.find((x: any) => x.id === pp.eleveId);
+                  return { value: pp.id, label: `${el ? `${el.prenom} ${el.nom}` : '?'} — ${formatDate(pp.dateSaisie)}` };
+                }),
+              ] },
               { name: 'dateAbsence', label: 'Date de l\'absence', type: 'date', required: true },
               { name: 'motif', label: 'Motif', type: 'select', options: Object.entries(LIBELLES_MOTIF).map(([value, label]) => ({ value, label })), required: true },
               { name: 'dureeHeures', label: 'Durée (heures)', type: 'number', step: '0.5', placeholder: '2' },

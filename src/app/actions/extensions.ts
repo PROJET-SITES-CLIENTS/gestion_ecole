@@ -65,8 +65,9 @@ import {
   statsAbsencesCore, notifierFamillesAbsencesCore,
   // AUDIT ENSEIGNANT — moteur de rythme pédagogique
   evaluerRythmeProgrammeCore, rythmeProgrammesCore,
-  // AUDIT SECRÉTARIAT — relances pièces, coordonnées familles
+  // AUDIT SECRÉTARIAT — relances pièces, coordonnées familles, relances impayés
   relancerPiecesDossierCore, relancerToutesPiecesCore, majCoordonneesFamilleCore,
+  relancerImpayesEleveCore, relancerTousImpayesCore,
 } from '@/lib/business';
 import { creerSauvegarde, restaurerSauvegarde } from '@/lib/sauvegarde';
 
@@ -1477,5 +1478,65 @@ export async function majCoordonneesFamille(formData: FormData): Promise<ActionR
     });
     revalidatePath('/');
     return { ok: true, ...r, message: 'Coordonnées de la famille mises à jour.' };
+  } catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT SECRÉTARIAT — relances d'impayés (notifie les FAMILLES)
+// ====================================================================
+
+export async function relancerImpayesEleve(eleveId: string): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await relancerImpayesEleveCore(ctx, eleveId); revalidatePath('/'); return { ok: true, ...r, message: `Relance envoyée : ${r.echeancesEnRetard} échéance(s) en retard.` }; }
+  catch (e) { return echec(e); }
+}
+
+export async function relancerTousImpayes(): Promise<ActionResult> {
+  try { const ctx = await ctxSession(); const r = await relancerTousImpayesCore(ctx); return { ok: true, ...r, message: `${r.familles} famille(s) relancée(s) pour impayés.` }; }
+  catch (e) { return echec(e); }
+}
+
+// ====================================================================
+// AUDIT SECRÉTARIAT — réunions collectives (création, enfin)
+// ====================================================================
+
+export async function creerReunionCollective(formData: FormData): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const d = z.object({
+      classeId: idReq, date: dateReq, heure: strReq, lieu: strReq, description: str,
+    }).parse(Object.fromEntries(formData));
+    const classe = await db.classe.findUnique({ where: { id: d.classeId } });
+    if (!classe) return { ok: false, error: 'Classe introuvable.' };
+    // Périmètre + notification des parents de la classe
+    const r = await db.reunionCollective.create({
+      data: { classeId: d.classeId, date: d.date, heure: d.heure, lieu: d.lieu, description: d.description || null },
+      include: { classe: true },
+    });
+    // Notifier les parents des élèves de la classe
+    const eleves = await db.eleve.findMany({ where: { classeActuelleId: d.classeId, deletedAt: null, statut: 'actif' }, select: { id: true } });
+    const { notifierParentsEtDirection } = await import('@/lib/business/commun');
+    for (const e of eleves) {
+      await notifierParentsEtDirection(db as never, classe.ecoleId, e.id,
+        `Réunion — ${r.classe.libelle}`,
+        `Une réunion est programmée pour la classe ${r.classe.libelle} le ${d.date.toISOString().slice(0, 10)} à ${d.heure} (${d.lieu}). ${d.description ?? ''}`.trim(),
+        { direction: false },
+      );
+    }
+    await (await import('@/lib/business/commun')).logAction(db, classe.ecoleId, ctx.utilisateurId, 'reunion.creation', 'reunion_collective', r.id, { classe: r.classe.libelle, parents: eleves.length });
+    revalidatePath('/');
+    return { ok: true, reunionId: r.id, message: `Réunion créée — ${eleves.length} famille(s) notifiée(s).` };
+  } catch (e) { return echec(e); }
+}
+
+export async function annulerReunionCollective(reunionId: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await db.reunionCollective.findUnique({ where: { id: reunionId }, include: { classe: true } });
+    if (!r) return { ok: false, error: 'Réunion introuvable.' };
+    await db.reunionCollective.delete({ where: { id: reunionId } });
+    const { logAction } = await import('@/lib/business/commun');
+    await logAction(db, r.classe.ecoleId, ctx.utilisateurId, 'reunion.annulation', 'reunion_collective', reunionId, { classe: r.classe.libelle });
+    revalidatePath('/');
+    return { ok: true, message: 'Réunion supprimée.' };
   } catch (e) { return echec(e); }
 }

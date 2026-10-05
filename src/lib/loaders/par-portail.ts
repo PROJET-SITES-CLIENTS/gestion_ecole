@@ -362,7 +362,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
   const vieScolaire = ['direction', 'vie_scolaire', 'enseignant', 'assistant', 'super_admin'].includes(portal);
   const services = ['direction', 'super_admin'].includes(portal);
   const secretariat = portal === 'secretariat' || portal === 'direction' || portal === 'super_admin';
-  const examens = ['direction', 'vie_scolaire', 'super_admin'].includes(portal);
+  const examens = ['direction', 'vie_scolaire', 'super_admin', 'secretariat'].includes(portal); // AUDIT SECRÉTARIAT — appui inscriptions BEPC/BAC
   const edt = ['direction', 'vie_scolaire', 'enseignant', 'super_admin'].includes(portal);
   const salles = ['direction', 'vie_scolaire', 'super_admin'].includes(portal);
   const communication = portal !== 'eleve' && portal !== 'parent';
@@ -669,7 +669,7 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         const [piecesDossier, courriers, reinscriptions] = await Promise.all([
           db.pieceDossier.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } } } }),
           db.courrier.findMany({ where: { ecoleId }, orderBy: { dateEnregistrement: 'desc' }, take: 300 }),
-          db.reinscription.findMany({ where: { eleve: { ecoleId, deletedAt: null } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } }, classeVoulue: true, anneeScolaire: true } }),
+          db.reinscription.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } }, classeVoulue: true, anneeScolaire: true } }),
         ]);
         v.piecesDossier = piecesDossier; v.courriers = courriers; v.reinscriptions = reinscriptions;
       }
@@ -685,6 +685,13 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       // attente de validation, et fournitures administratives (stock).
       if (portal === 'secretariat') {
         const debutJour = new Date(); debutJour.setHours(0, 0, 0, 0);
+        // AUDIT RGPD — le secrétariat SOUMET des demandes : il doit aussi en voir le suivi
+        const [demandesEffacementSec, consentementsImageSec] = await Promise.all([
+          db.demandeEffacement.findMany({ where: { ecoleId }, orderBy: { dateDemande: 'desc' }, take: 50 }),
+          db.consentementImage.findMany({ where: { eleve: { ecoleId, ...ouElevesPerimetre } }, orderBy: { dateAccord: 'desc' }, take: 100, include: { eleve: { select: { id: true, nom: true, prenom: true } } } }),
+        ]);
+        v.demandesEffacement = demandesEffacementSec;
+        v.consentementsImage = consentementsImageSec;
         const finJour = new Date(debutJour); finJour.setDate(finJour.getDate() + 1);
         const [absencesJour, justifsAttente, articlesStock] = await Promise.all([
           db.presence.findMany({

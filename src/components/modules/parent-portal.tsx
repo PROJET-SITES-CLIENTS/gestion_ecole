@@ -118,13 +118,13 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
                   const j = mesJustifications.find((x: any) => x.presenceId === p.id);
                   if (!j) return (
                     <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget);
-                      fd.set('eleveId', p.eleveId); fd.set('dateAbsence', new Date(p.dateSaisie).toISOString().slice(0, 10));
+                      fd.set('eleveId', p.eleveId); fd.set('dateAbsence', new Date(p.dateSaisie).toISOString().slice(0, 10)); fd.set('presenceId', p.id);
                       fd.set('motif', 'maladie'); run(() => actions.justifierAbsence(fd), 'Justification envoyée'); }}>
                       <input name="description" placeholder="Motif" className="h-7 w-28 text-xs border rounded px-1" />
                       <button className="text-xs text-emerald-700 font-semibold">Justifier</button>
                     </form>
                   );
-                  return <StatusBadge statut={j.statut ?? 'en_attente'} label={j.statut === 'acceptee' ? '✓ Acceptée' : j.statut === 'refusee' ? '✗ Refusée' : 'En attente'} />;
+                  return <StatusBadge statut={j.statut ?? 'en_attente'} label={j.statut === 'valide' ? '✓ Acceptée' : j.statut === 'rejete' ? '✗ Refusée' : 'En attente'} />;
                 } },
               ]}
               rows={mesPresences.slice(0, 20)}
@@ -238,6 +238,13 @@ export default function ParentPortalModule({ initialData, mode = 'full' }: { ini
                   trigger={<button className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1.5">Soumettre une justification</button>}
                   fields={[
                     { name: 'eleveId', label: 'Enfant', type: 'hidden', defaultValue: enfant.id },
+                    { name: 'presenceId', label: 'Absence précise (recommandé : elle passera en « excusé » après validation)', type: 'select', options: [
+                      { value: '', label: '— Générale (sans séance précise) —' },
+                      ...(mesPresences ?? []).filter((pp: any) => pp.statut === 'absent' && !(mesJustifications ?? []).some((jj: any) => jj.presenceId === pp.id)).map((pp: any) => ({
+                        value: pp.id,
+                        label: `${new Date(pp.dateSaisie).toLocaleDateString('fr-FR')}${pp.seance ? ` — ${pp.seance.matiere?.libelle ?? ''} ${pp.seance.heureDebut ?? ''}` : ''}`,
+                      })),
+                    ] },
                     { name: 'dateAbsence', label: "Date de l'absence", type: 'date', required: true },
                     { name: 'motif', label: 'Motif', type: 'select', required: true,
                       options: [

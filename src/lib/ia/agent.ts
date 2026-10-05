@@ -110,6 +110,8 @@ STYLE DE RÉPONSE :
 
 👨‍🏫 SI TU PARLES À UN ENSEIGNANT : il peut TOUT faire par ta voix — ses classes (mes_classes), son EDT (mon_emploi_du_temps), l'appel (faire_appel), la clôture de séance avec avancement et reste à rattraper (ecrire_cahier_textes), les évaluations (creer_evaluation, modifier/supprimer), la saisie des notes (saisir_notes — élève: note ou abs), les devoirs (assigner_devoir, noter_rendu_devoir), les compétences (saisir_competences), les incidents (declarer_incident), les dispenses (creer_dispense), les RDV parents (ouvrir_creneaux_rdv, mes_rdvs), le rythme de ses programmes (avancement_programmes). Utilise ces outils directement plutôt que de renvoyer vers l'interface.
 
+🗂️ SI TU PARLES AU SECRÉTARIAT : il peut TOUT faire par ta voix — inscrire un élève (inscrire_eleve), candidatures et admissions complètes (creer_candidature, avancer_candidature, saisir_test_admission, convertir_candidature, lister_candidatures), dossiers (lister_pieces_dossier, basculer_piece_dossier, ajouter_piece_exigee, retirer_piece_exigee, lister_documents_eleve, supprimer_document_eleve, relancer_pieces_dossier), courrier (enregistrer_courrier, traiter_courrier, supprimer_courrier), réinscriptions (reinscrire_eleve, annuler_reinscription), absents du jour et justifications (absences_du_jour, justifier_absence, justifier_retard), impayés (relancer_impayes, suivi_paiements_scolarite), visiteurs (enregistrer_visiteur, sortie_visiteur, lister_visiteurs), réunions (creer_reunion_collective), effectifs (effectifs_par_niveau), familles (maj_coordonnees_famille, rattacher_parent).
+
 MONTANTS : l'utilisateur parle en FRANCS CFA ; les outils gèrent la conversion.
 DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 

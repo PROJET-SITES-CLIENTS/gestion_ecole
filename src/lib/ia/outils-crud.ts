@@ -309,16 +309,43 @@ export const outilsCRUD: OutilIA[] = [
   // ═══ PRÉSENCES ═══
   {
     nom: "supprimer_presence",
-    description: "Supprime l'enregistrement de présence d'un élève pour une séance (annule un appel erroné).",
+    description: "Supprime UNE présence précise d'un élève (saisie erronée) — CHIRURGICAL : l'élève ET la séance (ou la date) sont identifiés sans ambiguïté ; jamais la dernière présence au hasard.",
     permission: "presences.saisir",
-    parametres: P({ eleve: { type: "string", description: "Nom de l'élève" }, seance: { type: "string", description: "Date ou matière de la séance" } }, ["eleve"]),
+    parametres: P({
+      eleve: { type: "string", description: "Nom/prénom de l'élève" },
+      seance: { type: "string", description: "Matière ou date de la séance (ex: 'Maths' ou '2026-10-05') — optionnel mais recommandé" },
+    }, ["eleve"]),
     executer: async (ctx, args) => {
-      const el = await db.eleve.findFirst({ where: { ecoleId: ctx.ecoleId!, deletedAt: null, OR: [{ nom: { contains: String(args.eleve), mode: "insensitive" } }, { prenom: { contains: String(args.eleve), mode: "insensitive" } }] } });
-      if (!el) return { erreur: "Élève introuvable." };
-      const pres = await db.presence.findFirst({ where: { eleveId: el.id }, orderBy: { id: 'desc' } });
-      if (!pres) return { erreur: "Présence introuvable." };
-      await db.presence.delete({ where: { id: pres.id } });
-      return { supprimee: true };
+      const { resoudreEleve } = await import("./resolution");
+      const re = await resoudreEleve(ctx.ecoleId!, String(args.eleve));
+      if (!re.trouve) return { erreur: re.erreur, candidats: re.candidats };
+      const presences = await db.presence.findMany({
+        where: { eleveId: re.entite.id },
+        include: { seance: { include: { matiere: { select: { libelle: true } } } } },
+        orderBy: { dateSaisie: "desc" },
+        take: 100,
+      });
+      if (presences.length === 0) return { erreur: "Aucune présence enregistrée pour cet élève." };
+      let cible = null as typeof presences[number] | null;
+      if (args.seance) {
+        const q = String(args.seance).toLowerCase();
+        cible = presences.find((p) => p.seance?.matiere?.libelle?.toLowerCase().includes(q))
+          ?? presences.find((p) => p.dateSaisie.toISOString().slice(0, 10) === String(args.seance))
+          ?? null;
+        if (!cible) {
+          return {
+            erreur: `Aucune présence ne correspond à « ${args.seance} » pour cet élève. Présences récentes : ${presences.slice(0, 6).map((p) => `${p.seance?.matiere?.libelle ?? '?'} du ${p.dateSaisie.toISOString().slice(0, 10)} (${p.statut})`).join(' ; ')}`,
+          };
+        }
+      } else if (presences.length === 1) {
+        cible = presences[0];
+      } else {
+        return {
+          erreur: `Cet élève a ${presences.length} présences — précisez la séance ou la date. Récentes : ${presences.slice(0, 5).map((p) => `${p.seance?.matiere?.libelle ?? '?'} du ${p.dateSaisie.toISOString().slice(0, 10)}`).join(' ; ')}`,
+        };
+      }
+      await db.presence.delete({ where: { id: cible.id } });
+      return { supprimee: true, eleve: `${re.entite.prenom} ${re.entite.nom}`, seance: cible.seance?.matiere?.libelle ?? '—', date: cible.dateSaisie.toISOString().slice(0, 10), statut: cible.statut };
     },
   },
 ];
