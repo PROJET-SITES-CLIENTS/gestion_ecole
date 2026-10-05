@@ -128,21 +128,17 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 
   let videsConsecutifs = 0;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
-    // tool_choice est toujours 'auto' : après avoir traité les outils l'IA choisit
-    // librement d'appeler un autre outil OU de formuler une réponse textuelle naturelle.
-    // PLAFOND : le modèle gratuit sature au-delà de ~60 définitions. Après le
-    // premier tour d'outils réussi, le catalogue est retiré : le modèle a déjà
-    // les résultats dans l'historique, il n'a plus besoin des définitions.
-    // Après le premier tour d'outils réussi : on ENVOIE les tools (le modèle
-    // peut enchaîner légitimement) — c'est le comportement d'origine qui
-    // fonctionnait. La correction principale est le dédoublonnage.
-    const toolsCeTour = tools;
+    // STRATÉGIE ANTI-THINKING-SATURATION :
+    // Tour 0 : tools envoyés → le modèle choisit un outil
+    // Tour 1+ (résultats reçus) : SANS tools → le modèle formule la réponse
+    // en texte seul (le thinking ne brûle plus de tokens à raisonner sur 60
+    // définitions d'outils — il se concentre sur la synthèse des résultats).
+    // S'il veut vraiment un 2e outil, le fallback de synthèse le gère.
+    const toolsCeTour = etape === 0 ? tools : [];
     let data = await appelerOpenRouter(messages, toolsCeTour, 'auto').catch(async (e) => {
-      // MODE DÉGRADÉ — payload tools rejeté (400) : relance SANS outils pour
-      // que l'utilisateur reçoive une réponse au lieu d'un silence.
       const msg = String((e as Error)?.message ?? '');
       console.error('[ARIA] appel avec outils échoué :', msg.slice(0, 200));
-      if (toolsCeTour.length > 0 && /OpenRouter 400/.test(msg)) {
+      if (/OpenRouter 400/.test(msg) && etape === 0) {
         return appelerOpenRouter(messages, [], 'auto');
       }
       throw e;
@@ -167,7 +163,6 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
           const resume = JSON.stringify(resultat).slice(0, 2500);
           messages.push({ role: 'tool', tool_call_id: appel.id, name: nom, content: resume });
           actions.push({ outil: nom, resume: extraitResume(nom, resultat), ok: true });
-          // Journalisation de CHAQUE action IA (traçabilité complète)
           await logAction(db, opts.ctx.ecoleId!, opts.ctx.utilisateurId, `ia.${nom}`, 'assistant_ia', undefined, { args, ok: true } as never).catch(() => {});
         } catch (e: any) {
           const msg = e?.message ?? 'erreur';
@@ -176,17 +171,24 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
           await logAction(db, opts.ctx.ecoleId!, opts.ctx.utilisateurId, `ia.${nom}`, 'assistant_ia', undefined, { args, ok: false, erreur: msg } as never).catch(() => {});
         }
       }
-      continue; // l'IA va maintenant décider seule de répondre ou d'enchaîner un outil
+
+      // APRÈS les résultats d'outils : appel SANS tools avec instruction directe
+      // → le modèle formule la réponse texte (pas de saturation thinking)
+      const syntheseDirecte = await appelerOpenRouter([
+        { role: 'system', content: 'Tu es ARIA. Un outil vient de retourner des résultats. Rédige la réponse finale en français : chiffres clés directement, puis une suggestion de suite. Maximum 5 lignes. Pas de préambule.' },
+        { role: 'user', content: `Résultats des outils :\n${actions.map((a) => `${a.ok ? '✓' : '✗'} ${a.outil} : ${a.resume}`).join('\n')}` },
+      ], [], 'auto').catch(() => null);
+      const texteSynthese = syntheseDirecte?.choices?.[0]?.message?.content?.trim();
+      if (texteSynthese) return { reponse: texteSynthese, actions };
+      // Si la synthèse échoue aussi : continuer la boucle (2e tentative)
+      continue;
     }
 
     // Réponse finale (texte, sans tool_calls)
     const contenu = (choix.content ?? '').trim();
     if (contenu) return { reponse: contenu, actions };
-    // Réponse VIDE (raisonnement tronqué du modèle) : on relance l'étape
-    // jusqu'à 3 fois — le modèle reformule généralement une réponse pleine.
-    console.error('[ARIA] étape sans contenu ni outil :', JSON.stringify({ finish: (data as any)?.choices?.[0]?.finish_reason, contenu: (choix.content ?? '').slice(0, 80), raison: typeof (choix as any).reasoning === 'string' ? (choix as any).reasoning.slice(0, 120) : undefined, toolCalls: choix.tool_calls?.length }).slice(0, 400));
     videsConsecutifs++;
-    if (videsConsecutifs <= 3) continue;
+    if (videsConsecutifs <= 2) continue;
     break;
   }
 
