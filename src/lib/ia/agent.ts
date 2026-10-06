@@ -132,10 +132,7 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
   let videsConsecutifs = 0;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
     const toolsCeTour = etape === 0 ? tools : [];
-    // tool_choice='required' au tour 0 : FORCE le modèle à appeler un outil
-    // natif (fini le fallback XML <tool_call> dans le texte)
-    const toolChoice = etape === 0 && tools.length > 0 ? 'required' as const : 'auto';
-    let data = await appelerOpenRouter(messages, toolsCeTour, toolChoice).catch(async (e) => {
+    let data = await appelerOpenRouter(messages, toolsCeTour, 'auto').catch(async (e) => {
       const msg = String((e as Error)?.message ?? '');
       console.error('[ARIA] appel avec outils échoué :', msg.slice(0, 200));
       if (/OpenRouter 400/.test(msg) && etape === 0) {
@@ -146,13 +143,16 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
     const choix = data?.choices?.[0]?.message;
     if (!choix) break;
 
-    // ═══ PARSEUR XML <tool_call> — le modèle nemotron émet parfois des ═══
-    // appels d'outils en XML dans son TEXTE au lieu du champ natif.
-    // On les intercepte et les exécute exactement comme des tool_calls natifs.
-    const xmlToolCalls = parseXmlToolCalls(choix.content ?? '');
+    // ═══ PARSEUR UNIVERSEL — le modèle nemotron émet des appels d'outils ═══
+    // dans son TEXTE sous 3 formats différents au lieu du champ natif :
+    //   1. XML : <tool_call><function=nom><parameter=clé>val</parameter></function></tool_call>
+    //   2. JSON array : [{"name":"nom","parameters":{...}}]
+    //   3. JSON wrapper : {"tool_calls":[{"function":{"name":"nom","arguments":{...}}}}'
+    // On les intercepte TOUS et les convertit au format natif.
+    const parsedToolCalls = parseToolCallsFromText(choix.content ?? '', parNom);
     const effectiveToolCalls = (choix.tool_calls && choix.tool_calls.length > 0)
       ? choix.tool_calls
-      : xmlToolCalls;
+      : parsedToolCalls;
 
     if (effectiveToolCalls && effectiveToolCalls.length > 0) {
       messages.push({ role: 'assistant', content: '', tool_calls: effectiveToolCalls });
@@ -190,10 +190,19 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
       continue;
     }
 
-    // Réponse texte — si elle contient du XML <tool_call> résiduel : nettoyer
+    // Réponse texte — nettoyer tout résidu d'appel d'outil (XML ou JSON)
     const contenuBrut = (choix.content ?? '').trim();
-    const contenu = contenuBrut.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
-    if (contenu && !contenu.startsWith('<tool_call')) return { reponse: contenu, actions };
+    const contenu = contenuBrut
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+      .replace(/\[\s*\[[\s\S]*?\]\s*\]/g, (match) => {
+        // Ne retirer que si c'est du JSON d'appel d'outil (pas du texte normal entre crochets)
+        try { JSON.parse(match); return ''; } catch { return match; }
+      })
+      .replace(/^\s*\[\s*\{[\s\S]*?\}\s*\]\s*$/g, (match) => {
+        try { const p = JSON.parse(match); return (Array.isArray(p) && p[0]?.name) ? '' : match; } catch { return match; }
+      })
+      .trim();
+    if (contenu && contenu.length > 2 && !contenu.startsWith('<tool_call') && !contenu.startsWith('[{')) return { reponse: contenu, actions };
     videsConsecutifs++;
     if (videsConsecutifs <= 2) continue;
     break;
@@ -217,43 +226,77 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 }
 
 // --------------------------------------------------------------------
-// PARSEUR XML <tool_call> — nemotron émet parfois des appels d'outils
-// en XML dans son texte au lieu du champ natif tool_calls. Ce parseur
-// les convertit au format natif pour qu'ils soient exécutés pareil.
-// Formats gérés :
-//   <tool_call><function=nom><parameter=clé>valeur</parameter></function></tool_call>
-//   <tool_call>{"name":"nom","arguments":{"clé":"valeur"}}</tool_call>
+// PARSEUR UNIVERSEL D'APPELS D'OUTILS DEPUIS LE TEXTE
+// Le modèle nemotron gratuit émet parfois ses appels d'outils dans son
+// texte au lieu du champ natif tool_calls. Ce parseur détecte les 3
+// formats observés et les convertit au format natif.
 // --------------------------------------------------------------------
-function parseXmlToolCalls(texte: string): Array<{ id: string; function: { name: string; arguments: string } }> {
-  if (!texte || !texte.includes('<tool_call>')) return [];
+function parseToolCallsFromText(texte: string, parNom: Map<string, any>): Array<{ id: string; function: { name: string; arguments: string } }> {
+  if (!texte || texte.length < 5) return [];
   const resultats: Array<{ id: string; function: { name: string; arguments: string } }> = [];
-  const blocs = texte.split('<tool_call>').slice(1);
-  for (let i = 0; i < blocs.length; i++) {
-    const bloc = blocs[i].split('</tool_call>')[0];
-    const nom = bloc.match(/<function=(\w+)>/)?.[1] ?? bloc.match(/"name"\s*:\s*"(\w+)"/)?.[1];
-    if (!nom) continue;
-    let args: Record<string, unknown> = {};
-    // Format 1 : <parameter=clé>valeur</parameter>
-    const params = bloc.matchAll(/<parameter=(\w+)>\s*([\s\S]*?)\s*<\/parameter>/g);
-    for (const p of params) {
-      args[p[1]] = p[2].trim();
-    }
-    // Format 2 : JSON {"name":"nom","arguments":{...}}
-    if (Object.keys(args).length === 0) {
-      const jsonMatch = bloc.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.arguments) args = parsed.arguments;
-          else if (parsed.name) args = { ...parsed, name: undefined };
-        } catch { /* ignore */ }
+  let compteur = 0;
+
+  // ── Format 1 : XML <tool_call><function=nom><parameter=k>v</parameter>──
+  if (texte.includes('<tool_call>')) {
+    const blocs = texte.split('<tool_call>').slice(1);
+    for (const blocBrut of blocs) {
+      const bloc = blocBrut.split('</tool_call>')[0];
+      const nom = bloc.match(/<function=(\w+)>/)?.[1];
+      if (!nom || !parNom.has(nom)) continue;
+      const args: Record<string, unknown> = {};
+      for (const p of bloc.matchAll(/<parameter=(\w+)>\s*([\s\S]*?)\s*<\/parameter>/g)) {
+        args[p[1]] = p[2].trim();
       }
+      resultats.push({ id: `txt-${Date.now()}-${compteur++}`, function: { name: nom, arguments: JSON.stringify(args) } });
     }
-    resultats.push({
-      id: `xml-${Date.now()}-${i}`,
-      function: { name: nom, arguments: JSON.stringify(args) },
-    });
   }
+
+  // ── Format 2 : JSON array [{"name":"nom","parameters":{...}}] ──
+  // Le modèle écrit parfois [[{"name":...}]] ou [{"name":...}] dans son texte
+  const jsonArrays = texte.match(/\[\s*\[[\s\S]*?\]\s*\]|\[\s*\{[\s\S]*?\}\s*\]/g);
+  if (jsonArrays) {
+    for (const ja of jsonArrays) {
+      try {
+        let parsed = JSON.parse(ja);
+        if (Array.isArray(parsed) && Array.isArray(parsed[0])) parsed = parsed[0]; // [[...]] → [...]
+        if (!Array.isArray(parsed)) parsed = [parsed];
+        for (const item of parsed) {
+          const nom = item.name ?? item.function?.name;
+          if (!nom || !parNom.has(nom)) continue;
+          const args = item.parameters ?? item.arguments ?? item.function?.arguments ?? {};
+          resultats.push({ id: `txt-${Date.now()}-${compteur++}`, function: { name: nom, arguments: JSON.stringify(args) } });
+        }
+      } catch { /* pas du JSON valide */ }
+    }
+  }
+
+  // ── Format 3 : JSON wrapper {"tool_calls":[{"function":{...}}]} ──
+  if (texte.includes('"tool_calls"')) {
+    try {
+      const wrapper = JSON.parse(texte);
+      if (wrapper.tool_calls && Array.isArray(wrapper.tool_calls)) {
+        for (const tc of wrapper.tool_calls) {
+          const nom = tc.function?.name ?? tc.name;
+          if (!nom || !parNom.has(nom)) continue;
+          const args = tc.function?.arguments ?? tc.parameters ?? {};
+          resultats.push({ id: `txt-${Date.now()}-${compteur++}`, function: { name: nom, arguments: typeof args === 'string' ? args : JSON.stringify(args) } });
+        }
+      }
+    } catch { /* pas du JSON valide */ }
+  }
+
+  // ── Format 4 : objet simple {"name":"nom","parameters":{...}} ──
+  if (resultats.length === 0 && texte.trim().startsWith('{')) {
+    try {
+      const obj = JSON.parse(texte.trim());
+      const nom = obj.name ?? obj.function?.name;
+      if (nom && parNom.has(nom)) {
+        const args = obj.parameters ?? obj.arguments ?? obj.function?.arguments ?? {};
+        resultats.push({ id: `txt-${Date.now()}-${compteur++}`, function: { name: nom, arguments: JSON.stringify(args) } });
+      }
+    } catch { /* pas du JSON */ }
+  }
+
   return resultats;
 }
 
