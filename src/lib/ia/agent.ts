@@ -83,6 +83,8 @@ export async function invoquerAssistant(opts: {
 Tu parles FRANÇAIS, de façon naturelle et directe, comme un collaborateur compétent.
 Tu aides « ${opts.nomUtilisateur ?? 'l\'utilisateur'} » (portail : ${opts.portail ?? 'interne'}).
 
+FORMAT D'APPEL D'OUTILS — RÈGLE ABSOLUE : utilise EXCLUSIVEMENT le mécanisme natif de function calling (le champ tool_calls structuré fourni par l'API). N'écris JAMAIS de balises <tool_call> ou <function=> ou <parameter=> dans ta réponse texte. Si tu veux appeler un outil, utilise le mécanisme natif. Ta réponse texte ne doit contenir QUE du français destiné à l'utilisateur.
+
 COMMENT TU TRAVAILLES :
 1. Pour répondre à UNE QUESTION (ex: "combien d'élèves ?"), tu appelles l'outil approprié, puis tu formules la réponse directement : "Vous avez 248 élèves actifs répartis en 12 classes. Voulez-vous la liste par classe ?"
 2. Pour effectuer UNE ACTION (ex: "enregistre le paiement de Mamadou"), tu cherches d'abord l'élève (rechercher_eleve), puis tu encaisses, puis tu confirmes : "✅ Paiement de 50 000 F enregistré pour Mamadou Diallo (6ème A). Solde restant : 75 000 F."
@@ -129,14 +131,11 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
 
   let videsConsecutifs = 0;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
-    // STRATÉGIE ANTI-THINKING-SATURATION :
-    // Tour 0 : tools envoyés → le modèle choisit un outil
-    // Tour 1+ (résultats reçus) : SANS tools → le modèle formule la réponse
-    // en texte seul (le thinking ne brûle plus de tokens à raisonner sur 60
-    // définitions d'outils — il se concentre sur la synthèse des résultats).
-    // S'il veut vraiment un 2e outil, le fallback de synthèse le gère.
     const toolsCeTour = etape === 0 ? tools : [];
-    let data = await appelerOpenRouter(messages, toolsCeTour, 'auto').catch(async (e) => {
+    // tool_choice='required' au tour 0 : FORCE le modèle à appeler un outil
+    // natif (fini le fallback XML <tool_call> dans le texte)
+    const toolChoice = etape === 0 && tools.length > 0 ? 'required' as const : 'auto';
+    let data = await appelerOpenRouter(messages, toolsCeTour, toolChoice).catch(async (e) => {
       const msg = String((e as Error)?.message ?? '');
       console.error('[ARIA] appel avec outils échoué :', msg.slice(0, 200));
       if (/OpenRouter 400/.test(msg) && etape === 0) {
@@ -147,13 +146,21 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
     const choix = data?.choices?.[0]?.message;
     if (!choix) break;
 
-    if (choix.tool_calls && choix.tool_calls.length > 0) {
-      messages.push({ role: 'assistant', content: choix.content ?? '', tool_calls: choix.tool_calls });
-      for (const appel of choix.tool_calls) {
+    // ═══ PARSEUR XML <tool_call> — le modèle nemotron émet parfois des ═══
+    // appels d'outils en XML dans son TEXTE au lieu du champ natif.
+    // On les intercepte et les exécute exactement comme des tool_calls natifs.
+    const xmlToolCalls = parseXmlToolCalls(choix.content ?? '');
+    const effectiveToolCalls = (choix.tool_calls && choix.tool_calls.length > 0)
+      ? choix.tool_calls
+      : xmlToolCalls;
+
+    if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+      messages.push({ role: 'assistant', content: '', tool_calls: effectiveToolCalls });
+      for (const appel of effectiveToolCalls) {
         const nom = appel.function?.name as string;
         const outil = parNom.get(nom);
         if (!outil) {
-          messages.push({ role: 'tool', tool_call_id: appel.id, name: nom, content: JSON.stringify({ erreur: 'Outil non autorisé pour votre profil.' }) });
+          messages.push({ role: 'tool', tool_call_id: appel.id ?? `xml-${Date.now()}`, name: nom, content: JSON.stringify({ erreur: 'Outil non autorisé pour votre profil.' }) });
           actions.push({ outil: nom, resume: 'refusé (hors périmètre)', ok: false });
           continue;
         }
@@ -162,32 +169,31 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
         try {
           const resultat = await outil.executer(opts.ctx, args);
           const resume = JSON.stringify(resultat).slice(0, 2500);
-          messages.push({ role: 'tool', tool_call_id: appel.id, name: nom, content: resume });
+          messages.push({ role: 'tool', tool_call_id: appel.id ?? `xml-${Date.now()}-${nom}`, name: nom, content: resume });
           actions.push({ outil: nom, resume: extraitResume(nom, resultat), ok: true });
           await logAction(db, opts.ctx.ecoleId!, opts.ctx.utilisateurId, `ia.${nom}`, 'assistant_ia', undefined, { args, ok: true } as never).catch(() => {});
         } catch (e: any) {
           const msg = e?.message ?? 'erreur';
-          messages.push({ role: 'tool', tool_call_id: appel.id, name: nom, content: JSON.stringify({ erreur: msg }) });
+          messages.push({ role: 'tool', tool_call_id: appel.id ?? `xml-${Date.now()}-${nom}`, name: nom, content: JSON.stringify({ erreur: msg }) });
           actions.push({ outil: nom, resume: `erreur : ${msg.slice(0, 100)}`, ok: false });
           await logAction(db, opts.ctx.ecoleId!, opts.ctx.utilisateurId, `ia.${nom}`, 'assistant_ia', undefined, { args, ok: false, erreur: msg } as never).catch(() => {});
         }
       }
 
-      // APRÈS les résultats d'outils : appel SANS tools avec instruction directe
-      // → le modèle formule la réponse texte (pas de saturation thinking)
+      // Synthèse directe après les résultats
       const syntheseDirecte = await appelerOpenRouter([
-        { role: 'system', content: 'Tu es ARIA. Un outil vient de retourner des résultats. Rédige la réponse finale en français : chiffres clés directement, puis une suggestion de suite. Maximum 5 lignes. Pas de préambule.' },
+        { role: 'system', content: 'Tu es ARIA. Un outil vient de retourner des résultats. Rédige la réponse finale en français : chiffres clés directement, puis une suggestion de suite. Maximum 5 lignes. Pas de préambule. N\'utilise JAMAIS le format <tool_call>.' },
         { role: 'user', content: `Résultats des outils :\n${actions.map((a) => `${a.ok ? '✓' : '✗'} ${a.outil} : ${a.resume}`).join('\n')}` },
       ], [], 'auto').catch(() => null);
       const texteSynthese = syntheseDirecte?.choices?.[0]?.message?.content?.trim();
       if (texteSynthese) return { reponse: texteSynthese, actions };
-      // Si la synthèse échoue aussi : continuer la boucle (2e tentative)
       continue;
     }
 
-    // Réponse finale (texte, sans tool_calls)
-    const contenu = (choix.content ?? '').trim();
-    if (contenu) return { reponse: contenu, actions };
+    // Réponse texte — si elle contient du XML <tool_call> résiduel : nettoyer
+    const contenuBrut = (choix.content ?? '').trim();
+    const contenu = contenuBrut.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
+    if (contenu && !contenu.startsWith('<tool_call')) return { reponse: contenu, actions };
     videsConsecutifs++;
     if (videsConsecutifs <= 2) continue;
     break;
@@ -208,7 +214,47 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
     };
   }
   return { reponse: "Je n'ai pas pu traiter votre demande. Pouvez-vous reformuler ?", actions };
-  void nbOutilsAction;
+}
+
+// --------------------------------------------------------------------
+// PARSEUR XML <tool_call> — nemotron émet parfois des appels d'outils
+// en XML dans son texte au lieu du champ natif tool_calls. Ce parseur
+// les convertit au format natif pour qu'ils soient exécutés pareil.
+// Formats gérés :
+//   <tool_call><function=nom><parameter=clé>valeur</parameter></function></tool_call>
+//   <tool_call>{"name":"nom","arguments":{"clé":"valeur"}}</tool_call>
+// --------------------------------------------------------------------
+function parseXmlToolCalls(texte: string): Array<{ id: string; function: { name: string; arguments: string } }> {
+  if (!texte || !texte.includes('<tool_call>')) return [];
+  const resultats: Array<{ id: string; function: { name: string; arguments: string } }> = [];
+  const blocs = texte.split('<tool_call>').slice(1);
+  for (let i = 0; i < blocs.length; i++) {
+    const bloc = blocs[i].split('</tool_call>')[0];
+    const nom = bloc.match(/<function=(\w+)>/)?.[1] ?? bloc.match(/"name"\s*:\s*"(\w+)"/)?.[1];
+    if (!nom) continue;
+    let args: Record<string, unknown> = {};
+    // Format 1 : <parameter=clé>valeur</parameter>
+    const params = bloc.matchAll(/<parameter=(\w+)>\s*([\s\S]*?)\s*<\/parameter>/g);
+    for (const p of params) {
+      args[p[1]] = p[2].trim();
+    }
+    // Format 2 : JSON {"name":"nom","arguments":{...}}
+    if (Object.keys(args).length === 0) {
+      const jsonMatch = bloc.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.arguments) args = parsed.arguments;
+          else if (parsed.name) args = { ...parsed, name: undefined };
+        } catch { /* ignore */ }
+      }
+    }
+    resultats.push({
+      id: `xml-${Date.now()}-${i}`,
+      function: { name: nom, arguments: JSON.stringify(args) },
+    });
+  }
+  return resultats;
 }
 
 function extraitResume(nom: string, r: unknown): string {
