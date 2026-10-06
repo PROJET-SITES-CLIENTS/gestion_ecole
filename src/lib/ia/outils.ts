@@ -1921,8 +1921,9 @@ import { outilsCRUD } from "./outils-crud";
 import { outilsAudit } from "./outils-audit";
 import { outilsEnseignant, outilsSecretariatIA } from "./outils-enseignant";
 import { outilsSecretariatFull } from "./outils-secretariat";
+import { outilsComptableFull } from "./outils-comptable";
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA, ...outilsSecretariatFull];
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA, ...outilsSecretariatFull, ...outilsComptableFull];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
