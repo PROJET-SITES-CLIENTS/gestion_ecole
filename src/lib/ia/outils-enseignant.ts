@@ -55,7 +55,7 @@ export const outilsEnseignant: OutilIA[] = [
           effectif: eleves.length,
           garcons: eleves.filter((e) => e.sexe === 'M').length,
           filles: eleves.filter((e) => e.sexe === 'F').length,
-          avancementProgrammes: Object.fromEntries(Object.entries(avancementParMatiere).map(([mid, pct]) => [info.matieres.find((m) => m) ?? mid, pct])),
+          avancementProgrammes: Object.fromEntries(Object.entries(avancementParMatiere).map(([mid, pct]) => [affectations.find((a: any) => a.matiereId === mid)?.matiere?.libelle ?? mid, pct])),
         };
       }));
       return { enseignant: `${pers.prenom} ${pers.nom}`, nbClasses: classes.length, classes };

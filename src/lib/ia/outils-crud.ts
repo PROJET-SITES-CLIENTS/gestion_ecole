@@ -79,6 +79,70 @@ export const outilsCRUD: OutilIA[] = [
 
   // ═══ ÉVALUATIONS ET NOTES ═══
   {
+    nom: "modifier_evaluation",
+    description: "Modifie une évaluation (intitulé, date, barème, coefficient) — l'élève est identifié par sa classe et sa matière pour lever toute ambiguïté.",
+    permission: "notes.saisir",
+    parametres: P({
+      classe: { type: "string", description: "Libellé de la classe" },
+      matiere: { type: "string", description: "Libellé de la matière" },
+      intituleActuel: { type: "string", description: "Intitulé actuel de l'évaluation" },
+      nouvelIntitule: { type: "string", description: "Nouvel intitulé (optionnel)" },
+      nouvelleDate: { type: "string", description: "Nouvelle date ISO (optionnel)" },
+      nouveauSur: { type: "number", description: "Nouveau barème (optionnel)" },
+      nouveauCoefficient: { type: "number", description: "Nouveau coefficient (optionnel)" },
+    }, ["classe", "matiere", "intituleActuel"]),
+    executer: async (ctx, args) => {
+      const { resoudreClasse, resoudreMatiere } = await import("./resolution");
+      const rc = await resoudreClasse(ctx.ecoleId!, String(args.classe));
+      if (!rc.trouve) return { erreur: rc.erreur, candidats: rc.candidats };
+      const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      const evals = await db.evaluation.findMany({
+        where: { ecoleId: ctx.ecoleId!, classeId: rc.entite.id, matiereId: rm.entite.id },
+        orderBy: { date: "desc" }, take: 50,
+      });
+      const q = norm(String(args.intituleActuel));
+      const exactes = evals.filter((e) => norm(e.intitule) === q);
+      const contient = evals.filter((e) => norm(e.intitule).includes(q) || q.includes(norm(e.intitule)));
+      const ev = exactes.length === 1 ? exactes[0] : exactes.length === 0 && contient.length === 1 ? contient[0] : null;
+      if (!ev) {
+        const cands = (exactes.length > 0 ? exactes : contient).slice(0, 6).map((e) => `${e.intitule} (${e.date.toISOString().slice(0, 10)})`);
+        return { erreur: cands.length > 1 ? `Plusieurs évaluations correspondent : ${cands.join(" ; ")}` : `Évaluation « ${args.intituleActuel} » introuvable dans ${rc.entite.libelle}/${rm.entite.libelle}.`, candidats: cands };
+      }
+      const data: any = {};
+      if (args.nouvelIntitule) data.intitule = String(args.nouvelIntitule);
+      if (args.nouvelleDate) { const d = new Date(String(args.nouvelleDate)); if (!isNaN(d.getTime())) data.date = d; }
+      if (args.nouveauSur != null && Number(args.nouveauSur) > 0) data.sur = Number(args.nouveauSur);
+      if (args.nouveauCoefficient != null && Number(args.nouveauCoefficient) > 0) data.coefficient = Number(args.nouveauCoefficient);
+      if (Object.keys(data).length === 0) return { erreur: "Aucune modification fournie." };
+      await db.evaluation.update({ where: { id: ev.id }, data });
+      return { evaluationId: ev.id, ancienIntitule: ev.intitule, modifications: Object.keys(data) };
+    },
+  },
+  {
+    nom: "creer_competence",
+    description: "Crée une nouvelle compétence dans le référentiel d'une matière (pour les cycles non chiffrés : maternelle, primaire).",
+    permission: "notes.saisir",
+    parametres: P({
+      libelle: { type: "string", description: "Libellé de la compétence" },
+      matiere: { type: "string", description: "Matière" },
+      cycle: { type: "string", description: "Cycle (ex: Maternelle, Primaire)" },
+    }, ["libelle", "matiere"]),
+    executer: async (ctx, args) => {
+      const { resoudreMatiere } = await import("./resolution");
+      const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!rm.trouve) return { erreur: rm.erreur, candidats: rm.candidats };
+      const cycle = args.cycle ? await db.cycle.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: { contains: String(args.cycle), mode: "insensitive" } } }) : await db.cycle.findFirst({ where: { ecoleId: ctx.ecoleId! } });
+      if (!cycle) return { erreur: "Aucun cycle trouvé." };
+      const existante = await db.competence.findFirst({ where: { ecoleId: ctx.ecoleId!, libelle: String(args.libelle), matiereId: rm.entite.id } });
+      if (existante) return { erreur: `La compétence « ${args.libelle} » existe déjà pour cette matière.` };
+      const ordre = await db.competence.count({ where: { ecoleId: ctx.ecoleId!, matiereId: rm.entite.id } });
+      const c = await db.competence.create({ data: { ecoleId: ctx.ecoleId!, matiereId: rm.entite.id, cycleId: cycle.id, libelle: String(args.libelle), ordre: ordre + 1 } });
+      return { competenceId: c.id, libelle: c.libelle };
+    },
+  },
+{
     nom: "supprimer_evaluation",
     description: "Supprime une évaluation ET toutes ses notes (si le bulletin n'a pas été généré).",
     permission: "notes.saisir",
