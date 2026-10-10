@@ -340,34 +340,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        {/* Comptes démo — F2 : affichés uniquement si le serveur l'autorise */}
-        {afficherDemo && (
-          <Card className="w-full bg-emerald-50/50 border-emerald-100">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Comptes de démonstration</CardTitle>
-              <p className="text-xs text-gray-500 mt-1">
-                Cliquez sur un compte pour pré-remplir l&apos;email — le mot de passe vous a été communiqué
-                (variable d&apos;environnement <code className="px-1 py-0.5 bg-white rounded border">SG_MDP_DEMO</code>).
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {COMPTES_DEMO.map((c) => (
-                <button
-                  key={c.email}
-                  type="button"
-                  onClick={() => remplirCompte(c.email)}
-                  className="w-full flex items-center justify-between rounded-lg border border-emerald-100 bg-white px-3 py-2 text-left text-sm hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
-                >
-                  <div>
-                    <div className="font-medium text-gray-900">{c.role}</div>
-                    <div className="text-xs text-gray-500">{c.email}</div>
-                  </div>
-                  <span className="text-xs text-emerald-600 font-medium">remplir →</span>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-        )}
+        {/* Comptes démo — SUPPRIMÉS définitivement (repartir de zéro) */}
       </div>
     </div>
   );
