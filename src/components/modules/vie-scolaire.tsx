@@ -296,7 +296,8 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
       )}
 
       {/* ═══ AUDIT CENSEUR — VISA DES CAHIERS DE TEXTES (contrôle pédagogique) ═══ */}
-      <SectionBlock
+      {estCadreVieScolaire && (
+<SectionBlock
         title="Visa des cahiers de textes"
         description="Contrôlez que les cours suivent le programme : chaque cahier visé est horodaté (mention, date, remarque)"
       >
@@ -322,9 +323,10 @@ export default function VieScolaireModule({ initialData }: { initialData: any })
           emptyLabel="Aucun cahier de textes ouvert"
         />
       </SectionBlock>
+)}
 
       {/* ═══ AUDIT CENSEUR — RÉINTÉGRATION après exclusion temporaire ═══ */}
-      {elevesExclus.length > 0 && (
+      {estCadreVieScolaire && elevesExclus.length > 0 && (
         <SectionBlock
           title="Élèves exclus — réintégration"
           description="Le retour en cours après une exclusion temporaire (parents et direction notifiés automatiquement)"

@@ -533,12 +533,9 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.conseilDiscipline.findMany({ where: { ecoleId }, orderBy: { dateConseil: 'desc' }, take: 50, include: { eleve: true } }),
       ]);
       v.retards = retards; v.surveillancesExamens = surveillancesExamens; v.conseilsDiscipline = conseilsDiscipline;
-      // AUDIT CENSEUR — visa des cahiers de textes (contrôle pédagogique)
-      // et conseils de classe (le censeur les préside — bulletins.valider)
-      v.cahiersTexte = await db.cahierTexte.findMany({
-        where: { ecoleId }, orderBy: { dateCreation: 'desc' }, take: 60,
-        include: { classe: true, matiere: true, entrees: { orderBy: { dateCours: 'desc' }, take: 20 } },
-      });
+      // AUDIT CENSEUR — conseils de classe (le censeur les préside)
+      // NB : cahiersTexte est déjà chargé par le bloc pédagogie AVEC chapitre
+      // (pas de 2e écriture — corrigeait une race qui écrasait le chapitre)
       v.conseilsClasse = await db.conseilClasse.findMany({
         where: { ecoleId }, include: { classe: true, membres: true, deliberations: { include: { votes: true } } },
         orderBy: { date: 'desc' }, take: 30,

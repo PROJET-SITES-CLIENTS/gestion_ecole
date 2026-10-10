@@ -68,8 +68,8 @@ export default function EnseignantDashboard({ initialData, onNaviguer }: { initi
   const avancementProgramme = (prog: any) => {
     const chaps = prog.chapitres ?? [];
     if (chaps.length === 0) return null;
-    const completés = chaps.filter((c: any) => (avancements.find((a: any) => a.chapitreId === c.id)?.pourcentage ?? 0) >= 100).length;
-    const pct = Math.round(chaps.reduce((s: number, c: any) => s + (avancements.find((a: any) => a.chapitreId === c.id)?.pourcentage ?? 0), 0) / chaps.length);
+    const completés = chaps.filter((c: any) => (avancements.find((a: any) => a.chapitreId === c.id && mesClasseIds.includes(a.classeId))?.pourcentage ?? 0) >= 100).length;
+    const pct = Math.round(chaps.reduce((s: number, c: any) => s + (avancements.find((a: any) => a.chapitreId === c.id && mesClasseIds.includes(a.classeId))?.pourcentage ?? 0), 0) / chaps.length);
     return { completés, total: chaps.length, pct };
   };
 

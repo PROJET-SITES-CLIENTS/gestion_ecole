@@ -333,7 +333,7 @@ export default function PedagogiqueModule({ initialData }: { initialData: any })
                         Rectifier
                       </Button>
                     )}
-                    {b.statut !== 'publie' && b.statut !== 'annule' && (
+                    {peutPublierBulletins && b.statut !== 'publie' && b.statut !== 'annule' && (
                       <Button size="sm" variant="outline" disabled={retourBulletins.pending} onClick={() => retourBulletins.run(() => actions.changerStatutBulletin(b.id, 'annule'), 'Bulletin annulé')}>
                         Annuler
                       </Button>

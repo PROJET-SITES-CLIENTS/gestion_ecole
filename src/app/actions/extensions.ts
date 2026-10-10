@@ -779,8 +779,9 @@ export async function ajouterChapitre(formData: FormData): Promise<ActionResult>
     const d = z.object({
       programmeId: z.string().min(1), titre: z.string().min(2),
       ordre: z.coerce.number().int().min(1), objectifs: z.string().optional(),
+      periodeId: z.string().optional(), // AUDIT — planification trimestre persistée
     }).parse(Object.fromEntries(formData));
-    const r = await ajouterChapitreCore(ctx, d.programmeId, { intitule: d.titre, ordre: d.ordre, description: d.objectifs } as never);
+    const r = await ajouterChapitreCore(ctx, d.programmeId, { intitule: d.titre, ordre: d.ordre, description: d.objectifs, periodeId: d.periodeId || undefined } as never);
     revalidatePath('/');
     return { ok: true, ...r };
   } catch (e) { return echec(e); }

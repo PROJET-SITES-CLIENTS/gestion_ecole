@@ -329,7 +329,7 @@ export async function creerProgrammeCore(ctx: Ctx, ecoleId: string, input: { mat
   return { programmeId: p.id };
 }
 
-export async function ajouterChapitreCore(ctx: Ctx, programmeId: string, input: { intitule: string; description?: string; ordre: number; volumeHorairePrevu?: number }) {
+export async function ajouterChapitreCore(ctx: Ctx, programmeId: string, input: { intitule: string; description?: string; ordre: number; volumeHorairePrevu?: number; periodeId?: string }) {
   assertPermission(ctx, 'notes.saisir');
   const p = await db.programme.findUnique({ where: { id: programmeId } });
   if (!p) throw new ActionError('Programme introuvable.', 'INTROUVABLE');
@@ -340,7 +340,8 @@ export async function ajouterChapitreCore(ctx: Ctx, programmeId: string, input: 
       programmeId,
       titre: input.intitule,
       ordre: input.ordre,
-      volumeHorairePrevu: input.volumeHorairePrevu
+      volumeHorairePrevu: input.volumeHorairePrevu,
+      ...(input.periodeId ? { periodeId: input.periodeId } : {}),
     }
   });
   return { chapitreId: c.id };
