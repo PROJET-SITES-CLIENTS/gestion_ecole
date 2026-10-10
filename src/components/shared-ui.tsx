@@ -1,9 +1,8 @@
 'use client';
 
 // ====================================================================
-// DESIGN SYSTEM PREMIUM — ScolaGestion v2
-// Composants partagés : épurés, raffinés, ultra haut de gamme.
-// Palette indigo/violet, glassmorphism, micro-animations.
+// NEO-BRUTALIST DESIGN SYSTEM — ScolaGestion v3
+// Angles droits · Couleurs vives · Ombres sticker · Typographie forte
 // ====================================================================
 
 import { ReactNode, useCallback, useState, useTransition, isValidElement, cloneElement } from 'react';
@@ -19,9 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, X, Eye, Pencil, ChevronDown, Inbox } from 'lucide-react';
 import { statutColor, statutLabel } from '@/lib/format';
 
-// --------------------------------------------------------------------
-// FEEDBACK — retour visuel premium des actions
-// --------------------------------------------------------------------
+// ── FEEDBACK ──
 export function useActionFeedback() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -44,10 +41,10 @@ export function useActionFeedback() {
     Message: message ? (
       <div
         role="status"
-        className={`animate-fade-up rounded-xl border px-4 py-2.5 text-sm font-medium backdrop-blur-sm ${
+        className={`animate-pop-in border-2 px-4 py-2.5 text-sm font-semibold ${
           message.startsWith('✓')
-            ? 'border-emerald-200/60 bg-emerald-50/80 text-emerald-700 shadow-[0_2px_12px_rgba(16,185,129,0.08)]'
-            : 'border-rose-200/60 bg-rose-50/80 text-rose-700 shadow-[0_2px_12px_rgba(239,68,68,0.08)]'
+            ? 'border-[#0A0A0A] bg-[#84CC16] text-[#0A0A0A] shadow-[3px_3px_0px_#0A0A0A]'
+            : 'border-[#0A0A0A] bg-[#EC4899] text-white shadow-[3px_3px_0px_#0A0A0A]'
         }`}
       >
         {message}
@@ -56,56 +53,56 @@ export function useActionFeedback() {
   };
 }
 
-// --------------------------------------------------------------------
-// PAGE HEADER — titre avec gradient subtil
-// --------------------------------------------------------------------
+// ── PAGE HEADER ──
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="animate-fade-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+    <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 border-b-2 border-[#0A0A0A] pb-4">
       <div className="min-w-0">
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:block h-8 w-1 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
-          <div>
-            <h1 className="text-[1.65rem] font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent leading-tight">
-              {title}
-            </h1>
-            {subtitle && <p className="hidden sm:block text-[0.82rem] text-slate-500 mt-1 leading-relaxed">{subtitle}</p>}
-          </div>
-        </div>
+        <h1 className="text-[1.6rem] font-extrabold tracking-tight text-[#0A0A0A] leading-tight" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
+          {title}
+        </h1>
+        {subtitle && <p className="text-[0.8rem] text-neutral-500 mt-1 leading-relaxed">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
     </div>
   );
 }
 
-// --------------------------------------------------------------------
-// STAT CARD — premium avec icône en dégradé et hover lift
-// --------------------------------------------------------------------
-export function StatCard({ title, value, sub, icon, color = 'indigo' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
-  const gradients: Record<string, { bg: string; icon: string; glow: string }> = {
-    indigo: { bg: 'from-indigo-500/10 to-violet-500/5', icon: 'from-indigo-500 to-violet-500', glow: 'shadow-[0_4px_16px_rgba(99,102,241,0.15)]' },
-    emerald: { bg: 'from-emerald-500/10 to-teal-500/5', icon: 'from-emerald-500 to-teal-500', glow: 'shadow-[0_4px_16px_rgba(16,185,129,0.15)]' },
-    rose: { bg: 'from-rose-500/10 to-pink-500/5', icon: 'from-rose-500 to-pink-500', glow: 'shadow-[0_4px_16px_rgba(239,68,68,0.15)]' },
-    amber: { bg: 'from-amber-500/10 to-orange-500/5', icon: 'from-amber-500 to-orange-500', glow: 'shadow-[0_4px_16px_rgba(245,158,11,0.15)]' },
-    blue: { bg: 'from-blue-500/10 to-cyan-500/5', icon: 'from-blue-500 to-cyan-500', glow: 'shadow-[0_4px_16px_rgba(59,130,246,0.15)]' },
-    purple: { bg: 'from-purple-500/10 to-fuchsia-500/5', icon: 'from-purple-500 to-fuchsia-500', glow: 'shadow-[0_4px_16px_rgba(168,85,247,0.15)]' },
-    gray: { bg: 'from-slate-400/10 to-slate-500/5', icon: 'from-slate-500 to-slate-600', glow: '' },
+// ── STAT CARD — couleur vive pleine ──
+export function StatCard({ title, value, sub, icon, color = 'electric' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
+  const palettes: Record<string, { bg: string; text: string; border: string }> = {
+    electric: { bg: '#2563EB', text: '#FFFFFF', border: '#0A0A0A' },
+    orange: { bg: '#F97316', text: '#FFFFFF', border: '#0A0A0A' },
+    lime: { bg: '#84CC16', text: '#0A0A0A', border: '#0A0A0A' },
+    pink: { bg: '#EC4899', text: '#FFFFFF', border: '#0A0A0A' },
+    violet: { bg: '#8B5CF6', text: '#FFFFFF', border: '#0A0A0A' },
+    cyan: { bg: '#06B6D4', text: '#0A0A0A', border: '#0A0A0A' },
+    yellow: { bg: '#FACC15', text: '#0A0A0A', border: '#0A0A0A' },
+    emerald: { bg: '#10B981', text: '#FFFFFF', border: '#0A0A0A' },
+    blue: { bg: '#3B82F6', text: '#FFFFFF', border: '#0A0A0A' },
+    amber: { bg: '#F59E0B', text: '#0A0A0A', border: '#0A0A0A' },
+    purple: { bg: '#A855F7', text: '#FFFFFF', border: '#0A0A0A' },
+    gray: { bg: '#F5F5F5', text: '#0A0A0A', border: '#0A0A0A' },
   };
-  const g = gradients[color] ?? gradients.indigo;
+  const p = palettes[color] ?? palettes.electric;
   const Icon = typeof icon === 'function' || typeof icon === 'string' ? icon : null;
-  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-[1.15rem] w-[1.15rem]" /> : null;
+  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-[1.1rem] w-[1.1rem]" /> : null;
   return (
-    <div className={`premium-card ${g.glow} p-5`}>
-      <div className={`absolute inset-0 rounded-[inherit] bg-gradient-to-br ${g.bg} pointer-events-none`} />
-      <div className="relative flex items-start justify-between gap-3">
+    <div
+      className="border-2 shadow-[4px_4px_0px_#0A0A0A] p-4 transition-transform hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#0A0A0A]"
+      style={{ background: p.bg, color: p.text, borderColor: p.border }}
+    >
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[0.68rem] text-slate-500 font-semibold uppercase tracking-[0.08em]">{title}</p>
-          <p className="text-[1.7rem] font-bold tracking-tight text-slate-900 mt-1.5 leading-none tabular-nums">{value}</p>
-          {sub && <p className="text-[0.72rem] text-slate-400 mt-1.5 font-medium">{sub}</p>}
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.08em] opacity-80">{title}</p>
+          <p className="text-[1.65rem] font-bold mt-1 leading-none tabular-nums" style={{ fontFamily: 'var(--font-mono), JetBrains Mono, monospace' }}>
+            {value}
+          </p>
+          {sub && <p className="text-[0.68rem] mt-1.5 font-medium opacity-70">{sub}</p>}
         </div>
         {icone && (
-          <div className={`flex-shrink-0 h-11 w-11 rounded-[0.8rem] bg-gradient-to-br ${g.icon} flex items-center justify-center text-white shadow-lg`}>
-            {cloneElement(icone as any, { className: 'h-[1.15rem] w-[1.15rem]' })}
+          <div className="flex-shrink-0 h-10 w-10 border-2 flex items-center justify-center" style={{ borderColor: p.border, background: 'rgba(255,255,255,0.2)' }}>
+            {cloneElement(icone as any, { className: 'h-[1.1rem] w-[1.1rem]' })}
           </div>
         )}
       </div>
@@ -113,16 +110,31 @@ export function StatCard({ title, value, sub, icon, color = 'indigo' }: { title:
   );
 }
 
-// --------------------------------------------------------------------
-// STATUS BADGE — pill avec glow
-// --------------------------------------------------------------------
+// ── STATUS BADGE ──
 export function StatusBadge({ statut, label }: { statut: string; label?: string }) {
-  return <Badge variant="outline" className={`badge-glow text-[0.7rem] font-semibold px-2.5 py-0.5 rounded-full ${statutColor(statut)}`}>{label ?? statutLabel(statut)}</Badge>;
+  return (
+    <span className="brutal-badge" style={{ background: getStatutBg(statut), color: getStatutText(statut) }}>
+      {label ?? statutLabel(statut)}
+    </span>
+  );
 }
 
-// --------------------------------------------------------------------
-// DATA TABLE — premium avec header glassmorphe et hover states
-// --------------------------------------------------------------------
+function getStatutBg(statut: string): string {
+  const s = statut?.toLowerCase() ?? '';
+  if (/valide|paye|publie|actif|recue|present|execute|admis|termine/.test(s)) return '#84CC16';
+  if (/impayee|absent|rejete|refuse|annule|exclu|supprime/.test(s)) return '#EC4899';
+  if (/attente|brouillon|partiel|soumis|planifie|en_cours|demande/.test(s)) return '#FACC15';
+  if (/diplome|retard/.test(s)) return '#F97316';
+  return '#E5E5E5';
+}
+
+function getStatutText(statut: string): string {
+  const s = statut?.toLowerCase() ?? '';
+  if (/valide|paye|publie|actif|recue|present|execute|admis|termine/.test(s)) return '#0A0A0A';
+  return s === 'impayee' || s === 'absent' || s === 'rejete' || s === 'refuse' || s === 'annule' ? '#FFFFFF' : '#0A0A0A';
+}
+
+// ── DATA TABLE ──
 export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total, onLoadMore, loadingMore }: {
   columns: { key: string; label: string; render?: (row: any) => ReactNode }[];
   rows: any[];
@@ -133,13 +145,13 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
 }) {
   const plafonne = typeof total === 'number' && rows.length < total;
   return (
-    <div className="rounded-2xl border border-slate-200/70 overflow-hidden bg-white/80 backdrop-blur-sm shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.03)]">
+    <div className="border-2 border-[#0A0A0A] bg-white overflow-hidden shadow-[4px_4px_0px_#0A0A0A]">
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 max-h-[60vh] overflow-y-auto">
         <Table>
-          <TableHeader className="sticky top-0 z-10">
-            <TableRow className="border-b border-slate-200/80 [&>th]:bg-slate-50/95 [&>th]:backdrop-blur-sm">
+          <TableHeader>
+            <TableRow className="border-b-2 border-[#0A0A0A] [&>th]:bg-[#0A0A0A] [&>th]:text-white">
               {columns.map(c => (
-                <TableHead key={c.key} className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-slate-500 py-3 px-3">
+                <TableHead key={c.key} className="text-[0.63rem] font-bold uppercase tracking-[0.06em] py-3 px-3">
                   {c.label}
                 </TableHead>
               ))}
@@ -150,21 +162,17 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center py-14">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
-                      <Inbox className="h-5 w-5 text-slate-400" />
+                    <div className="h-12 w-12 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A]">
+                      <Inbox className="h-5 w-5 text-[#0A0A0A]" />
                     </div>
-                    <p className="text-sm text-slate-400 font-medium">{emptyLabel}</p>
+                    <p className="text-sm text-neutral-500 font-medium">{emptyLabel}</p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : rows.map((r, i) => (
-              <TableRow
-                key={r.id ?? i}
-                className="table-row-premium border-b border-slate-100/60 [&>td]:py-2.5 [&>td]:px-3 hover:bg-indigo-50/30"
-                style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
-              >
+              <TableRow key={r.id ?? i} className="border-b border-neutral-200 [&>td]:py-2.5 [&>td]:px-3 hover:bg-[#CFFAFE]">
                 {columns.map(c => (
-                  <TableCell key={c.key} className="text-[0.82rem] text-slate-700">
+                  <TableCell key={c.key} className="text-[0.8rem] text-[#0A0A0A]">
                     {c.render ? c.render(r) : (r as any)[c.key] ?? '—'}
                   </TableCell>
                 ))}
@@ -174,12 +182,12 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
         </Table>
       </div>
       {(plafonne || typeof total === 'number') && (
-        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 backdrop-blur-sm px-4 py-2.5 text-xs text-slate-500">
-          <span className="font-medium tabular-nums">
+        <div className="flex items-center justify-between border-t-2 border-[#0A0A0A] bg-[#FACC15] px-4 py-2 text-xs font-bold text-[#0A0A0A]">
+          <span className="tabular-nums">
             {rows.length} affiché(s){typeof total === 'number' ? ` sur ${total}` : ''}
           </span>
           {plafonne && onLoadMore && (
-            <Button size="sm" variant="outline" className="h-7 border-indigo-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300" onClick={onLoadMore} disabled={loadingMore}>
+            <Button size="sm" className="brutal-btn h-7 bg-white text-[#0A0A0A] text-xs" onClick={onLoadMore} disabled={loadingMore}>
               <ChevronDown className="h-3.5 w-3.5 mr-1" />
               {loadingMore ? 'Chargement…' : 'Charger plus'}
             </Button>
@@ -190,14 +198,12 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
   );
 }
 
-// --------------------------------------------------------------------
-// FORM FIELD
-// --------------------------------------------------------------------
+// ── FORM FIELD ──
 export function FormField({ label, children, required, hidden }: { label: string; children: ReactNode; required?: boolean; hidden?: boolean }) {
   if (hidden) return <>{children}</>;
   return (
-    <div className="space-y-1.5">
-      <Label className="text-[0.75rem] font-semibold text-slate-600 tracking-wide">{label} {required && <span className="text-rose-400">*</span>}</Label>
+    <div className="space-y-1">
+      <Label className="text-[0.7rem] font-bold text-[#0A0A0A] uppercase tracking-wide">{label} {required && <span className="text-[#EC4899]">*</span>}</Label>
       {children}
     </div>
   );
@@ -214,9 +220,7 @@ type FieldDef = {
   step?: string;
 };
 
-// --------------------------------------------------------------------
-// MODAL FORM — dialog premium avec animation
-// --------------------------------------------------------------------
+// ── MODAL FORM ──
 export function ModalForm({
   trigger, title, fields, action, defaultValues,
 }: {
@@ -248,26 +252,28 @@ export function ModalForm({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border-slate-200/70 shadow-[0_24px_80px_-16px_rgba(0,0,0,0.12)]">
-        <DialogHeader className="pb-0">
-          <DialogTitle className="text-base font-bold tracking-tight text-slate-800">{title}</DialogTitle>
+      <DialogContent className="!rounded-none border-2 border-[#0A0A0A] shadow-[6px_6px_0px_#0A0A0A] max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="pb-0 border-b-2 border-[#0A0A0A] mb-3">
+          <DialogTitle className="text-base font-extrabold text-[#0A0A0A]" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
+            {title}
+          </DialogTitle>
         </DialogHeader>
         {erreur && (
-          <div className="animate-fade-up rounded-xl border border-rose-200/60 bg-rose-50/80 px-3.5 py-2.5 text-sm text-rose-700 backdrop-blur-sm" role="alert">
+          <div className="animate-pop-in border-2 border-[#0A0A0A] bg-[#EC4899] px-3.5 py-2.5 text-sm font-semibold text-white" role="alert">
             {erreur}
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-3.5 pt-2">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           {fields.map(f => (
             <FormField key={f.name} label={f.label} required={f.required} hidden={f.type === 'hidden'}>
               {f.type === 'textarea' ? (
-                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} className="input-premium rounded-xl border-slate-200 text-sm min-h-[72px]" />
+                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} className="brutal-input text-sm min-h-[72px]" />
               ) : f.type === 'select' ? (
                 <select
                   name={f.name}
                   defaultValue={valueOf(f) ?? ''}
                   required={f.required}
-                  className="input-premium w-full h-10 rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm"
+                  className="brutal-input w-full h-10 px-3 py-1 text-sm font-medium"
                 >
                   <option value="">— Choisir —</option>
                   {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -282,23 +288,23 @@ export function ModalForm({
                   defaultValue={valueOf(f)}
                   required={f.required}
                   step={f.step ?? (f.type === 'number' ? '0.01' : undefined)}
-                  className="input-premium rounded-xl border-slate-200 text-sm h-10"
+                  className="brutal-input text-sm h-10 font-medium"
                 />
               )}
             </FormField>
           ))}
           <DialogFooter className="pt-2 gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="outline" className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 h-9" disabled={pending}>Annuler</Button>
+              <Button type="button" variant="outline" className="brutal-btn bg-white text-[#0A0A0A] h-9" disabled={pending}>Annuler</Button>
             </DialogClose>
             <Button
               type="submit"
               disabled={pending}
-              className="btn-premium rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-[0_4px_16px_rgba(99,102,241,0.25)] h-9 font-semibold"
+              className="brutal-btn bg-[#2563EB] text-white h-9 font-bold"
             >
               {pending ? (
                 <span className="flex items-center gap-2">
-                  <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white animate-spin" />
                   Enregistrement…
                 </span>
               ) : 'Enregistrer'}
@@ -310,16 +316,16 @@ export function ModalForm({
   );
 }
 
-// --------------------------------------------------------------------
-// SECTION BLOCK — carte premium avec header glassmorphe
-// --------------------------------------------------------------------
+// ── SECTION BLOCK ──
 export function SectionBlock({ title, description, children, action }: { title: string; description?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="premium-card mb-5">
-      <div className="flex flex-row items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-slate-100/80 bg-gradient-to-r from-slate-50/50 to-transparent rounded-t-[inherit]">
+    <div className="border-2 border-[#0A0A0A] bg-white mb-5 shadow-[4px_4px_0px_#0A0A0A]">
+      <div className="flex flex-row items-center justify-between gap-3 px-4 pt-3 pb-2.5 border-b-2 border-[#0A0A0A] bg-[#0A0A0A]">
         <div className="min-w-0">
-          <h3 className="text-[0.92rem] font-bold tracking-tight text-slate-800">{title}</h3>
-          {description && <p className="text-[0.72rem] text-slate-400 mt-0.5 leading-relaxed">{description}</p>}
+          <h3 className="text-[0.88rem] font-extrabold tracking-tight text-white" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
+            {title}
+          </h3>
+          {description && <p className="text-[0.68rem] text-neutral-400 mt-0.5 leading-relaxed">{description}</p>}
         </div>
         {action}
       </div>
@@ -328,41 +334,35 @@ export function SectionBlock({ title, description, children, action }: { title: 
   );
 }
 
-// --------------------------------------------------------------------
-// EMPTY STATE — avec icône et animation
-// --------------------------------------------------------------------
+// ── EMPTY STATE ──
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="animate-fade-up text-center py-14 px-6 rounded-2xl border-2 border-dashed border-slate-200/70 bg-gradient-to-b from-slate-50/50 to-transparent">
-      <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-50 flex items-center justify-center shadow-inner mb-4">
-        <Inbox className="h-6 w-6 text-indigo-300" />
+    <div className="animate-pop-in text-center py-14 px-6 border-2 border-dashed border-[#0A0A0A] bg-[#FAFAFA]">
+      <div className="mx-auto h-14 w-14 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A] mb-4">
+        <Inbox className="h-6 w-6 text-[#0A0A0A]" />
       </div>
-      <h3 className="text-sm font-semibold text-slate-600">{title}</h3>
-      {description && <p className="text-xs text-slate-400 mt-1.5 max-w-sm mx-auto leading-relaxed">{description}</p>}
+      <h3 className="text-sm font-bold text-[#0A0A0A]">{title}</h3>
+      {description && <p className="text-xs text-neutral-500 mt-1.5 max-w-sm mx-auto leading-relaxed">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
 
-// --------------------------------------------------------------------
-// INFO ROW
-// --------------------------------------------------------------------
+// ── INFO ROW ──
 export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex justify-between items-center py-2.5 border-b border-slate-100/70 last:border-0">
-      <dt className="text-[0.78rem] text-slate-400 font-medium">{label}</dt>
-      <dd className="text-[0.82rem] font-semibold text-slate-800 text-right">{value ?? '—'}</dd>
+    <div className="flex justify-between items-center py-2.5 border-b border-neutral-200 last:border-0">
+      <dt className="text-[0.72rem] text-neutral-500 font-bold uppercase tracking-wide">{label}</dt>
+      <dd className="text-[0.82rem] font-bold text-[#0A0A0A] text-right">{value ?? '—'}</dd>
     </div>
   );
 }
 
-// --------------------------------------------------------------------
-// CREATE BUTTON — gradient premium
-// --------------------------------------------------------------------
+// ── CREATE BUTTON ──
 export const CreateButton = ({ label, onClick }: { label: string; onClick?: () => void }) => (
   <Button
     size="sm"
-    className="btn-premium rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-[0_4px_16px_rgba(99,102,241,0.25)] gap-1.5 font-semibold h-8"
+    className="brutal-btn bg-[#F97316] text-white gap-1.5 font-bold h-8"
     onClick={onClick}
   >
     <Plus className="h-3.5 w-3.5" /> {label}

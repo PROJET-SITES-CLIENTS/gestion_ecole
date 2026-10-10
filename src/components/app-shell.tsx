@@ -217,7 +217,7 @@ function GlobalSearch({ initialData, onNavigate }: { initialData: any; onNavigat
                       <div className="text-sm text-gray-900 truncate">{r.titre}</div>
                       <div className="text-[11px] text-gray-500 truncate">{r.detail}</div>
                     </div>
-                    <span className="text-[10px] text-indigo-600 whitespace-nowrap">ouvrir →</span>
+                    <span className="text-[10px] text-[#2563EB] whitespace-nowrap">ouvrir →</span>
                   </button>
                 ))}
               </div>
@@ -410,44 +410,43 @@ export default function AppShell({ initialData }: { initialData: any }) {
   }
 
   return (
-    <div className="flex h-screen bg-[#f8fafc] text-slate-800">
-      {/* Sidebar — dark premium */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0f172a] border-r border-slate-800/50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-2xl lg:shadow-none`}>
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-800/50">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center font-bold text-sm text-white shadow-lg shadow-indigo-500/25">
+    <div className="flex h-screen bg-[#FAFAFA] text-[#0A0A0A]">
+      {/* Sidebar — noir pur, bordure électrique */}
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0A0A0A] border-r-4 border-[#2563EB] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_0px_#0A0A0A] lg:shadow-none`}>
+        <div className="flex items-center gap-3 px-5 py-5 border-b-2 border-[#333]">
+          <div className="h-9 w-9 bg-[#F97316] border-2 border-white flex items-center justify-center font-extrabold text-sm text-[#0A0A0A]">
             SG
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[0.88rem] font-bold text-white leading-tight tracking-tight">ScolaGestion</div>
-            <div className="text-[0.68rem] text-indigo-300/80 font-medium">{PORTAL_LABELS[portal]}</div>
+            <div className="text-[0.85rem] font-extrabold text-white leading-tight tracking-tight" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>ScolaGestion</div>
+            <div className="text-[0.65rem] text-[#F97316] font-bold uppercase tracking-wider">{PORTAL_LABELS[portal]}</div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white transition-colors">
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-neutral-400 hover:text-white transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-3 px-2.5">
-          {visibleModules.map((m, idx) => {
+        <nav className="flex-1 overflow-y-auto py-3 px-2">
+          {visibleModules.map((m) => {
             const Icon = m.icon;
             const isActive = active === m.id;
             return (
               <button
                 key={m.id}
                 onClick={() => { setActive(m.id); setSidebarOpen(false); }}
-                className={`sidebar-item ${isActive ? 'active' : ''} w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[0.82rem] mb-0.5 transition-all duration-200 ${
+                className={`brutal-nav-item ${isActive ? 'active' : ''} w-full flex items-center justify-between px-3 py-2.5 text-[0.8rem] mb-1 ${
                   isActive
-                    ? 'bg-indigo-500/15 text-indigo-300 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#2563EB] text-white font-bold'
+                    : 'text-neutral-400 hover:text-white hover:bg-[#1a1a1a]'
                 }`}
-                style={{ animationDelay: `${Math.min(idx * 40, 320)}ms` }}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Icon className={`h-[1.05rem] w-[1.05rem] flex-shrink-0 transition-transform duration-200 ${isActive ? 'scale-110 text-indigo-400' : ''}`} />
+                  <Icon className={`h-[1rem] w-[1rem] flex-shrink-0 ${isActive ? 'text-white' : ''}`} />
                   <span className="truncate">{m.label}</span>
                 </div>
                 {m.id === 'eleves' && initialData?.totaux?.eleves != null && (
-                  <span className={`ml-2 flex-shrink-0 text-[0.65rem] font-bold px-2 py-0.5 rounded-full tabular-nums ${
-                    isActive ? 'bg-indigo-500/30 text-indigo-200' : 'bg-slate-800 text-slate-400'
+                  <span className={`ml-2 flex-shrink-0 text-[0.65rem] font-extrabold px-2 py-0.5 tabular-nums border ${
+                    isActive ? 'bg-white text-[#2563EB] border-white' : 'bg-[#F97316] text-white border-[#F97316]'
                   }`}>
                     {initialData.totaux.eleves}
                   </span>
@@ -457,19 +456,19 @@ export default function AppShell({ initialData }: { initialData: any }) {
           })}
         </nav>
 
-        <div className="px-4 py-4 border-t border-slate-800/50 bg-slate-900/50 backdrop-blur-sm">
-          <div className="text-[0.65rem] text-slate-500 font-semibold uppercase tracking-widest mb-1">École courante</div>
-          <div className="text-[0.82rem] font-semibold text-slate-200 truncate">{school?.nom ?? '—'}</div>
-          <div className="text-[0.68rem] text-slate-500 truncate">{school?.slug}.platforme.com</div>
+        <div className="px-4 py-4 border-t-2 border-[#333] bg-[#111]">
+          <div className="text-[0.6rem] text-neutral-500 font-bold uppercase tracking-widest mb-1">École courante</div>
+          <div className="text-[0.8rem] font-bold text-white truncate">{school?.nom ?? '—'}</div>
+          <div className="text-[0.65rem] text-neutral-500 truncate">{school?.slug}.platforme.com</div>
         </div>
       </aside>
 
       {/* Overlay mobile */}
-      {sidebarOpen && <div className="lg:hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-30 transition-opacity" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && <div className="lg:hidden fixed inset-0 bg-black/60 z-30" onClick={() => setSidebarOpen(false)} />}
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 lg:pb-0">
-        <header className="h-14 glass border-b border-white/20 flex items-center px-4 gap-3 flex-shrink-0 z-20">
+        <header className="h-14 bg-white border-b-2 border-[#0A0A0A] flex items-center px-4 gap-3 flex-shrink-0 z-20">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
             <Menu className="h-5 w-5" />
           </button>
@@ -610,11 +609,11 @@ export default function AppShell({ initialData }: { initialData: any }) {
               <button
                 key={m.id}
                 onClick={() => setActive(m.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full py-1 transition-colors ${isActive ? 'text-indigo-600' : 'text-gray-500'}`}
+                className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full py-1 transition-colors ${isActive ? 'text-[#2563EB]' : 'text-gray-500'}`}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
                 <span className="text-[10px] font-medium truncate max-w-[64px]">{({ dashboard: 'Accueil', presences: 'Appel' } as Record<string, string>)[m.id] ?? m.label.split(' ')[0]}</span>
-                {isActive && <div className="w-1 h-1 rounded-full bg-indigo-600" />}
+                {isActive && <div className="w-1 h-1 rounded-full bg-[#2563EB]" />}
               </button>
             );
           })}
