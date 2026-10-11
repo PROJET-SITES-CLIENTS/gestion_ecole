@@ -1930,8 +1930,14 @@ import { outilsAudit } from "./outils-audit";
 import { outilsEnseignant, outilsSecretariatIA } from "./outils-enseignant";
 import { outilsSecretariatFull } from "./outils-secretariat";
 import { outilsComptableFull } from "./outils-comptable";
+// ACCÈS TOTAL — les 5 modules complètent la couverture de TOUS les domaines
+import { outilsIaRh } from "./outils-ia-rh";
+import { outilsIaStructure } from "./outils-ia-structure";
+import { outilsIaViescola } from "./outils-ia-viescola";
+import { outilsIaServicesSante } from "./outils-ia-services-sante";
+import { outilsIaCommAdmin } from "./outils-ia-comm-admin";
 
-export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA, ...outilsSecretariatFull, ...outilsComptableFull];
+export const CATALOGUE_IA: OutilIA[] = [...outilsLecture, ...outilsAction, ...outilsProfonds, ...outilsConfiguration, ...outilsCRUD, ...outilsAudit, ...outilsEnseignant, ...outilsSecretariatIA, ...outilsSecretariatFull, ...outilsComptableFull, ...outilsIaRh, ...outilsIaStructure, ...outilsIaViescola, ...outilsIaServicesSante, ...outilsIaCommAdmin];
 
 /** Catalogue FILTRÉ par les permissions de la session (l'IA ne voit même pas les outils interdits). */
 export function outilsPourSession(permissions: Set<string>): OutilIA[] {
