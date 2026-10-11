@@ -142,13 +142,28 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
   const parNom = new Map(outils.map((t) => [t.nom, t]));
   const actions: ResultatAgent['actions'] = [];
 
+  // ═══ V-1 FIX — CHAÎNAGE MULTI-SALVES (critique pour les commandes vocales)
+  // Avant : outils UNIQUESMENT au tour 0 + synthèse immédiate → une seule
+  // salve d'appels par message. Les commandes naturelles (« Valide le congé
+  // de M. Diop » = lister → traiter ; « génère le solde de tout compte de
+  // Mme Sow » = lister → générer) exigeaient 2 salves DÉPENDANTES.
+  // Désormais : après chaque salve, un appel de CONTINUATION réenvoie les
+  // outils avec la directive « enchaîne si nécessaire, sinon réponds » —
+  // borné pour préserver l'anti-saturation du modèle gratuit.
+  const MAX_SALVES_OUTILS = 4;      // salves d'appels par message utilisateur
+  const MAX_APPELS_TOTAL = 12;      // exécutions d'outils au total par message
+  let salves = 0;
+  let appelsTotal = 0;
+
   let videsConsecutifs = 0;
   for (let etape = 0; etape < MAX_ETAPEES; etape++) {
-    const toolsCeTour = etape === 0 ? tools : [];
+    // Outils au tour 0 ET en continuation (tant que les bornes ne sont pas atteintes)
+    const avecOutils = etape === 0 || (salves > 0 && salves < MAX_SALVES_OUTILS && appelsTotal < MAX_APPELS_TOTAL);
+    const toolsCeTour = avecOutils ? tools : [];
     let data = await appelerOpenRouter(messages, toolsCeTour, 'auto').catch(async (e) => {
       const msg = String((e as Error)?.message ?? '');
       console.error('[ARIA] appel avec outils échoué :', msg.slice(0, 200));
-      if (/OpenRouter 400/.test(msg) && etape === 0) {
+      if (/OpenRouter 400/.test(msg)) {
         return appelerOpenRouter(messages, [], 'auto');
       }
       throw e;
@@ -168,6 +183,7 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
       : parsedToolCalls;
 
     if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+      salves++;
       messages.push({ role: 'assistant', content: '', tool_calls: effectiveToolCalls });
       for (const appel of effectiveToolCalls) {
         const nom = appel.function?.name as string;
@@ -177,6 +193,7 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
           actions.push({ outil: nom, resume: 'refusé (hors périmètre)', ok: false });
           continue;
         }
+        appelsTotal++;
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(appel.function?.arguments || '{}'); } catch { args = {}; }
         try {
@@ -193,7 +210,19 @@ DATE DU JOUR : ${new Date().toISOString().slice(0, 10)}.`;
         }
       }
 
-      // Synthèse directe après les résultats
+      // V-1 — CONTINUATION : si les bornes le permettent, on redonne les
+      // outils au modèle avec les résultats ; il enchaîne (salve dépendante)
+      // ou rédige la réponse finale. Sinon : synthèse directe (2-phase d'origine).
+      const peutContinuer = salves < MAX_SALVES_OUTILS && appelsTotal < MAX_APPELS_TOTAL;
+      if (peutContinuer) {
+        messages.push({
+          role: 'user',
+          content: '[DIRECTIVE] Résultats des outils reçus ci-dessus. Si une étape DÉPENDANTE est indispensable pour achever la demande (résoudre un ID listé, compléter un workflow), appelle l\'outil correspondant maintenant. SINON, rédige directement la réponse finale en français : chiffres clés d\'abord, une suggestion de suite, maximum 5 lignes, pas de préambule, JAMAIS le format <tool_call>.',
+        });
+        continue; // le tour suivant repart avec les outils (avecOutils = true)
+      }
+
+      // Bornes atteintes — synthèse SANS outils (anti-saturation d'origine)
       const syntheseDirecte = await appelerOpenRouter([
         { role: 'system', content: 'Tu es ARIA. Un outil vient de retourner des résultats. Rédige la réponse finale en français : chiffres clés directement, puis une suggestion de suite. Maximum 5 lignes. Pas de préambule. N\'utilise JAMAIS le format <tool_call>.' },
         { role: 'user', content: `Résultats des outils :\n${actions.map((a) => `${a.ok ? '✓' : '✗'} ${a.outil} : ${a.resume}`).join('\n')}` },

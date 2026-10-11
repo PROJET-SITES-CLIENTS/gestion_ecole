@@ -144,6 +144,19 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
         alert('Accès au micro refusé — autorisez le microphone dans votre navigateur pour parler à ARIA.');
         setModeConv(false);
+        return;
+      }
+      // V-FIX — erreurs réseau/capture du STT (Chrome en ligne requis) :
+      // sans ce traitement, le mode conversation bouclait 8 fois dans le vide.
+      if (e?.error === 'network' || e?.error === 'audio-capture' || e?.error === 'language-not-supported') {
+        const msg = e.error === 'network'
+          ? 'La reconnaissance vocale nécessite une connexion Internet (elle est traitée par le navigateur). Vérifiez votre réseau ou écrivez votre demande.'
+          : e.error === 'audio-capture'
+            ? 'Aucun micro détecté — branchez un microphone ou utilisez la saisie écrite.'
+            : 'Langue non supportée par votre navigateur pour la reconnaissance vocale.';
+        setTours((prev) => [...prev, { role: 'assistant', content: `🎙️ ${msg}` }]);
+        modeConvRef.current = false;
+        setModeConv(false);
       }
       // « no-speech » / « aborted » : silence géré par onend
     };
