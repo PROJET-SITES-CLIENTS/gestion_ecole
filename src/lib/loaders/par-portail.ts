@@ -67,17 +67,25 @@ export async function chargerDonneesPortail(
   if (portal === 'super_admin') {
     const ecolePivot = session.utilisateur.ecoleId ?? (await db.ecole.findFirst({ where: { slug: 'vinci' }, select: { id: true } }))?.id;
     const d = ecolePivot ? await chargerPortailInterne('direction', session, ecolePivot) : {};
-    const [ecoles, plans, facturesSaas, totalElevesGeres] = await Promise.all([
+    const [ecoles, plans, facturesSaas, totalElevesGeres, abonnementsSaaS] = await Promise.all([
       db.ecole.findMany({ select: { id: true, nom: true, slug: true, pays: true, devise: true, statut: true, planCourantId: true }, orderBy: { nom: 'asc' } }),
       db.planTarifaire.findMany({ orderBy: { prixMensuel: 'asc' } }),
       db.factureSaas.findMany({ orderBy: { dateEmission: 'desc' }, take: 200 }),
       db.eleve.count({ where: { deletedAt: null } }),
+      // DIR-11 — le MRR a besoin du MODE de facturation (annuel = prixAnnuel/12)
+      db.abonnement.findMany({ where: { statut: { in: ['essai', 'actif'] } }, select: { ecoleId: true, planId: true, statut: true, modeFacturation: true } }),
     ]);
     const plansDetail = await db.planTarifaire.findMany();
     const plansParId = new Map(plansDetail.map((p) => [p.id, p]));
+    // Abonnement COURANT (essai/actif) par école — le plus récent
+    const abonnementParEcole = new Map<string, { planId: string; statut: string; modeFacturation: string }>();
+    for (const ab of abonnementsSaaS) {
+      const courant = abonnementParEcole.get(ab.ecoleId);
+      if (!courant) abonnementParEcole.set(ab.ecoleId, ab);
+    }
     return {
       ...d,
-      ecoles: ecoles.map((e) => ({ ...e, plan: e.planCourantId ? plansParId.get(e.planCourantId) ?? null : null })),
+      ecoles: ecoles.map((e) => ({ ...e, plan: e.planCourantId ? plansParId.get(e.planCourantId) ?? null : null, abonnementCourant: abonnementParEcole.get(e.id) ?? null })),
       plans,
       facturesSaas,
       totalElevesGeres,
@@ -520,7 +528,11 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
           ]);
           return [...futures, ...passees];
         })(),
-        db.presence.findMany({ take: CAP.presences, include: { seance: { include: { matiere: true, classe: true } } } }),
+        // DIR-1 FIX — filtre école OBLIGATOIRE : cette requête était la seule
+        // du loader sans `where` → sur une plateforme multi-écoles, le cockpit
+        // direction/vie scolaire recevait les pointages de TOUTES les écoles
+        // (absents du jour, absentéisme 12 mois, appels manquants faussés).
+        db.presence.findMany({ where: { eleve: { ecoleId, deletedAt: null } }, take: CAP.presences, orderBy: { dateSaisie: 'desc' }, include: { seance: { include: { matiere: true, classe: true } } } }),
         db.incident.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateHeure: 'desc' }, take: CAP.incidents }),
         db.sanction.findMany({ where: { incident: { eleve: { ecoleId } } }, take: CAP.sanctions, include: { incident: true } }),
         db.justificationAbsence.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateSoumission: 'desc' }, take: 200, include: { eleve: true } }),
@@ -554,7 +566,9 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.depense.findMany({ where: { ecoleId }, orderBy: { dateDepense: 'desc' }, take: 300 }),
         db.stockArticle.findMany({ where: { ecoleId } }),
         db.mouvementStock.findMany({ where: { article: { ecoleId } }, orderBy: { dateMouvement: 'desc' }, take: 300, include: { article: true } }),
-        db.paiement.count({ where: { ecoleId } }),
+        // DIR-15 FIX — le compteur total EXCLUT les paiements annulés (le
+        // « X affichés sur Y » n'a jamais dû les compter)
+        db.paiement.count({ where: { ecoleId, annule: false } }),
         db.echeanceFrais.count({ where: { eleve: { ecoleId } } }),
       ]);
       v.frais = frais; v.echeances = echeances; v.paiements = paiements;

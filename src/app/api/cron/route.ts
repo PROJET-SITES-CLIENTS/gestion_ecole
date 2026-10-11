@@ -24,6 +24,18 @@ export async function GET(request: Request) {
       for (const facture of facturesEnRetard) {
         if (facture.ecole.statut !== 'suspendu') {
           await tx.ecole.update({ where: { id: facture.ecole.id }, data: { statut: 'suspendu' } });
+          // DIR-13 FIX — le cron applique la MÊME logique que le chemin manuel
+          // (changerStatutEcoleCore) : sessions révoquées + abonnement suspendu.
+          // Avant : seul le statut changeait → sessions actives et abonnement
+          // « actif » orphelins, comportement incohérent avec la suspension manuelle.
+          await tx.sessionUtilisateur.updateMany({
+            where: { active: true, utilisateur: { ecoleId: facture.ecole.id } },
+            data: { active: false, expireManuellement: true, dateExpiration: new Date() },
+          });
+          await tx.abonnement.updateMany({
+            where: { ecoleId: facture.ecole.id, statut: { in: ['essai', 'actif'] } },
+            data: { statut: 'suspendu' },
+          });
           ecolesSuspendues++;
           await logAction(tx, facture.ecoleId, 'system_cron', 'saas.ecole_suspension_auto', 'ecole', facture.ecole.id, { motif: `Facture ${facture.id} impayée depuis plus de 30 jours.` });
         }

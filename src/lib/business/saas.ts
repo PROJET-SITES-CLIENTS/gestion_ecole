@@ -50,6 +50,10 @@ export const PERMISSIONS_STANDARDS: Array<{ code: string; libelle: string; modul
   { code: 'sante.gerer', libelle: 'Gérer l\'infirmerie', module: 'sante' },
   { code: 'salles.gerer', libelle: 'Gérer salles et calendrier', module: 'salles' },
   { code: 'protection.gerer', libelle: 'Gérer les signalements de protection de l\'enfance', module: 'protection' },
+  // DIR-7 FIX — la matrice du rôle secretariat référence secretariat.gerer,
+  // absent de cette liste (présente dans initialisation.ts) : les écoles créées
+  // via le back-office SaaS avaient un rôle secrétariat amputé.
+  { code: 'secretariat.gerer', libelle: 'Gérer le guichet secrétariat (relances, dossiers)', module: 'secretariat' },
 ];
 
 /** Matrice rôle → permissions (miroir du seed). */
@@ -179,17 +183,20 @@ export async function creerEcoleClientCore(ctx: Ctx, input: EcoleClientInput) {
         { ecoleId: ecole.id, anneeScolaireId: annee.id, libelle: 'Trimestre 3', code: 'T3', dateDebut: new Date(Date.UTC(anneeDebut + 1, 3, 1)), dateFin: new Date(Date.UTC(anneeDebut + 1, 5, 30)), typeBulletin: 'college_lycee' },
       ],
     });
-    let ordre = 1;
+    // DIR-2 FIX — compteurs SÉPARÉS : les cycles ne consomment PLUS les
+    // numéros d'ordre des niveaux (avant : MAT=1, PS=2..GS=4, PRIM=5, CP=6 →
+    // la promotion `ordre+1` échouait à CHAQUE frontière de cycle : GS→CP,
+    // CM2→6E, 3E→2NDE tous « sans classe » à la clôture).
+    let ordreCycle = 1;
+    let ordreNiveau = 1;
     let classesCreees = 0;
     for (const bloc of STRUCTURE_STANDARD) {
       const cycle = await tx.cycle.create({
-        data: { ecoleId: ecole.id, code: bloc.cycle, libelle: bloc.libCycle, ordre: ordre, modeEvaluation: bloc.mode },
+        data: { ecoleId: ecole.id, code: bloc.cycle, libelle: bloc.libCycle, ordre: ordreCycle++, modeEvaluation: bloc.mode },
       });
-      ordre++;
       const section = await tx.section.create({ data: { cycleId: cycle.id, code: bloc.section, libelle: bloc.libSection } });
       for (const [codeNiveau, libelleNiveau] of bloc.niveaux) {
-        const niveau = await tx.niveau.create({ data: { sectionId: section.id, code: codeNiveau, libelle: libelleNiveau, ordre: ordre } });
-        ordre++;
+        const niveau = await tx.niveau.create({ data: { sectionId: section.id, code: codeNiveau, libelle: libelleNiveau, ordre: ordreNiveau++ } });
         await tx.classe.create({
           data: {
             niveauId: niveau.id,
@@ -268,6 +275,15 @@ export async function changerStatutEcoleCore(ctx: Ctx, ecoleId: string, statut: 
       await tx.abonnement.updateMany({
         where: { ecoleId, statut: { in: ['essai', 'actif'] } },
         data: { statut: statut === 'resilie' ? 'resilie' : 'suspendu' },
+      });
+    }
+    // DIR-8 FIX — RÉACTIVATION : l'abonnement suspendu redevient ACTIF.
+    // Avant, il restait « suspendu » à vie → école réactivée mais jamais
+    // refracturée, MRR perdu silencieusement.
+    if (statut === 'actif') {
+      await tx.abonnement.updateMany({
+        where: { ecoleId, statut: 'suspendu' },
+        data: { statut: 'actif', dateFin: null },
       });
     }
   }, { timeout: 30000, maxWait: 10000 });
@@ -357,8 +373,26 @@ export async function genererFacturesSaasCore(ctx: Ctx) {
   return { periode, crees, sautes: sautes.length };
 }
 
-/** Changement de plan : clôture l'abonnement courant, ouvre le nouveau, met à jour l'école. */
-export async function changerPlanEcoleCore(ctx: Ctx, ecoleId: string, planId: string, modeFacturation: 'mensuel' | 'annuel') {
+/** DIR-9 FIX — encaissement d'une facture éditeur : sans cette action, les
+ *  factures restaient « impayee » à VIE et le cron suspendait les écoles pour
+ *  des impayés qu'aucun écran ne permettait de régler. */
+export async function marquerFactureSaasPayeeCore(ctx: Ctx, factureId: string, modePaiement?: string, reference?: string) {
+  assertPermission(ctx, 'admin.saas');
+  const f = await db.factureSaas.findUnique({ where: { id: factureId } });
+  if (!f) throw new ActionError('Facture introuvable.', 'INTROUVABLE');
+  if (f.statut === 'payee') throw new ActionError('Facture déjà encaissée.', 'DEJA_TRAITE');
+  if (f.montant <= 0) throw new ActionError('Cette facture est à montant nul (déjà soldée).', 'DEJA_TRAITE');
+  await db.factureSaas.update({
+    where: { id: factureId },
+    data: { statut: 'payee', datePaiement: new Date(), modePaiement: modePaiement?.trim() || 'virement', referencePaiement: reference?.trim() || null },
+  });
+  await logAction(db, f.ecoleId, ctx.utilisateurId, 'saas.facture_encaissee', 'facture_saas', factureId, {
+    periode: f.periode, montant: f.montant, mode: modePaiement ?? 'virement',
+  });
+  return { factureId, statut: 'payee' };
+}
+
+/** Changement de plan : clôture l'abonnement courant, ouvre le nouveau, met à jour l'école. */export async function changerPlanEcoleCore(ctx: Ctx, ecoleId: string, planId: string, modeFacturation: 'mensuel' | 'annuel') {
   assertPermission(ctx, 'admin.saas');
   const ecole = await db.ecole.findUnique({ where: { id: ecoleId } });
   if (!ecole) throw new ActionError('École introuvable.', 'INTROUVABLE');
@@ -756,23 +790,33 @@ export type ReservationRdvInput = {
   creneauRdvId: string;
   eleveId?: string;
   motif?: string;
+  parentId?: string; // DIR-14 — back-office : réserver AU NOM d'un parent
 };
 
 /**
  * F13 — réservation par un PARENT. L'identité parent est résolue SERVEUR
  * depuis la session ; l'élève doit être un de ses enfants.
+ * DIR-14 FIX — le back-office (direction/secrétariat, communication.envoyer)
+ * peut désormais réserver AU NOM d'un parent (input.parentId vérifié au
+ * tenant) : avant, la branche permission existait mais mourrait sur
+ * « Seul un compte parent peut réserver ».
  */
 export async function reserverRdvCore(ctx: Ctx, input: ReservationRdvInput) {
-  if (ctx.type !== 'parent') {
-    // Le back-office peut réserver pour un parent identifié (permission requise)
+  let parent;
+  if (ctx.type === 'parent') {
+    parent = await db.parentTuteur.findFirst({ where: { utilisateurId: ctx.utilisateurId } });
+    if (!parent) {
+      throw new ActionError('Aucun dossier parent associé à votre compte.', 'INTROUVABLE');
+    }
+  } else {
     assertPermission(ctx, 'communication.envoyer');
+    if (!input.parentId) {
+      throw new ActionError('Précisez le parent pour lequel réserver (parentId).', 'CHAMP_MANQUANT');
+    }
+    parent = await db.parentTuteur.findUnique({ where: { id: input.parentId } });
+    if (!parent) throw new ActionError('Parent introuvable.', 'INTROUVABLE');
+    assertTenant(parent.ecoleId, ctx, 'Ce parent');
   }
-  const parent = await db.parentTuteur.findFirst({ where: { utilisateurId: ctx.utilisateurId } });
-  if (ctx.type === 'parent' && !parent) {
-    throw new ActionError('Aucun dossier parent associé à votre compte.', 'INTROUVABLE');
-  }
-  // Back-office : parent spécifié via parentId optionnel (non implémenté côté UI : réservé aux parents)
-  if (!parent) throw new ActionError('Seul un compte parent peut réserver un rendez-vous.', 'ROLE_INVALIDE');
 
   return avecVerrou(`rdv:${input.creneauRdvId}`, () => db.$transaction(async (tx) => {
     const creneau = await tx.creneauRdv.findUnique({ where: { id: input.creneauRdvId }, include: { personnel: true } });

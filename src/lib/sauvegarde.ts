@@ -24,35 +24,46 @@ export type ResultatSauvegarde = { ok: boolean; nomFichier?: string; tailleOctet
 
 export async function creerSauvegarde(db: PrismaClient, type: 'manuelle' | 'automatique' | 'pre-restauration' = 'manuelle', creeParId?: string): Promise<ResultatSauvegarde> {
   try {
-    try { mkdirSync(DOSSIER, { recursive: true }); } catch { /* Vercel: filesystem read-only */ }
+    try { mkdirSync(DOSSIER, { recursive: true }); } catch { /* fs restreint */ }
     const nom = `${type === 'automatique' ? 'auto-' : type === 'pre-restauration' ? 'sec-' : ''}${horodatageNom()}`;
 
-    // Méthode 1 : pg_dump (si le binaire est accessible sur le serveur)
+    // Méthode 1 : pg_dump (binaire + filesystem inscriptible — dev / auto-hébergé)
+    if (!existsSync(DOSSIER)) {
+      // DIR-4 FIX — comportement HONNÊTE : sur Vercel le filesystem est en
+      // lecture seule et pg_dump absent. On ne prétend PLUS qu'une sauvegarde
+      // a eu lieu : les sauvegardes de PRODUCTION relèvent de l'hébergeur de
+      // base (Supabase : PITR / restauration à date).
+      await db.sauvegarde.create({ data: { nomFichier: `${nom}.json`, tailleOctets: 0, type, statut: 'echouee', creeParId: creeParId ?? null } }).catch(() => {});
+      return { ok: false, erreur: 'Filesystem non inscriptible (hébergement serverless) : sauvegarde locale impossible. En production, les données sont protégées par Supabase (PITR — restauration à date via la console).' };
+    }
     try {
-      if (!existsSync(DOSSIER)) throw new Error('Filesystem non accessible (Vercel) — Neon gère les backups');
-    const chemin = join(DOSSIER, `${nom}.sql`);
+      const chemin = join(DOSSIER, `${nom}.sql`);
       await execAsync(`pg_dump "${process.env.DATABASE_URL}" --no-owner --no-privileges -f "${chemin}"`, { timeout: 120_000 });
       const taille = statSync(chemin).size;
       await db.sauvegarde.create({ data: { nomFichier: `${nom}.sql`, tailleOctets: taille, type, statut: 'reussie', creeParId: creeParId ?? null } });
       console.log(`💾 Sauvegarde ${type} (pg_dump) : ${nom}.sql (${Math.round(taille / 1024)} Ko)`);
       return { ok: true, nomFichier: `${nom}.sql`, tailleOctets: taille, typeExport: 'pg_dump' };
-    } catch { /* pg_dump absent (Vercel/slim) → fallback JSON */ }
+    } catch { /* pg_dump absent → fallback JSON */ }
 
-    // Méthode 2 : export JSON via Prisma (fonctionne partout)
+    // Méthode 2 : export JSON via Prisma — DIR-4 FIX : TOUTES les tables
+    // (avant : `clés.slice(0, 5)` = 5 tables alphabétiques sur 165 : une
+    // « sauvegarde » qui n'en était pas une). Plafond 2 000 lignes/table.
     const chemin = join(DOSSIER, `${nom}.json`);
-    const dump: Record<string, unknown[]> = { _meta: [{ généréLe: new Date().toISOString(), type }] };
+    const dump: Record<string, unknown[]> = { _meta: [{ généréLe: new Date().toISOString(), type, tables: 0 }] };
     const clés = Object.keys(db).filter((k) => !k.startsWith('$') && !k.startsWith('_'));
-    for (const clé of clés.slice(0, 5)) {
+    let tables = 0;
+    for (const clé of clés) {
       try {
         // @ts-ignore
-        const données = await (db as any)[clé].findMany({ take: 100 });
-        if (Array.isArray(données) && données.length > 0) dump[clé] = données;
+        const données = await (db as any)[clé].findMany({ take: 2000 });
+        if (Array.isArray(données) && données.length > 0) { dump[clé] = données; tables++; }
       } catch { /* delegate sans findMany */ }
     }
+    (dump._meta as any)[0].tables = tables;
     writeFileSync(chemin, JSON.stringify(dump, null, 2));
     const taille = statSync(chemin).size;
     await db.sauvegarde.create({ data: { nomFichier: `${nom}.json`, tailleOctets: taille, type, statut: 'reussie', creeParId: creeParId ?? null } });
-    console.log(`💾 Sauvegarde ${type} (JSON) : ${nom}.json (${Math.round(taille / 1024)} Ko)`);
+    console.log(`💾 Sauvegarde ${type} (JSON, ${tables} tables) : ${nom}.json (${Math.round(taille / 1024)} Ko)`);
     return { ok: true, nomFichier: `${nom}.json`, tailleOctets: taille, typeExport: 'json' };
   } catch (e) {
     await db.sauvegarde.create({ data: { nomFichier: 'echec', tailleOctets: 0, type, statut: 'echouee', creeParId: creeParId ?? null } }).catch(() => {});

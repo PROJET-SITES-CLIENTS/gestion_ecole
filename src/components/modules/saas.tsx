@@ -31,9 +31,19 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
   const totalElevesGeres = initialData.totalElevesGeres ?? 0;
   // F5 — MRR : somme des prixMensuel des écoles actives avec abonnement actif
   // (le plan est désormais joint à chaque école via planCourantId).
+  // DIR-11 FIX — le MODE de facturation est respecté : une école en annuel
+  // contribue prixAnnuel/12 (avant : elle ne comptait que prixMensuel).
   const mrr = ecoles
     .filter((e: any) => e.statut === 'actif')
-    .reduce((sum: number, e: any) => sum + (e.plan?.prixMensuel ?? 0), 0);
+    .reduce((sum: number, e: any) => {
+      const plan = e.plan;
+      if (!plan) return sum;
+      const abonnement = e.abonnementCourant;
+      if (abonnement?.modeFacturation === 'annuel' && abonnement.statut === 'actif') {
+        return sum + Math.round(plan.prixAnnuel / 12);
+      }
+      return sum + (plan.prixMensuel ?? 0);
+    }, 0);
   // F5 — taux de résiliation calculé (— si aucune école)
   const tauxResiliation = ecoles.length > 0 ? `${Math.round((ecolesResiliees / ecoles.length) * 100)}%` : '—';
 
@@ -100,14 +110,21 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
               {
                 key: 'actions', label: 'Actions', render: (e) => (
                   <div className="flex gap-1">
-                    {e.statut !== 'suspendu' && (
+                    {e.statut !== 'suspendu' && e.statut !== 'resilie' && (
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actions.changerStatutEcole(e.id, 'suspendu'), 'École suspendue')}>
                         Suspendre
                       </Button>
                     )}
                     {e.statut === 'suspendu' && (
-                      <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actions.changerStatutEcole(e.id, 'actif'), 'École réactivée')}>
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actions.changerStatutEcole(e.id, 'actif'), 'École réactivée (abonnement restauré)')}>
                         Réactiver
+                      </Button>
+                    )}
+                    {/* DIR-12 — résiliation enfin atteignable depuis l'UI */}
+                    {e.statut !== 'resilie' && (
+                      <Button size="sm" variant="outline" className="text-rose-600 border-rose-200 hover:bg-rose-50" disabled={pending}
+                        onClick={() => { if (window.confirm(`Résilier définitivement ${e.nom} ? Sessions révoquées, abonnement clos.`)) run(() => actions.changerStatutEcole(e.id, 'resilie'), 'École résiliée'); }}>
+                        Résilier
                       </Button>
                     )}
                     <ModalForm
@@ -214,6 +231,20 @@ export default function SaasModule({ initialData, mode = 'full' }: { initialData
               { key: 'modePaiement', label: 'Mode' },
               { key: 'dateEmission', label: 'Émise le', render: (f) => formatDate(f.dateEmission) },
               { key: 'datePaiement', label: 'Payée le', render: (f) => formatDate(f.datePaiement) },
+              // DIR-9 — encaissement ENFIN possible : les factures restaient
+              // « impayee » à vie et le cron suspendait les écoles sans recours
+              {
+                key: 'action', label: '', render: (f) => f.statut !== 'payee' && f.montant > 0 ? (
+                  <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-200 hover:bg-emerald-50" disabled={pending}
+                    onClick={() => {
+                      const mode = window.prompt('Mode d\'encaissement (virement, chèque, mobile money…) :', 'virement') ?? 'virement';
+                      const ref = window.prompt('Référence (n° virement/chèque — optionnel) :') ?? '';
+                      run(() => actions.marquerFactureSaasPayee(f.id, mode.trim() || 'virement', ref.trim() || undefined), 'Facture encaissée.');
+                    }}>
+                    Encaisser
+                  </Button>
+                ) : <span className="text-xs text-emerald-600">✓</span>,
+              },
             ]}
             rows={factures}
           />

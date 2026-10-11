@@ -44,7 +44,7 @@ import {
   enregistrerPassageInfirmerieCore, enregistrerFicheSanteCore, enregistrerVaccinationCore,
   // SaaS + communication + examens + salles + RDV
   creerEcoleClientCore, changerStatutEcoleCore, creerPlanTarifaireCore,
-  genererFacturesSaasCore, changerPlanEcoleCore,
+  genererFacturesSaasCore, changerPlanEcoleCore, marquerFactureSaasPayeeCore,
   envoyerNotificationCore, envoyerNotificationMasseCore, creerModeleMessageCore,
   inscrireElevesExamenCore, envoyerConvocationsExamenCore, saisirResultatExamenCore,
   creerSalleCore, ajouterCalendrierCore,
@@ -267,6 +267,18 @@ export async function genererFacturesSaas(): Promise<ActionResult> {
   try {
     const ctx = await ctxSession();
     const r = await genererFacturesSaasCore(ctx);
+    revalidatePath('/');
+    return { ok: true, ...r };
+  } catch (e) {
+    return echec(e);
+  }
+}
+
+/** DIR-9 — encaissement d'une facture éditeur (referme le cycle de facturation). */
+export async function marquerFactureSaasPayee(factureId: string, modePaiement?: string, reference?: string): Promise<ActionResult> {
+  try {
+    const ctx = await ctxSession();
+    const r = await marquerFactureSaasPayeeCore(ctx, factureId, modePaiement, reference);
     revalidatePath('/');
     return { ok: true, ...r };
   } catch (e) {
@@ -1287,10 +1299,11 @@ export async function genererSeancesDepuisEdt(emploiTempsId: string, dateFinIso:
   }
 }
 
-export async function cloturerAnneeScolaire(anneeId: string, redoublerIds?: string[]): Promise<ActionResult> {
+export async function cloturerAnneeScolaire(anneeId: string, redoublerIds?: string[], repartitionAutomatique?: boolean): Promise<ActionResult> {
   try {
     const ctx = await ctxSession();
-    const r = await cloturerAnneeScolaireCore(ctx, anneeId, { redoublerIds });
+    // DIR-3 — l'option de répartition est enfin transmise (défaut : true côté core)
+    const r = await cloturerAnneeScolaireCore(ctx, anneeId, { redoublerIds, repartitionAutomatique });
     revalidatePath('/');
     return { ok: true, ...r };
   } catch (e) {

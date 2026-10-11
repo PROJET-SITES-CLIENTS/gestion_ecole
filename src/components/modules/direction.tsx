@@ -402,12 +402,18 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
     id: n.id,
     libelle: n.libelle,
     cycle: n.section?.cycle?.libelle ?? n.section?.libelle ?? '—',
+    ordreCycle: n.section?.cycle?.ordre ?? 0,
+    ordreNiveau: n.ordre ?? 0,
     classes: classes.filter((c: any) => c.niveauId === n.id).length,
     effectif: elevesActifs.filter((e: any) => {
       const c = classeById.get(e.classeActuelleId);
       return c && c.niveauId === n.id;
     }).length,
-  })).sort((a: any, b: any) => b.effectif - a.effectif);
+  }))
+    // DIR-16 FIX — ordre PÉDAGOGIQUE (cycle puis niveau) au lieu du tri par
+    // effectif : la petite section ne doit pas apparaître après la terminale
+    // parce qu'elle compte moins d'élèves.
+    .sort((a: any, b: any) => (a.ordreCycle ?? 0) - (b.ordreCycle ?? 0) || (a.ordreNiveau ?? 0) - (b.ordreNiveau ?? 0));
 
   const effectifParClasse = (classeId: any) =>
     elevesActifs.filter((e: any) => e.classeActuelleId === classeId).length;
@@ -490,10 +496,6 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const appels = jourActif ? etatAppels(classes, seances, presences, jourActif) : null;
   const appelsManquants = appels?.manquants ?? [];
 
-  // ---- Tendances : recettes vs dépenses (6 derniers mois) ----
-  const serieRecettes = serieMensuelle(paiements, 'datePaiement', 'montant', 6, refDate);
-  const serieDepenses = serieMensuelle(depenses, 'dateDepense', 'montant', 6, refDate);
-
   // ============ 6. TOP ÉLÈVES — « meilleures notes » ============
   const topEleves = bulletins
     .filter((b: any) => b.moyenneGenerale != null)
@@ -510,7 +512,11 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
 
   // ============ 7. SCOLARITÉ — « qui a payé / pas payé / qui est en retard ? » ============
   const echeancesDu = echeances.filter((e: any) => e.statut !== 'annulee');
-  const totalDu = echeancesDu.reduce((s: number, e: any) => s + (e.montant ?? 0), 0);
+  // DIR-5 FIX — le dû est NET DE LA REMISE (bourse) : copie locale du bug F14
+  // (corrigé dans le cockpit comptable mais pas ici — le directeur voyait des
+  // dus surestimés pour chaque élève boursier).
+  const netEcheance = (e: any) => (e.montant ?? 0) - (e.remise ?? 0);
+  const totalDu = echeancesDu.reduce((s: number, e: any) => s + netEcheance(e), 0);
   const totalPaye = echeancesDu.reduce((s: number, e: any) => s + (e.montantPaye ?? 0), 0);
   const restantDu = Math.max(0, totalDu - totalPaye);
   const tauxRecouvrement = totalDu > 0 ? Math.round((totalPaye / totalDu) * 100) : 100;
@@ -523,7 +529,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
           eleve: nomComplet(eleveById.get(e.eleveId)),
           classe: eleveById.get(e.eleveId) ? classeById.get(eleveById.get(e.eleveId).classeActuelleId)?.code ?? '—' : '—',
           frais: e.frais?.libelle ?? '—',
-          restant: (e.montant ?? 0) - (e.montantPaye ?? 0),
+          restant: Math.max(0, netEcheance(e) - (e.montantPaye ?? 0)),
           statut: e.statut,
           jours: Math.max(1, joursEntre(new Date(e.dateEcheance), refDate)),
         }))
@@ -532,17 +538,25 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
   const elevesAJour = elevesActifs.length - new Set(retardataires.map((r: any) => r.eleve)).size;
 
   // ============ 8. COMPTABILITÉ — recettes / dépenses / budget ============
+  // DIR-6 FIX — un paiement ANNULÉ n'est plus une recette ; une dépense non
+  // validée n'est plus une charge : le cockpit du directeur ne présente que
+  // des flux réels (les annulations gonflaient recettes, cumul et séries).
+  const paiementsValides = paiements.filter((p: any) => !p.annule);
+  const depensesValidees = depenses.filter((d: any) => d.validee && !d.annulee);
   const moisActif = refDate ? toMois(refDate) : null;
-  const encaisseMois = paiements
+  const encaisseMois = paiementsValides
     .filter((p: any) => moisActif && toMois(p.datePaiement) === moisActif)
     .reduce((s: number, p: any) => s + p.montant, 0);
-  const depensesMois = depenses
+  const depensesMois = depensesValidees
     .filter((d: any) => moisActif && toMois(d.dateDepense) === moisActif)
     .reduce((s: number, d: any) => s + d.montant, 0);
-  const depensesNonValidees = depenses.filter((d: any) => !d.validee);
+  const depensesNonValidees = depenses.filter((d: any) => !d.validee && !d.annulee);
   const soldeMois = encaisseMois - depensesMois;
-  const encaisseCumule = paiements.reduce((s: number, p: any) => s + p.montant, 0);
-  const depensesCumulees = depenses.reduce((s: number, d: any) => s + d.montant, 0);
+  const encaisseCumule = paiementsValides.reduce((s: number, p: any) => s + p.montant, 0);
+  const depensesCumulees = depensesValidees.reduce((s: number, d: any) => s + d.montant, 0);
+  // Les séries 6 mois suivent les mêmes règles (annulations exclues)
+  const serieRecettes = serieMensuelle(paiementsValides, 'datePaiement', 'montant', 6, refDate);
+  const serieDepenses = serieMensuelle(depensesValidees, 'dateDepense', 'montant', 6, refDate);
 
   const budgetLignes = budgets.flatMap((b: any) =>
     (b.lignes ?? []).map((l: any) => ({ ...l, budget: b.libelle, statutBudget: b.statut }))
@@ -566,9 +580,14 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
       net: b.netAPayer,
       statut: b.statut,
     }));
-  const masseSalarialeMois = derniersPaies.length
+  // DIR-10 FIX — la « masse salariale du mois » s'entend de la DERNIÈRE
+  // période réellement émise : avant, tant que la paie du mois courant
+  // n'était pas générée, le KPI affichait 0 (octobre : paie de septembre
+  // émise → 0 F affiché au directeur).
+  const dernierePeriodePaie = bulletinsPaie.reduce((max: string | null, b: any) => (!max || (b.periode ?? '') > max ? b.periode : max), null as string | null);
+  const masseSalarialeMois = dernierePeriodePaie
     ? bulletinsPaie
-        .filter((b: any) => b.periode === moisActif)
+        .filter((b: any) => b.periode === dernierePeriodePaie)
         .reduce((s: number, b: any) => s + (b.netAPayer ?? 0), 0)
     : 0;
   const parContrat = new Map<string, number>();
@@ -1264,7 +1283,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
               <StatCard title="Recettes du mois" value={formatXOF(encaisseMois, devise)} sub="scolarité & frais encaissés" icon={TrendingUp} color="emerald" />
               <StatCard title="Dépenses du mois" value={formatXOF(depensesMois, devise)} sub={depensesNonValidees.length ? `${depensesNonValidees.length} en attente de validation` : 'toutes validées'} icon={TrendingDown} color="amber" />
               <StatCard title="Solde du mois" value={formatXOF(soldeMois, devise)} sub={`cumul saison : ${formatXOF(encaisseCumule - depensesCumulees, devise)}`} icon={Wallet} color={soldeMois >= 0 ? 'emerald' : 'rose'} />
-              <StatCard title="Masse salariale" value={formatXOF(masseSalarialeMois, devise)} sub={moisActif ?? '—'} icon={GraduationCap} color="purple" />
+              <StatCard title="Masse salariale" value={formatXOF(masseSalarialeMois, devise)} sub={dernierePeriodePaie ? `paie ${dernierePeriodePaie}` : 'aucune paie émise'} icon={GraduationCap} color="purple" />
             </div>
             {/* Tendances recettes vs dépenses — 6 derniers mois (SVG natif) */}
             <CourbeTendances recettes={serieRecettes} depenses={serieDepenses} devise={devise} />
@@ -1368,7 +1387,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
         </SectionBlock>
 
         {vueComplete ? (
-          <SectionBlock title="Derniers paiements encaissés" description="Activité financière">
+          <SectionBlock title="Derniers paiements encaissés" description="Activité financière (annulations exclues)">
             <DataTable
               columns={[
                 { key: 'eleve', label: 'Élève', render: (p) => nomComplet(eleveById.get(p.eleveId)) },
@@ -1376,7 +1395,7 @@ export default function DirectionModule({ initialData, mode = 'dashboard', porta
                 { key: 'modePaiement', label: 'Mode' },
                 { key: 'datePaiement', label: 'Date', render: (p) => formatDate(p.datePaiement) },
               ]}
-              rows={paiements.slice(0, 6)}
+              rows={paiementsValides.slice(0, 6)}
               emptyLabel="Aucun paiement"
             />
           </SectionBlock>

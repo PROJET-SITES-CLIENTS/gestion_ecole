@@ -104,7 +104,10 @@ function SectionSauvegardes({ portal }: { portal?: string }) {
   return (
     <SectionBlock
       title="Sauvegardes de la base"
-      description="Copies cohérentes VACUUM INTO (sans interruption) · sauvegarde automatique quotidienne + au démarrage (instrumentation) · rétention 30 fichiers"
+      // DIR-4 FIX — description HONNÊTE : fini le « VACUUM INTO » (commande
+      // SQLite sur une base PostgreSQL) et la « sauvegarde automatique
+      // quotidienne » jamais planifiée.
+      description="PostgreSQL (Supabase) : restaurations à date (PITR) gérées par l'hébergeur · export local pg_dump ou JSON complet (toutes tables) quand le filesystem est inscriptible (développement / auto-hébergé)"
       action={
         <Button
           size="sm"
@@ -116,14 +119,14 @@ function SectionSauvegardes({ portal }: { portal?: string }) {
             return r;
           }, 'Sauvegarde créée')}
         >
-          <DatabaseBackup className="h-4 w-4 mr-1" />Créer une sauvegarde
+          <DatabaseBackup className="h-4 w-4 mr-1" />Créer une sauvegarde locale
         </Button>
       }
     >
       {retour.Message}
       <div className="flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 mb-3">
         <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
-        <span>Une sauvegarde <strong>automatique</strong> est créée chaque jour et au démarrage du serveur — aucune action requise. La restauration est réservée au super-administrateur et crée d&apos;abord une sauvegarde de sécurité.</span>
+        <span>En production (serverless), les sauvegardes et restaurations sont assurées par <strong>Supabase</strong> (PITR — restauration à une date donnée, depuis la console). Le bouton ci-dessus crée un export <strong>local</strong> (pg_dump ou JSON complet) uniquement si le serveur dispose d&apos;un filesystem inscriptible — sur Vercel il échoue proprement avec un message explicite, sans jamais prétendre avoir sauvegardé.</span>
       </div>
       {estSuperAdmin ? (
         <DataTable

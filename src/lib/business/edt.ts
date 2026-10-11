@@ -312,7 +312,12 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
   if (existe) throw new ActionError(`L'année ${libelleSuivant} existe déjà.`, 'DEJA_EXISTANT');
 
   const redoubler = new Set(input.redoublerIds ?? []);
-  const repartitionAuto = input.repartitionAutomatique ?? false;
+  // DIR-3 FIX — la répartition automatique est DÉSORMAIS le défaut : avant,
+  // l'action et l'UI ne passaient jamais `repartitionAutomatique` (false) →
+  // à chaque clôture, tout promu sans réinscription perdait sa classe
+  // (classeActuelleId = null). L'équilibrage entre classes du niveau suivant
+  // est le comportement attendu ; la classe voulue en réinscription prime.
+  const repartitionAuto = input.repartitionAutomatique ?? true;
   // SEC-2 FIX — la clôture CONSOMME désormais la campagne de réinscriptions :
   // la classe voulue par la famille (si elle existe dans la nouvelle année et
   // au niveau suivant) est honorée en priorité, et les frais réglés sont

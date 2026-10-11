@@ -490,6 +490,9 @@ function DialogClotureAnnee({ libelleAnnee, desactive, onResultat }: { libelleAn
   const [donnees, setDonnees] = useState<{ anneeId: string; libelle: string; eleves: any[] } | null>(null);
   const [redoublants, setRedoublants] = useState<Set<string>>(new Set());
   const [confirmation, setConfirmation] = useState('');
+  // DIR-3 — la répartition automatique est pilotable (défaut : activée —
+  // avant elle n'existait pas et les promus perdaient leur classe)
+  const [repartitionAuto, setRepartitionAuto] = useState(true);
 
   function ouvrir(o: boolean) {
     setOpen(o);
@@ -519,7 +522,7 @@ function DialogClotureAnnee({ libelleAnnee, desactive, onResultat }: { libelleAn
     if (!donnees || confirmation.trim().toUpperCase() !== 'CLOTURER') return;
     setErreur(null);
     startCloture(async () => {
-      const r: any = await actions.cloturerAnneeScolaire(donnees.anneeId, [...redoublants]);
+      const r: any = await actions.cloturerAnneeScolaire(donnees.anneeId, [...redoublants], repartitionAuto);
       if (r && r.ok === false) {
         setErreur(r.error ?? 'Clôture refusée.');
         return;
@@ -527,6 +530,7 @@ function DialogClotureAnnee({ libelleAnnee, desactive, onResultat }: { libelleAn
       setOpen(false);
       onResultat(
         `✓ Année ${r.libelle} ouverte : ${r.promus} promu(s), ${r.redoublants} redoublant(s), ${r.diplomes} diplômé(s)` +
+        (r.reinscritesHonorees ? `, ${r.reinscritesHonorees} réinscription(s) honorée(s)` : '') +
         (r.sansClasse ? `, ${r.sansClasse} sans affectation` : '') +
         ` — ${r.classesCreees} classe(s) recréée(s).`,
       );
@@ -555,6 +559,14 @@ function DialogClotureAnnee({ libelleAnnee, desactive, onResultat }: { libelleAn
               Cochez les élèves qui <span className="font-medium">redoubleront</span> : les autres seront promus
               (ou déclarés diplômés en fin de cycle).
             </p>
+            {/* DIR-3 — répartition automatique (défaut activé) */}
+            <label className="flex items-center gap-2 text-sm bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+              <input type="checkbox" checked={repartitionAuto} onChange={(e) => setRepartitionAuto(e.target.checked)} className="h-4 w-4" />
+              <span className="text-gray-700">
+                <span className="font-medium">Répartir automatiquement</span> les promus entre les classes du niveau suivant
+                <span className="text-xs text-gray-500"> (la classe demandée lors d&apos;une réinscription est toujours honorée en priorité ; si décoché, les promus restent sans affectation)</span>
+              </span>
+            </label>
             <div className="flex items-center justify-between text-xs text-gray-500 border border-gray-100 rounded-md px-3 py-2 bg-gray-50">
               <span>Redoublants sélectionnés : <span className="font-semibold text-gray-900">{redoublants.size}</span></span>
               <button

@@ -199,6 +199,7 @@ model FactureSaas {
   devise       String
   statut       String     @default("impayee") // payee/impayee/en_retard
   modePaiement String?
+  referencePaiement String? // DIR-9 — n° de virement/chèque à l'encaissement éditeur
   dateEmission DateTime   @default(now())
   datePaiement DateTime?
 

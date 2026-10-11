@@ -81,11 +81,18 @@ export async function initialiserEcoleCore(input: InitialisationInput) {
     ];
     // BATCHÉ : createMany + relire les ids — ~8 requêtes au lieu de ~38
     // allers-retours séquentiels (critique sous Vercel : maxDuration).
-    let ordre = 1;
+    // DIR-2 FIX — compteurs SÉPARÉS cycles/niveaux : avant, un compteur unique
+    // faisait consommer un numéro d'ordre par cycle (MAT=1, PS=2..GS=4,
+    // PRIM=5, CP=6…). La clôture promeut sur `niveau.ordre + 1` → GS→CP,
+    // CM2→6E et 3E→2NDE tombaient sur l'ordre du CYCLE suivant (aucun niveau)
+    // et finissaient « sans classe ». Désormais les 15 niveaux sont contigus
+    // 1→15 : chaque niveau a toujours un suivant direct jusqu'au diplôme.
+    let ordreCycle = 1;
+    let ordreNiveau = 1;
     const ordres = new Map<string, number>();
     for (const bloc of STRUCTURE) {
-      ordres.set(bloc.c, ordre++);
-      for (const [code] of bloc.n) ordres.set(code, ordre++);
+      ordres.set(bloc.c, ordreCycle++);
+      for (const [code] of bloc.n) ordres.set(code, ordreNiveau++);
     }
     await tx.cycle.createMany({
       data: STRUCTURE.map((b) => ({ ecoleId: ecole.id, code: b.c, libelle: b.lc, ordre: ordres.get(b.c)!, modeEvaluation: b.mode })),
