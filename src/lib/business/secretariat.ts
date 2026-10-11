@@ -73,19 +73,40 @@ export async function enregistrerCourrierCore(ctx: Ctx, ecoleId: string, input: 
   if (!input.objet?.trim()) throw new ActionError("L'objet est obligatoire.", 'CHAMP_MANQUANT');
   if (!input.correspondant?.trim()) throw new ActionError(input.direction === 'entrant' ? "L'expéditeur est obligatoire." : 'Le destinataire est obligatoire.', 'CHAMP_MANQUANT');
   // Référence séquentielle par école : C-ENT-0001 / C-SOR-0001
+  // SEC-1 FIX — l'ancien « count + 1 » explosait en collision P2002 dès qu'un
+  // courrier était supprimé (le count redescend → numéro déjà pris) ou en cas
+  // d'enregistrements concurrents. Désormais : numéro = MAX des références
+  // existantes + 1, avec boucle de reprise en cas de course (P2002).
   const prefixe = input.direction === 'entrant' ? 'C-ENT' : 'C-SOR';
-  const nb = await db.courrier.count({ where: { ecoleId, direction: input.direction } });
-  const reference = `${prefixe}-${String(nb + 1).padStart(4, '0')}`;
-  const c = await db.courrier.create({
-    data: {
-      ecoleId, reference, direction: input.direction,
-      type: input.type || 'courrier_simple',
-      objet: input.objet.trim(), correspondant: input.correspondant.trim(),
-      enregistreParId: ctx.utilisateurId,
-    },
-  });
-  await logAction(db, ecoleId, ctx.utilisateurId, 'courrier.enregistrement', 'courrier', c.id, { reference, direction: input.direction });
-  return { courrierId: c.id, reference };
+  const numeroSuivant = async (): Promise<number> => {
+    const existants = await db.courrier.findMany({ where: { ecoleId, direction: input.direction }, select: { reference: true } });
+    let max = 0;
+    for (const c of existants) {
+      const n = parseInt((c.reference ?? '').split('-').pop() ?? '', 10);
+      if (!isNaN(n) && n > max) max = n;
+    }
+    return max + 1;
+  };
+  let c;
+  for (let tentative = 1; tentative <= 5; tentative++) {
+    try {
+      const reference = `${prefixe}-${String(await numeroSuivant()).padStart(4, '0')}`;
+      c = await db.courrier.create({
+        data: {
+          ecoleId, reference, direction: input.direction,
+          type: input.type || 'courrier_simple',
+          objet: input.objet.trim(), correspondant: input.correspondant.trim(),
+          enregistreParId: ctx.utilisateurId,
+        },
+      });
+      await logAction(db, ecoleId, ctx.utilisateurId, 'courrier.enregistrement', 'courrier', c.id, { reference, direction: input.direction });
+      return { courrierId: c.id, reference };
+    } catch (e: any) {
+      if (e?.code === 'P2002' && tentative < 5) continue; // course concurrente : on re-numérote
+      throw e;
+    }
+  }
+  throw new ActionError('Numérotation du courrier impossible (collision). Réessayez.', 'COLLISION_REFERENCE');
 }
 
 export async function traiterCourrierCore(ctx: Ctx, courrierId: string, commentaire?: string) {
@@ -114,6 +135,13 @@ export async function enregistrerReinscriptionCore(ctx: Ctx, input: { eleveId: s
   if (eleve.statut !== 'actif') throw new ActionError('Seul un élève actif peut être réinscrit.', 'STATUT_INVALIDE');
   const anneeActive = await db.anneeScolaire.findFirst({ where: { ecoleId: eleve.ecoleId, active: true } });
   if (!anneeActive) throw new ActionError('Aucune année scolaire active.', 'ANNEE_INACTIVE');
+  // SEC-11 FIX — la classe voulue doit appartenir À L'ÉCOLE (avant : une
+  // classe d'un autre établissement était acceptée en FK croisée).
+  if (input.classeVoulueId) {
+    const classeVoulue = await db.classe.findUnique({ where: { id: input.classeVoulueId } });
+    if (!classeVoulue) throw new ActionError('Classe voulue introuvable.', 'INTROUVABLE');
+    assertTenant(classeVoulue.ecoleId, ctx, 'Cette classe');
+  }
   // Idempotent par (élève, année)
   const existante = await db.reinscription.findUnique({
     where: { eleveId_anneeScolaireId: { eleveId: input.eleveId, anneeScolaireId: anneeActive.id } },
@@ -167,6 +195,26 @@ export async function relancerPiecesDossierCore(ctx: Ctx, eleveId: string) {
   return { eleveId, piecesManquantes: libelles, parentsNotifies: nb };
 }
 
+/** SEC-5 FIX — notifie UNIQUEMENT les parents + un SYNTHÈSE unique à la
+ *  direction (avant : copie direction sur CHAQUE élève → N notifications). */
+async function notifierParentsSansCopieDirection(
+  eleve: { id: string; ecoleId: string; prenom: string; nom: string },
+  sujet: string, corps: string,
+): Promise<number> {
+  return notifierParentsEtDirection(db as never, eleve.ecoleId, eleve.id, sujet, corps, { direction: false });
+}
+
+async function notifierSyntheseDirection(ecoleId: string, sujet: string, corps: string) {
+  const { getDirectionUserId } = await import('./commun');
+  const dirId = await getDirectionUserId(ecoleId);
+  await db.notification.create({
+    data: {
+      ecoleId, destinataireType: 'personnel', destinataireId: dirId,
+      sujet, corps, canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
+    },
+  }).catch(() => undefined);
+}
+
 /** Relance en masse : notifie toutes les familles ayant au moins une pièce
  *  manquante (utile en début d'année). Retourne le détail par élève. */
 export async function relancerToutesPiecesCore(ctx: Ctx) {
@@ -182,13 +230,19 @@ export async function relancerToutesPiecesCore(ctx: Ctx) {
     const manquantes = e.piecesDossier.filter((p) => p.statut !== 'recue');
     if (manquantes.length === 0) continue;
     const libelles = manquantes.map((p) => LIBELLES_PIECES[p.type as keyof typeof LIBELLES_PIECES] ?? p.type);
-    await notifierParentsEtDirection(
-      db as never, e.ecoleId, e.id,
+    await notifierParentsSansCopieDirection(e,
       `Dossier incomplet — ${e.prenom} ${e.nom}`,
       `Bonjour, le dossier de ${e.prenom} ${e.nom} est incomplet. Pièce(s) manquante(s) : ${libelles.join(', ')}. Merci de les déposer au secrétariat.`,
     );
     familles++;
     detail.push({ eleve: `${e.prenom} ${e.nom}`, manquantes: libelles });
+  }
+  // SEC-5 — une SEULE notification de synthèse pour la direction
+  if (familles > 0) {
+    await notifierSyntheseDirection(ctx.ecoleId,
+      `Campagne pièces manquantes — ${familles} famille(s) relancée(s)`,
+      `Relance en masse effectuée par le secrétariat : ${familles} famille(s) notifiée(s) pour dossier incomplet. Détail disponible dans le journal d'audit (dossier.relance_masse).`,
+    );
   }
   await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'dossier.relance_masse', undefined, undefined, { familles });
   return { familles, detail };
@@ -252,6 +306,18 @@ export async function majCoordonneesFamilleCore(ctx: Ctx, input: CoordonneesInpu
         ...(input.parentProfession !== undefined ? { profession: input.parentProfession.trim() || null } : {}),
       },
     });
+    // SEC-12 FIX — le COMPTE UTILISATEUR lié suit le nouvel email : avant,
+    // le parent se connectait toujours avec l'ancien (fiche ≠ login).
+    if (parent.utilisateurId && input.parentEmail && input.parentEmail.trim() && input.parentEmail.trim().toLowerCase() !== (parent.email ?? '').toLowerCase()) {
+      const pris = await db.utilisateur.findFirst({ where: { email: input.parentEmail.trim().toLowerCase(), deletedAt: null } });
+      if (pris && pris.id !== parent.utilisateurId) {
+        throw new ActionError('Cet email est déjà utilisé par un autre compte — choix impossible.', 'EMAIL_PRIS');
+      }
+      await db.utilisateur.update({
+        where: { id: parent.utilisateurId },
+        data: { email: input.parentEmail.trim().toLowerCase() },
+      }).catch(() => undefined); // compte sans email éditable : non bloquant
+    }
     parentModifie = `${parent.prenom ?? ''} ${parent.nom ?? ''}`.trim();
   }
   await logAction(db, eleve.ecoleId, ctx.utilisateurId, 'famille.coordonnees_maj', 'eleve', eleve.id, {
@@ -313,13 +379,21 @@ export async function relancerTousImpayesCore(ctx: Ctx) {
     const el = echs[0].eleve;
     const restant = echs.reduce((s, e) => s + (e.montant - (e.remise ?? 0) - (e.montantPaye ?? 0)), 0);
     const detailTxt = echs.map((e) => `${e.frais?.libelle ?? 'Échéance'} du ${e.dateEcheance.toISOString().slice(0, 10)}`).join(', ');
-    await notifierParentsEtDirection(
-      db as never, ctx.ecoleId, eleveId,
+    // SEC-5 — parents notifiés SANS copie direction individuelle
+    await notifierParentsSansCopieDirection(
+      { id: eleveId, ecoleId: ctx.ecoleId, prenom: el.prenom, nom: el.nom },
       `Rappel de scolarité — ${el.prenom} ${el.nom}`,
       `Bonjour, le dossier de ${el.prenom} ${el.nom} présente ${echs.length} échéance(s) échue(s) : ${detailTxt}. Restant dû : ${(restant / 100).toLocaleString('fr-FR')} F CFA. Merci de régulariser auprès de la comptabilité.`,
     );
     familles++;
     detail.push({ eleve: `${el.prenom} ${el.nom}`, echeances: echs.length, restant });
+  }
+  // SEC-5 — une SEULE notification de synthèse pour la direction
+  if (familles > 0) {
+    await notifierSyntheseDirection(ctx.ecoleId,
+      `Campagne impayés — ${familles} famille(s) relancée(s)`,
+      `Relance en masse effectuée : ${familles} famille(s) notifiée(s) pour échéances échues. Total recouvrable visé : ${(detail.reduce((s, d) => s + d.restant, 0) / 100).toLocaleString('fr-FR')} F CFA. Détail dans le journal (impayes.relance_masse).`,
+    );
   }
   await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'impayes.relance_masse', undefined, undefined, { familles });
   return { familles, detail };

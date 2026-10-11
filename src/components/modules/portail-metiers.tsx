@@ -418,7 +418,8 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
     const justifsAttente = initialData.justificationsAttente ?? [];
     const articlesStock = initialData.articlesStock ?? [];
     const piecesDossier = initialData.piecesDossier ?? [];
-    const dossiersIncomplets = new Set(piecesDossier.filter((p2: any) => p2.statut !== 'recue').map((p2: any) => p2.eleveId)).size;
+    // SEC-19 — seuls les élèves ACTIFS comptent (sortis/diplômés exclus)
+    const dossiersIncomplets = new Set(piecesDossier.filter((p2: any) => p2.statut !== 'recue' && p2.eleve?.statut !== 'sorti' && p2.eleve?.statut !== 'diplome' && p2.eleve?.statut !== 'transfere').map((p2: any) => p2.eleveId)).size;
     const stocksAlerte = articlesStock.filter((a: any) => a.seuilAlerte != null && a.quantite <= a.seuilAlerte);
     // M4 — effectifs par niveau + mouvements du mois
     const debutMois = new Date(); debutMois.setDate(1); debutMois.setHours(0, 0, 0, 0);

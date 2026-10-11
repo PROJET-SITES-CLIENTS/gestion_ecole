@@ -651,29 +651,34 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
 
   if (secretariat || portal === 'vie_scolaire') {
     promises.push((async () => {
+      // SEC-8 FIX — le périmètre primaire/secondaire d'un secrétariat scindé
+      // s'applique désormais à TOUS les datasets élèves (parents, documents,
+      // historiques, besoins, aménagements, autorisations, sorties) comme il
+      // le faisait déjà pour pièces/réinscriptions/échéances.
+      const ouPerimetre = ouElevesPerimetre;
       const [parents, documents, historiquesClasse, besoinsSpecifiques, amenagements, autorisationsSortie, sortiesAnticipees, echeancesSuivi] = await Promise.all([
         db.parentTuteur.findMany({
           where: { ecoleId },
           select: {
             id: true, nom: true, prenom: true, telephone: true, email: true,
             profession: true, lienAvecEleve: true, utilisateurId: true,
-            eleves: { select: { eleve: { select: { id: true, nom: true, prenom: true } } } },
+            eleves: { select: { eleve: { select: { id: true, nom: true, prenom: true } } }, where: ouPerimetre ? { eleve: ouPerimetre } : undefined },
           },
         }),
         // AUDIT DOSSIER — métadonnées des pièces importées SANS le binaire
         // (le contenu est servi à la demande par /api/fichiers/[id])
         db.documentEleve.findMany({
-          where: { eleve: { ecoleId } },
+          where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } },
           select: {
             id: true, eleveId: true, type: true, confidentiel: true, dateAjout: true,
             nomFichier: true, mimeType: true, tailleOctets: true,
           },
         }),
-        db.eleveHistoriqueClasse.findMany({ where: { eleve: { ecoleId } }, include: { classe: true, eleve: true } }),
-        db.besoinSpecifique.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
-        db.amenagement.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
-        db.autorisationSortie.findMany({ where: { eleve: { ecoleId } }, include: { eleve: true } }),
-        db.sortieAnticipee.findMany({ where: { eleve: { ecoleId } }, orderBy: { dateSortie: 'desc' }, take: 200, include: { eleve: true } }),
+        db.eleveHistoriqueClasse.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } }, include: { classe: true, eleve: true } }),
+        db.besoinSpecifique.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } }, include: { eleve: true } }),
+        db.amenagement.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } }, include: { eleve: true } }),
+        db.autorisationSortie.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } }, include: { eleve: true } }),
+        db.sortieAnticipee.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...(ouPerimetre ?? {}) } }, orderBy: { dateSortie: 'desc' }, take: 200, include: { eleve: true } }),
         // PARCOURS ÉLÈVE — suivi des échéances (statut, payé, restant) pour le
         // secrétariat SANS le journal des paiements (réservé aux portails financiers)
         ...(portal === 'secretariat' ? [db.echeanceFrais.findMany({
@@ -691,7 +696,10 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
       // SECRETARIAT — checklist dossiers, registre courrier, réinscriptions
       if (portal === 'secretariat' || portal === 'direction' || portal === 'super_admin') {
         const [piecesDossier, courriers, reinscriptions] = await Promise.all([
-          db.pieceDossier.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } } } }),
+          // SEC-19 — statut de l'élève exposé : le KPI « dossiers incomplets »
+          // ne compte que les élèves ACTIFS (les sortis/diplômés gonflaient le
+          // compteur sans être relançables).
+          db.pieceDossier.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true, statut: true } } } }),
           db.courrier.findMany({ where: { ecoleId }, orderBy: { dateEnregistrement: 'desc' }, take: 300 }),
           db.reinscription.findMany({ where: { eleve: { ecoleId, deletedAt: null, ...ouElevesPerimetre } }, include: { eleve: { select: { id: true, nom: true, prenom: true, matricule: true } }, classeVoulue: true, anneeScolaire: true } }),
         ]);
@@ -753,7 +761,9 @@ async function chargerPortailInterne(portal: PortailUtilisateur, session: Sessio
         db.creneauRdv.findMany({ where: { personnel: { ecoleId } }, orderBy: { date: 'asc' }, take: 200, include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } }),
         db.rdv.findMany({ where: { parent: { ecoleId } }, orderBy: { createdAt: 'desc' }, take: CAP.rdvs, include: { parent: true, eleve: true, creneauRdv: { include: { personnel: { select: { id: true, prenom: true, nom: true, matricule: true } } } } } }),
         db.reunionCollective.findMany({ where: { classe: { ecoleId } }, orderBy: { date: 'asc' }, include: { classe: true } }),
-        db.candidatureAdmission.findMany({ where: { ecoleId, ...(codesCyclesPerimetre ? { niveau: { section: { cycle: { code: { in: codesCyclesPerimetre } } } } } : {}) }, orderBy: { dateSoumission: 'desc' }, include: { niveau: true } }),
+        // SEC-6 — les TESTS d'admission sont inclus : la décision admis/refus
+        // se prend enfin en CONNAISSANCE des notes (moyenne affichée).
+        db.candidatureAdmission.findMany({ where: { ecoleId, ...(codesCyclesPerimetre ? { niveau: { section: { cycle: { code: { in: codesCyclesPerimetre } } } } } : {}) }, orderBy: { dateSoumission: 'desc' }, include: { niveau: true, tests: { orderBy: { date: 'asc' } } } }),
       ]);
       v.creneauxRdv = creneauxRdv; v.rdvs = rdvs; v.reunionsCollectives = reunionsCollectives;
       v.candidaturesAdmission = candidaturesAdmission;

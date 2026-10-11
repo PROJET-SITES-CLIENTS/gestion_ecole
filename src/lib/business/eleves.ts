@@ -162,7 +162,7 @@ export async function inscrireEleveCore(ctx: Ctx, ecoleId: string, input: Inscri
             data: {
               ecoleId, destinataireType: 'personnel', destinataireId: dirId,
               sujet: 'Nouvelle inscription — ' + inscrit.prenom + ' ' + inscrit.nom,
-              corps: inscrit.prenom + ' ' + inscrit.nom + ' (' + résultat.matricule + ') vient dêtre inscrit(e)' + (classeLib ? ' en ' + classeLib : '') + '. Dossier initialisé : 5 pièces à recueillir.',
+              corps: inscrit.prenom + ' ' + inscrit.nom + ' (' + résultat.matricule + ') vient d’être inscrit(e)' + (classeLib ? ' en ' + classeLib : '') + '. Dossier initialisé : 5 pièces à recueillir.',
               canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
             },
           });

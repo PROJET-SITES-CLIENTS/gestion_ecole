@@ -42,6 +42,14 @@ function DialogInscription({ candidature, classes, onInscrire, pending }: {
   const [open, setOpen] = useState(false);
   const [classeId, setClasseId] = useState('');
 
+  // SEC-7 FIX — seules les classes du NIVEAU DEMANDÉ sont proposées (avant :
+  // toutes les classes → un admis de 6è pouvait atterrir en CM2). Repli sur
+  // toutes les classes si le niveau demandé est inconnu.
+  const classesCoherentes = candidature.niveauId
+    ? classes.filter((c: any) => c.niveauId === candidature.niveauId)
+    : classes;
+  const classesProposees = classesCoherentes.length > 0 ? classesCoherentes : classes;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -56,6 +64,11 @@ function DialogInscription({ candidature, classes, onInscrire, pending }: {
             Le dossier va être converti en inscription : un élève sera créé et affecté à la classe choisie
             (le parent déclaré sera rattaché automatiquement si ses coordonnées sont connues).
           </p>
+          {classesCoherentes.length === 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              Niveau demandé inconnu — toutes les classes sont proposées, vérifiez la cohérence.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-gray-700">Classe d&apos;affectation <span className="text-rose-500">*</span></Label>
             <select
@@ -64,7 +77,7 @@ function DialogInscription({ candidature, classes, onInscrire, pending }: {
               className="w-full h-9 rounded-md border border-gray-200 bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="">— Choisir une classe —</option>
-              {classes.map((c: any) => (
+              {classesProposees.map((c: any) => (
                 <option key={c.id} value={c.id}>
                   {c.libelle ?? c.code}{c.niveau?.libelle ? ` · ${c.niveau.libelle}` : ''}
                 </option>
@@ -96,6 +109,25 @@ export default function AdmissionsModule({ initialData }: { initialData: any }) 
 
   const avancer = (id: string, statut: 'test' | 'entretien' | 'admis' | 'refuse', succes: string) =>
     run(() => ext.avancerCandidatureAdmission(id, statut), succes);
+
+  // SEC-20 — filtre par statut + recherche
+  const [filtreStatut, setFiltreStatut] = useState('toutes');
+  const [recherche, setRecherche] = useState('');
+  const candidaturesFiltrees = candidatures.filter((c: any) => {
+    if (filtreStatut !== 'toutes' && c.statut !== filtreStatut) return false;
+    if (recherche.trim()) {
+      const q = recherche.trim().toLowerCase();
+      return `${c.prenom} ${c.nom} ${c.parentNom ?? ''}`.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  // SEC-6 — moyenne des tests ramenée sur 20 (base de décision admis/refus)
+  const moyenneTests = (c: any): number | null => {
+    const t = c.tests ?? [];
+    if (t.length === 0) return null;
+    return t.reduce((s: number, x: any) => s + (x.sur > 0 ? (x.note / x.sur) * 20 : 0), 0) / t.length;
+  };
 
   const kpi = {
     soumis: candidatures.filter((c: any) => c.statut === 'soumis').length,
@@ -147,10 +179,46 @@ export default function AdmissionsModule({ initialData }: { initialData: any }) 
         title="Candidatures"
         description="Faire avancer chaque dossier : convocation au test → entretien → décision, puis inscription des admis"
       >
+        {/* SEC-20 — filtres statut + recherche */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex flex-wrap gap-1">
+            {['toutes', 'soumis', 'test', 'entretien', 'admis', 'refuse', 'inscrit'].map((s) => (
+              <button key={s} onClick={() => setFiltreStatut(s)}
+                className={`px-2.5 py-1 rounded-full text-xs border ${filtreStatut === s ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                {s === 'toutes' ? `Toutes (${candidatures.length})` : `${STATUTS_ADMISSION[s]?.label ?? s} (${candidatures.filter((c: any) => c.statut === s).length})`}
+              </button>
+            ))}
+          </div>
+          <input
+            value={recherche}
+            onChange={(e) => setRecherche(e.target.value)}
+            placeholder="Rechercher (candidat, parent)…"
+            className="h-8 border rounded-md px-3 text-sm ml-auto w-56"
+          />
+        </div>
         <DataTable
           columns={[
             { key: 'candidat', label: 'Candidat', render: (c) => <span className="font-medium">{c.prenom} {c.nom}</span> },
             { key: 'niveau', label: 'Niveau demandé', render: (c) => niveaux.find((n: any) => n.id === c.niveauId)?.libelle ?? '—' },
+            // SEC-6 — notes des tests + moyenne : la décision se prend les
+            // yeux ouverts (avant : saisies mais jamais affichées)
+            {
+              key: 'tests', label: 'Tests d\'admission', render: (c) => {
+                const t = c.tests ?? [];
+                if (t.length === 0) return <span className="text-xs text-gray-400">—</span>;
+                const moy = moyenneTests(c);
+                return (
+                  <div className="text-xs">
+                    {t.map((x: any) => (
+                      <div key={x.id} className="text-gray-600">{x.matiere} : <b>{x.note}/{x.sur}</b></div>
+                    ))}
+                    <div className={`font-semibold mt-0.5 ${(moy ?? 0) >= 10 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      Moyenne : {(moy ?? 0).toFixed(1)}/20
+                    </div>
+                  </div>
+                );
+              },
+            },
             { key: 'statut', label: 'Statut', render: (c) => <BadgeAdmission statut={c.statut} /> },
             { key: 'dateSoumission', label: 'Soumis le', render: (c) => formatDate(c.dateSoumission) },
             {
@@ -202,7 +270,7 @@ export default function AdmissionsModule({ initialData }: { initialData: any }) 
               },
             },
           ]}
-          rows={candidatures}
+          rows={candidaturesFiltrees}
           emptyLabel="Aucune candidature enregistrée"
         />
       </SectionBlock>

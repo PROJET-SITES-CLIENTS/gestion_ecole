@@ -111,9 +111,32 @@ export async function supprimerDocumentEleveCore(ctx: Ctx, documentId: string) {
   const doc = await db.documentEleve.findUnique({ where: { id: documentId }, include: { eleve: true } });
   if (!doc) throw new ActionError('Document introuvable.', 'INTROUVABLE');
   assertTenant(doc.eleve.ecoleId, ctx, 'Ce document');
-  await db.documentEleve.delete({ where: { id: documentId } });
-  await logAction(db, doc.eleve.ecoleId, ctx.utilisateurId, 'dossier.suppression', 'document_eleve', documentId, {
-    eleveId: doc.eleveId, type: doc.type, nom: doc.nomFichier,
-  });
+  await db.$transaction(async (tx) => {
+    await tx.documentEleve.delete({ where: { id: documentId } });
+    // SEC-3 FIX — le téléversement marquait la pièce « reçue » : la supprimer
+    // doit RETOMBER le statut si ce fichier était la seule pièce justificative
+    // du type (sinon le dossier affichait « complet » sans aucun fichier).
+    const pieceType = TYPE_VERS_PIECE[doc.type];
+    if (pieceType) {
+      const restants = await tx.documentEleve.count({ where: { eleveId: doc.eleveId, type: doc.type } });
+      if (restants === 0) {
+        const piece = await tx.pieceDossier.findUnique({
+          where: { eleveId_type: { eleveId: doc.eleveId, type: pieceType } },
+        });
+        if (piece && piece.statut === 'recue') {
+          const autoMarquee = (piece.remarque ?? '').startsWith('Fichier importé');
+          if (autoMarquee) {
+            await tx.pieceDossier.update({
+              where: { id: piece.id },
+              data: { statut: 'manquante', dateReception: null, remarque: `Fichier supprimé : ${doc.nomFichier ?? doc.type}` },
+            });
+          }
+        }
+      }
+    }
+    await logAction(tx, doc.eleve.ecoleId, ctx.utilisateurId, 'dossier.suppression', 'document_eleve', documentId, {
+      eleveId: doc.eleveId, type: doc.type, nom: doc.nomFichier,
+    });
+  }, { timeout: 30000, maxWait: 10000 });
   return { documentId };
 }

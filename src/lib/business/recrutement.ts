@@ -141,6 +141,21 @@ export async function avancerCandidatureAdmissionCore(ctx: Ctx, candidatureId: s
   if (!c) throw new ActionError('Candidature introuvable.', 'INTROUVABLE');
   assertTenant(c.ecoleId, ctx, 'Cette candidature');
   if (c.statut === 'inscrit') throw new ActionError('Candidature déjà convertie en inscription.', 'DEJA_TRAITE');
+  // SEC-15 FIX — machine à états stricte : soumis → test → entretien →
+  // admis/refuse ; refuse reste terminal (une re-candidature repart d'une
+  // nouvelle candidature). Avant : admis pouvait repasser test, refuse
+  // devenait admis sans aucune nouvelle étape.
+  const AUTORISEES: Record<string, string[]> = {
+    soumis: ['test', 'entretien', 'refuse'],
+    test: ['entretien', 'refuse'],
+    entretien: ['admis', 'refuse'],
+  };
+  if (!(AUTORISEES[c.statut] ?? []).includes(statut)) {
+    throw new ActionError(
+      `Transition invalide : « ${c.statut} » → « ${statut} » (chemins autorisés : soumis → test → entretien → admis/refuse).`,
+      'STATUT_INVALIDE',
+    );
+  }
   await db.candidatureAdmission.update({
     where: { id: candidatureId },
     data: { statut, dateDecision: statut === 'admis' || statut === 'refuse' ? new Date() : null, notesEntretien: commentaire?.trim() || c.notesEntretien },
@@ -178,6 +193,15 @@ export async function convertirAdmissionCore(ctx: Ctx, candidatureId: string, cl
   const classe = await db.classe.findUnique({ where: { id: classeId } });
   if (!classe) throw new ActionError('Classe introuvable.', 'INTROUVABLE');
   assertTenant(classe.ecoleId, ctx, 'Cette classe');
+  // SEC-7 FIX — cohérence niveau demandé ↔ classe d'affectation : l'UI filtre
+  // déjà, le core en fait une INVARIANTE (avant : un admis de 6è pouvait être
+  // inscrit en CM2 via IA ou appel direct).
+  if (c.niveauId && classe.niveauId !== c.niveauId) {
+    throw new ActionError(
+      'La classe choisie ne correspond pas au niveau demandé par la candidature. Inscrivez-le dans une classe du niveau demandé (ou modifiez le niveau de la candidature).',
+      'NIVEAU_INCOHERENT',
+    );
+  }
 
   const r = await inscrireEleveCore(ctx, c.ecoleId, {
     nom: c.nom, prenom: c.prenom, dateNaissance: c.dateNaissance,

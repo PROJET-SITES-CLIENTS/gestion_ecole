@@ -313,6 +313,15 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
 
   const redoubler = new Set(input.redoublerIds ?? []);
   const repartitionAuto = input.repartitionAutomatique ?? false;
+  // SEC-2 FIX — la clôture CONSOMME désormais la campagne de réinscriptions :
+  // la classe voulue par la famille (si elle existe dans la nouvelle année et
+  // au niveau suivant) est honorée en priorité, et les frais réglés sont
+  // rapportés. Avant : la table Reinscription était purement décorative.
+  const reinscriptions = await db.reinscription.findMany({
+    where: { anneeScolaireId: annee.id, eleve: { deletedAt: null } },
+    select: { eleveId: true, classeVoulueId: true, fraisPayes: true },
+  });
+  const reinscrits = new Map(reinscriptions.map((r) => [r.eleveId, r]));
 
   // Tous les niveaux de l'école (pour détecter le niveau suivant et la fin de cycle)
   const niveauxEcole = await db.niveau.findMany({
@@ -389,7 +398,7 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
     }
 
     // 5) F9 — Promotion vers les classes de la NOUVELLE année
-    let promus = 0, redoublants = 0, diplomes = 0, sansClasse = 0;
+    let promus = 0, redoublants = 0, diplomes = 0, sansClasse = 0, reinscritesHonorees = 0;
     // compteur de répartition par classe cible (si plusieurs classes par niveau)
     const remplissage = new Map<string, number>();
     for (const e of eleves) {
@@ -447,14 +456,29 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
         cible = classesNiveauSuivant[0];
         remplissage.set(cible, (remplissage.get(cible) ?? 0) + 1);
       }
-      
+      // SEC-2 — la classe VOULUE lors de la réinscription PRIME sur la
+      // répartition, si elle existe bien au niveau suivant dans la nouvelle année
+      const reinscrit = reinscrits.get(e.id);
+      if (reinscrit?.classeVoulueId) {
+        const voulueNouvelle = nouvellesClasses.get(reinscrit.classeVoulueId);
+        if (voulueNouvelle && classesNiveauSuivant.includes(voulueNouvelle)) {
+          if (cible) remplissage.set(cible, (remplissage.get(cible) ?? 0) - 1); // on rend la place
+          cible = voulueNouvelle;
+          remplissage.set(cible, (remplissage.get(cible) ?? 0) + 1);
+          reinscritesHonorees++;
+        }
+      }
+
       await tx.eleve.update({ where: { id: e.id }, data: { classeActuelleId: cible } });
       if (cible) {
         await tx.eleveHistoriqueClasse.create({
           data: { eleveId: e.id, classeId: cible, dateEntree: nouvelle.dateDebut, motif: `Promotion — année ${libelleSuivant}` },
         });
+        promus++;
+      } else {
+        // SEC-17 FIX — sans classe disponible, on ne compte PAS un « promu »
+        sansClasse++;
       }
-      promus++;
     }
 
     // 6) EDT de l'ancienne année : clos
@@ -469,7 +493,7 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
         destinataireType: 'personnel',
         destinataireId: ctx.utilisateurId,
         sujet: `Transition d'année scolaire : ${annee.libelle} → ${libelleSuivant}`,
-        corps: `L'année ${annee.libelle} est clôturée : ${promus} promu(s), ${redoublants} redoublant(s), ${diplomes} diplômé(s), ${sansClasse} sans affectation. ${nouvellesClasses.size} classe(s) et ${periodes.length} période(s) créées pour ${libelleSuivant}.`,
+        corps: `L'année ${annee.libelle} est clôturée : ${promus} promu(s), ${redoublants} redoublant(s), ${diplomes} diplômé(s), ${sansClasse} sans affectation. ${reinscritesHonorees} réinscription(s) avec classe demandée honorée(s). ${nouvellesClasses.size} classe(s) et ${periodes.length} période(s) créées pour ${libelleSuivant}.`,
         canal: 'in_app',
         statut: 'envoye',
         dateEnvoi: new Date(),
@@ -483,6 +507,7 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
       redoublants,
       diplomes,
       sansClasse,
+      reinscritesHonorees,
       classesCreees: nouvellesClasses.size,
     });
     return {
@@ -493,6 +518,7 @@ export async function cloturerAnneeScolaireCore(ctx: Ctx, anneeId: string, input
       redoublants,
       diplomes,
       sansClasse,
+      reinscritesHonorees,
       classesCreees: nouvellesClasses.size,
     };
   }, { timeout: 30000, maxWait: 10000 }));

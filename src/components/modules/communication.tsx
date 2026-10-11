@@ -423,7 +423,22 @@ export default function CommunicationModule({ initialData }: { initialData: any 
     ...niveaux.map((n: any) => ({ value: 'niveau:' + n.id, label: 'Niveau ' + n.libelle })),
   ];
 
-  const peutGererCourrier = ['direction', 'secretariat', 'super_admin', 'rh'].includes(initialData.session?.portal ?? '');
+  // SEC-4 FIX — aligné sur le loader (courriers chargés UNIQUEMENT pour
+  // secretariat/direction/super_admin) ET sur le core (enregistrerCourrier
+  // exige eleves.ecrire, que ni RH ni compta n'ont) : avant, le portail RH
+  // voyait des boutons de saisie sur un registre TOUJOURS vide.
+  const peutGererCourrier = ['direction', 'secretariat', 'super_admin'].includes(initialData.session?.portal ?? '');
+  // SEC-21 — filtres du registre
+  const [filtreCourrier, setFiltreCourrier] = useState('toutes');
+  const [rechercheCourrier, setRechercheCourrier] = useState('');
+  const courriersFiltres = courriers.filter((c: any) => {
+    if (filtreCourrier !== 'toutes' && c.direction !== filtreCourrier) return false;
+    if (rechercheCourrier.trim()) {
+      const q = rechercheCourrier.trim().toLowerCase();
+      return `${c.reference ?? ''} ${c.objet ?? ''} ${c.correspondant ?? ''}`.toLowerCase().includes(q);
+    }
+    return true;
+  });
   function renderCourrier() {
     return (
       <SectionBlock
@@ -473,20 +488,47 @@ export default function CommunicationModule({ initialData }: { initialData: any 
           </div>
         ) : undefined}
       >
+        {/* SEC-21 — filtres sens + recherche */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex flex-wrap gap-1">
+            {['toutes', 'entrant', 'sortant'].map((s) => (
+              <button key={s} onClick={() => setFiltreCourrier(s)}
+                className={`px-2.5 py-1 rounded-full text-xs border ${filtreCourrier === s ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                {s === 'toutes' ? `Tous (${courriers.length})` : `${s === 'entrant' ? 'Entrants' : 'Sortants'} (${courriers.filter((c: any) => c.direction === s).length})`}
+              </button>
+            ))}
+          </div>
+          <input
+            value={rechercheCourrier}
+            onChange={(e) => setRechercheCourrier(e.target.value)}
+            placeholder="Rechercher (référence, objet, correspondant)…"
+            className="h-8 border rounded-md px-3 text-sm ml-auto w-64"
+          />
+        </div>
         <DataTable
           columns={[
             { key: 'reference', label: 'Référence' },
-            { key: 'direction', label: 'Sens', render: (c) => <StatusBadge statut={c.direction === 'entrant' ? 'en_attente' : 'planifiee'} /> },
+            // SEC-13 FIX — le sens est affiché comme un SENS (« Entrant » /
+            // « Sortant »), plus via des statuts détournés trompeurs.
+            { key: 'direction', label: 'Sens', render: (c) => <StatusBadge statut={c.direction === 'entrant' ? 'arrive' : 'depart'} label={c.direction === 'entrant' ? 'Entrant' : 'Sortant'} /> },
             { key: 'objet', label: 'Objet' },
             { key: 'correspondant', label: 'Correspondant' },
             { key: 'dateEnregistrement', label: 'Date', render: (c) => formatDate(c.dateEnregistrement) },
             { key: 'traite', label: 'Traitement', render: (c) => c.traite
               ? <span className="text-xs text-emerald-700">traité le {formatDate(c.dateTraitement)}</span>
               : (peutGererCourrier
-                  ? <Button variant="outline" size="sm" onClick={() => actionsExt.traiterCourrier(c.id, 'Traité')}>Marquer traité</Button>
+                  // SEC-9 FIX — feedback via run() + commentaire SAISI (avant :
+                  // appel nu, échec silencieux, commentaire codé dur « Traité »)
+                  ? <Button variant="outline" size="sm" disabled={retourCourrier.pending}
+                      onClick={() => {
+                        const commentaire = window.prompt('Commentaire de traitement (optionnel) :') ?? '';
+                        retourCourrier.run(() => actionsExt.traiterCourrier(c.id, commentaire.trim() || undefined), 'Courrier marqué traité.');
+                      }}>
+                      Marquer traité
+                    </Button>
                   : <StatusBadge statut="en_attente" />) },
           ]}
-          rows={courriers}
+          rows={courriersFiltres}
           emptyLabel="Aucun courrier enregistré"
         />
       {retourCourrier.Message}
@@ -596,7 +638,8 @@ export default function CommunicationModule({ initialData }: { initialData: any 
         />
       </SectionBlock>
 
-      {renderCourrier()}
+      {/* SEC-4 — section entière masquée pour les portails sans données courrier */}
+      {peutGererCourrier && renderCourrier()}
     </div>
   );
 }

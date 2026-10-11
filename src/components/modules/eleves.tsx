@@ -241,7 +241,7 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
         <StatCard title="Consentements en attente" value={consentementsEnAttente} sub="portail élève mineur" icon={FileCheck} color="rose" />
         <StatCard title="Dernière inscription" value={eleves.length ? formatDate(eleves[eleves.length - 1].dateInscription) : '—'} icon={Users} color="blue" />
         {piecesDossier.length > 0 && (
-          <StatCard title="Dossiers incomplets" value={new Set(piecesDossier.filter((p: any) => p.statut !== 'recue').map((p: any) => p.eleveId)).size} sub="il manque au moins une pièce" icon={FileText} color="rose" />
+          <StatCard title="Dossiers incomplets" value={new Set(piecesDossier.filter((p: any) => p.statut !== 'recue' && p.eleve?.statut === 'actif').map((p: any) => p.eleveId)).size} sub="élèves actifs — il manque au moins une pièce" icon={FileText} color="rose" />
         )}
       </div>
 
@@ -473,8 +473,9 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                                   <StatusBadge statut={p.statut === 'recue' ? 'valide' : 'absent'} />
                                   {peutEcrire && (
                                     <Button
-                                      variant="outline" size="sm"
-                                      onClick={() => actionsExt.basculerPieceDossier(p.id, p.statut === 'recue' ? 'manquante' : 'recue')}
+                                      variant="outline" size="sm" disabled={uploadFb.pending}
+                                      // SEC-10 FIX — via run() : feedback + erreurs visibles (avant : appel nu silencieux)
+                                      onClick={() => uploadFb.run(() => actionsExt.basculerPieceDossier(p.id, p.statut === 'recue' ? 'manquante' : 'recue'), p.statut === 'recue' ? 'Pièce retirée (manquante).' : 'Pièce marquée reçue.')}
                                     >
                                       {p.statut === 'recue' ? 'Retirer' : 'Marquer reçue'}
                                     </Button>
@@ -487,9 +488,9 @@ export default function ElevesModule({ initialData }: { initialData: any }) {
                         {peutEcrire && (
                           <details className="text-sm">
                             <summary className="cursor-pointer text-emerald-700">Exiger une pièce supplémentaire (ex. certificat de transfert)</summary>
-                            <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); actionsExt.ajouterPieceExigee(eleve.id, String(fd.get('type') ?? '')); }}>
+                            <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const f = e.currentTarget; uploadFb.run(async () => { const r = await actionsExt.ajouterPieceExigee(eleve.id, String(fd.get('type') ?? '')); if (r?.ok) f.reset(); return r; }, 'Pièce ajoutée au dossier.'); }}>
                               <input name="type" placeholder="Libellé de la pièce" className="flex-1 h-8 border rounded px-2" required />
-                              <Button size="sm">Exiger</Button>
+                              <Button size="sm" disabled={uploadFb.pending}>Exiger</Button>
                             </form>
                           </details>
                         )}
@@ -1168,35 +1169,52 @@ function ConsentementRow({ label, checked, date, onActivate, disabled }: { label
 // jour sans passer par la direction.
 // ====================================================================
 function CoordonneesFamille({ eleve, parents }: { eleve: any; parents: any[] }) {
-  const parent = parents[0];
+  // SEC-14 FIX — TOUS les parents/tuteurs rattachés sont éditables (avant :
+  // seul parents[0] l'était, le 2e tuteur était inaccessible)
+  const [parentIdChoisi, setParentIdChoisi] = useState(parents[0]?.id ?? '');
+  const parent = parents.find((p: any) => p.id === parentIdChoisi) ?? parents[0];
   const urgence = (() => { try { return JSON.parse(eleve.contactUrgence ?? '{}'); } catch { return {}; } })();
   const adresse = typeof eleve.adresse === 'string' && eleve.adresse.startsWith('{')
     ? (() => { try { return JSON.parse(eleve.adresse)?.texte ?? ''; } catch { return ''; } })()
     : (eleve.adresse ?? '');
   return (
-    <ModalForm
-      trigger={<Button variant="outline" size="sm"><Phone className="h-4 w-4 mr-1" /> Coordonnées famille</Button>}
-      title={`Coordonnées — famille de ${eleve.prenom} ${eleve.nom}`}
-      fields={[
-        { name: 'eleveId', type: 'hidden', label: 'ID', defaultValue: eleve.id },
-        { name: 'adresseEleve', label: "Adresse de l'élève", defaultValue: adresse, placeholder: 'Quartier, rue, ville' },
-        { name: 'contactUrgenceNom', label: "Contact d'urgence — nom", defaultValue: urgence?.nom ?? '' },
-        { name: 'contactUrgenceTelephone', label: "Contact d'urgence — téléphone", defaultValue: urgence?.telephone ?? '' },
-        ...(parent ? [
-          { name: 'parentId', type: 'hidden' as const, label: 'Parent', defaultValue: parent.id },
-          { name: 'parentTelephone', label: `Téléphone (${parent.prenom ?? ''} ${parent.nom ?? ''})`.trim(), defaultValue: parent.telephone ?? '' },
-          { name: 'parentEmail', label: 'Email du parent', defaultValue: parent.email ?? '' },
-          { name: 'parentProfession', label: 'Profession du parent', defaultValue: parent.profession ?? '' },
-        ] : []),
-      ]}
-      defaultValues={{
-        eleveId: eleve.id,
-        adresseEleve: adresse,
-        contactUrgenceNom: urgence?.nom ?? '',
-        contactUrgenceTelephone: urgence?.telephone ?? '',
-        ...(parent ? { parentId: parent.id, parentTelephone: parent.telephone ?? '', parentEmail: parent.email ?? '', parentProfession: parent.profession ?? '' } : {}),
-      }}
-      action={actionsExt.majCoordonneesFamille}
-    />
+    <div className="flex items-center gap-1">
+      {parents.length > 1 && (
+        <select
+          value={parentIdChoisi}
+          onChange={(e) => setParentIdChoisi(e.target.value)}
+          className="h-8 text-xs border rounded px-1 bg-white"
+          title="Parent / tuteur dont on modifie les coordonnées"
+        >
+          {parents.map((p: any) => (
+            <option key={p.id} value={p.id}>{p.prenom ?? ''} {p.nom ?? ''}</option>
+          ))}
+        </select>
+      )}
+      <ModalForm
+        trigger={<Button variant="outline" size="sm"><Phone className="h-4 w-4 mr-1" /> Coordonnées famille</Button>}
+        title={`Coordonnées — famille de ${eleve.prenom} ${eleve.nom}`}
+        fields={[
+          { name: 'eleveId', type: 'hidden', label: 'ID', defaultValue: eleve.id },
+          { name: 'adresseEleve', label: "Adresse de l'élève", defaultValue: adresse, placeholder: 'Quartier, rue, ville' },
+          { name: 'contactUrgenceNom', label: "Contact d'urgence — nom", defaultValue: urgence?.nom ?? '' },
+          { name: 'contactUrgenceTelephone', label: "Contact d'urgence — téléphone", defaultValue: urgence?.telephone ?? '' },
+          ...(parent ? [
+            { name: 'parentId', type: 'hidden' as const, label: 'Parent', defaultValue: parent.id },
+            { name: 'parentTelephone', label: `Téléphone (${parent.prenom ?? ''} ${parent.nom ?? ''})`.trim(), defaultValue: parent.telephone ?? '' },
+            { name: 'parentEmail', label: 'Email du parent', defaultValue: parent.email ?? '' },
+            { name: 'parentProfession', label: 'Profession du parent', defaultValue: parent.profession ?? '' },
+          ] : []),
+        ]}
+        defaultValues={{
+          eleveId: eleve.id,
+          adresseEleve: adresse,
+          contactUrgenceNom: urgence?.nom ?? '',
+          contactUrgenceTelephone: urgence?.telephone ?? '',
+          ...(parent ? { parentId: parent.id, parentTelephone: parent.telephone ?? '', parentEmail: parent.email ?? '', parentProfession: parent.profession ?? '' } : {}),
+        }}
+        action={actionsExt.majCoordonneesFamille}
+      />
+    </div>
   );
 }
