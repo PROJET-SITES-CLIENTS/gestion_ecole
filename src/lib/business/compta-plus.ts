@@ -13,12 +13,28 @@ const COMPTES_PLUS: Array<[string, string, string]> = [
   ['281', 'Amortissements cumulés', 'capitaux'],
   ['681', 'Dotations aux amortissements', 'charge'],
   ['110', 'Reports à nouveau', 'capitaux'],
+  // F5 — 431 : organismes sociaux (crédité par l'écriture de paie) ;
+  // 416 : clients douteux (provisions). 431 était auparavant créé à la
+  // volée comme « clients douteux » (actif) — collision SYSCOHADA.
+  ['431', 'Sécurité sociale et autres organismes sociaux', 'passif'],
+  ['416', 'Clients douteux ou litigieux', 'actif'],
+  // F17 FIX — 443 TVA collectée : l'état TVA (etat_tva / bouton « État TVA »)
+  // interroge 443+445 mais le plan ne créait QUE 445 (déductible) → TVA
+  // collectée définitivement à zéro.
+  ['443', 'État — TVA collectée', 'passif'],
 ];
 
 /** Complète le plan existant avec les comptes avancés + journal PAIE (idempotent). */
 export async function completerPlanComptableCore(ctx: Ctx) {
   assertPermission(ctx, 'finances.valider');
   const ecoleId = ctx.ecoleId!;
+  // F8 FIX — refuser de « compléter » un plan JAMAIS initialisé : les quelques
+  // comptes ajoutés suffisaient ensuite à faire échouer l'initialisation de
+  // base (refuse si count > 0) → plan SYSCOHADA définitivement bloqué.
+  const base = await db.compteComptable.count({ where: { ecoleId } });
+  if (base === 0) {
+    throw new ActionError('Initialisez d\'abord le plan comptable SYSCOHADA de base, puis complétez-le.', 'PLAN_VIDE');
+  }
   let ajoutes = 0;
   for (const [numero, libelle, type] of COMPTES_PLUS) {
     const existe = await db.compteComptable.findFirst({ where: { ecoleId, numero } });
@@ -41,12 +57,24 @@ async function compteNumero(ecoleId: string, numero: string) {
   return c;
 }
 
+/** F5 — résout un compte par numéro, en le créant à la volée si absent
+ *  (utile pour les comptes spécialisés 431/416 des briques paie/provisions). */
+async function compteOuCreer(ecoleId: string, numero: string, libelle: string, type: string) {
+  const existe = await db.compteComptable.findFirst({ where: { ecoleId, numero } });
+  if (existe) return existe;
+  return db.compteComptable.create({ data: { ecoleId, numero, libelle, type, solde: 0, devise: 'XOF', actif: true } });
+}
+
 async function passerEcritureInterne(tx: any, ctx: Ctx, ecoleId: string, params: {
   journalCode: string; libelle: string; piece: string; sectionComptableId?: string | null;
   lignes: Array<{ compteId: string; libelle: string; debit: number; credit: number }>;
 }) {
-  const journal = await tx.journalComptable.findFirst({ where: { ecoleId, code: params.journalCode } });
-  if (!journal) throw new ActionError(`Journal ${params.journalCode} introuvable.`, 'PLAN_VIDE');
+  // F6 FIX — repli sur n'importe quel journal de l'école si le code demandé
+  // n'existe pas. L'ancien code rejetait « Journal XX introuvable » en plein
+  // vol (ex. journal 'AC' qui n'a jamais existé : le plan crée VE/ACH/CA/BQ/OD).
+  const journal = (await tx.journalComptable.findFirst({ where: { ecoleId, code: params.journalCode } }))
+    ?? (await tx.journalComptable.findFirst({ where: { ecoleId } }));
+  if (!journal) throw new ActionError('Aucun journal comptable — initialisez le plan comptable.', 'PLAN_VIDE');
   const totalD = params.lignes.reduce((s: number, l: any) => s + l.debit, 0);
   const totalC = params.lignes.reduce((s: number, l: any) => s + l.credit, 0);
   if (totalD !== totalC) throw new ActionError(`Écriture déséquilibrée (${totalD / 100} ≠ ${totalC / 100}).`, 'DESEQUILIBRE');
@@ -86,19 +114,34 @@ export async function passerEcriturePaieCore(ctx: Ctx, bulletinId: string) {
   if (existante) return { ecritureId: existante.id, dejaPassee: true };
 
   const partPatronale = b.cotisations.reduce((s, c) => s + c.partEmployeur, 0);
-  const partSalarie = b.cotisations.reduce((s, c) => s + c.partSalarie, 0);
-  const brutTotal = b.salaireBrut + b.primesTotales;
-  const credit421 = b.netAPayer + partSalarie + b.retenuesTotales;
+  // F5 FIX — sémantique réelle des champs du bulletin (cf. genererBulletinsPaieCore) :
+  //   salaireBrut  = base + primes + variables (primes DÉJÀ incluses)
+  //   netAPayer    = salaireBrut − retenuesTotales (part salariale…)
+  // L'ANCIEN code était triplement faux :
+  //   • brutTotal = salaireBrut + primesTotales → primes DOUBLÉES en 641
+  //   • credit421 = net + partSalarie + retenues → 421 SURCRÉDITÉ (brut + partSalarie)
+  //   • l'écart structurel partait en ligne parasite 618 « écart de paie »
+  // Écriture SYSCOHADA correcte et auto-équilibrée :
+  //   D 641 = salaireBrut (brut complet, primes incluses)
+  //   D 644 = part patronale (si > 0)
+  //   C 431 = salaireBrut − netAPayer (retenues salariales dues aux organismes)
+  //        + part patronale due aux organismes (contrepartie du D 644)
+  //   C 421 = netAPayer (dû au personnel, uniquement le net)
+  const retenuesDuBrut = Math.max(0, b.salaireBrut - b.netAPayer);
   const lignes: Array<{ compteId: string; libelle: string; debit: number; credit: number }> = [
-    { compteId: (await compteNumero(b.ecoleId, '641')).id, libelle: `Salaires ${b.periode}`, debit: brutTotal, credit: 0 },
+    { compteId: (await compteNumero(b.ecoleId, '641')).id, libelle: `Salaires ${b.periode}`, debit: b.salaireBrut, credit: 0 },
   ];
-  if (partPatronale > 0) lignes.push({ compteId: (await compteNumero(b.ecoleId, '644')).id, libelle: 'Charges patronales', debit: partPatronale, credit: 0 });
-  const ecart = brutTotal + partPatronale - credit421;
-  if (ecart !== 0) {
-    // écart d'arrondi/variable : neutralisé en charges diverses
-    lignes.push({ compteId: (await compteNumero(b.ecoleId, '618')).id, libelle: 'Écart de paie', debit: Math.max(0, -ecart), credit: Math.max(0, ecart) });
+  const c431 = await compteOuCreer(b.ecoleId, '431', 'Sécurité sociale et autres organismes sociaux', 'passif');
+  if (partPatronale > 0) {
+    lignes.push({ compteId: (await compteNumero(b.ecoleId, '644')).id, libelle: 'Charges patronales', debit: partPatronale, credit: 0 });
+    lignes.push({ compteId: c431.id, libelle: 'Charges patronales dues', debit: 0, credit: partPatronale });
   }
-  lignes.push({ compteId: (await compteNumero(b.ecoleId, '421')).id, libelle: `Personnel dû ${b.periode}`, debit: 0, credit: credit421 });
+  if (retenuesDuBrut > 0) {
+    lignes.push({ compteId: c431.id, libelle: 'Retenues sociales salariales', debit: 0, credit: retenuesDuBrut });
+  }
+  if (b.netAPayer > 0) {
+    lignes.push({ compteId: (await compteNumero(b.ecoleId, '421')).id, libelle: `Personnel dû ${b.periode}`, debit: 0, credit: b.netAPayer });
+  }
 
   const e = await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, b.ecoleId, {
     journalCode: 'PA', libelle: `Paie ${b.periode}`, piece, lignes,
@@ -121,25 +164,40 @@ export async function enregistrerImmobilisationCore(ctx: Ctx, input: {
   if (!Number.isInteger(input.montantAcquisition) || input.montantAcquisition <= 0) throw new ActionError('Montant invalide (centimes).', 'MONTANT_INVALIDE');
   const duree = input.dureeAnnees ?? 5;
   if (!Number.isInteger(duree) || duree < 1 || duree > 50) throw new ActionError('Durée entre 1 et 50 ans.', 'CHAMP_INVALIDE');
-  const immo = await db.immobilisation.create({
-    data: {
-      ecoleId, libelle: input.libelle.trim(), categorie: input.categorie || 'materiel',
-      montantAcquisition: input.montantAcquisition, dateAcquisition: input.dateAcquisition,
-      dureeAnnees: duree, sectionComptableId: input.sectionComptableId ?? null,
-    },
-  });
+  // F6 FIX — deux défauts réparés :
+  //  1) journal 'AC' inexistant (le plan crée VE/ACH/CA/BQ/OD) → l'écriture
+  //     échouait TOUJOURS ; on utilise 'ACH' avec repli générique ;
+  //  2) non-atomicité : l'immobilisation était créée HORS transaction, puis
+  //     l'écriture plantait → immobilisation orpheline sans écriture.
+  //     Désormais : comptes résolus AVANT (échec propre si plan incomplet,
+  //     et SEULEMENT si comptabilisation demandée), puis création imo +
+  //     écriture dans la MÊME transaction.
+  const comptabiliser = input.comptabiliser !== false;
+  const c241 = comptabiliser ? await compteNumero(ecoleId, '241') : null;
+  const c521 = comptabiliser ? await compteNumero(ecoleId, '521') : null;
   let ecritureId: string | null = null;
-  if (input.comptabiliser !== false) {
-    ecritureId = (await db.$transaction(async (tx) => passerEcritureInterne(tx, ctx, ecoleId, {
-      journalCode: 'AC', piece: `IMO-${immo.id.slice(-10)}`, sectionComptableId: input.sectionComptableId ?? null,
-      libelle: `Acquisition immobilisation : ${input.libelle.trim()}`,
-      lignes: [
-        { compteId: (await compteNumero(ecoleId, '241')).id, libelle: input.libelle.trim(), debit: input.montantAcquisition, credit: 0 },
-        { compteId: (await compteNumero(ecoleId, '521')).id, libelle: 'Banque', debit: 0, credit: input.montantAcquisition },
-      ],
-    }))).id;
-  }
-  await logAction(db, ecoleId, ctx.utilisateurId, 'immo.acquisition', 'immobilisation', immo.id, { montant: input.montantAcquisition });
+  const immo = await db.$transaction(async (tx) => {
+    const created = await tx.immobilisation.create({
+      data: {
+        ecoleId, libelle: input.libelle!.trim(), categorie: input.categorie || 'materiel',
+        montantAcquisition: input.montantAcquisition, dateAcquisition: input.dateAcquisition,
+        dureeAnnees: duree, sectionComptableId: input.sectionComptableId ?? null,
+      },
+    });
+    if (c241 && c521) {
+      const e = await passerEcritureInterne(tx, ctx, ecoleId, {
+        journalCode: 'ACH', piece: `IMO-${created.id.slice(-10)}`, sectionComptableId: input.sectionComptableId ?? null,
+        libelle: `Acquisition immobilisation : ${input.libelle!.trim()}`,
+        lignes: [
+          { compteId: c241.id, libelle: input.libelle!.trim(), debit: input.montantAcquisition, credit: 0 },
+          { compteId: c521.id, libelle: 'Banque', debit: 0, credit: input.montantAcquisition },
+        ],
+      });
+      ecritureId = e.id;
+    }
+    return created;
+  }, { timeout: 60000, maxWait: 15000 });
+  await logAction(db, ecoleId, ctx.utilisateurId, 'immo.acquisition', 'immobilisation', immo.id, { montant: input.montantAcquisition, ecritureId });
   return { immobilisationId: immo.id, ecritureId };
 }
 
@@ -198,8 +256,8 @@ export async function creerRapprochementCore(ctx: Ctx, input: {
   const ecoleId = ctx.ecoleId!;
   if (!Number.isInteger(input.soldeReleve)) throw new ActionError('Solde du relevé invalide (centimes).', 'MONTANT_INVALIDE');
   const compte521 = await compteNumero(ecoleId, '521');
-  // Solde comptable : cumul des lignes du compte 521
-  const lignes521 = await db.ligneEcriture.findMany({ where: { compteId: compte521.id, ecriture: { ecoleId } } });
+  // Solde comptable : cumul des lignes du compte 521 (F16 — écritures validées seules)
+  const lignes521 = await db.ligneEcriture.findMany({ where: { compteId: compte521.id, ecriture: { ecoleId, statut: 'valide' } } });
   const soldeComptable = lignes521.reduce((s, l) => s + l.debit - l.credit, 0);
   // solde ajusté : comptable − chèques émis non débités + dépôts non crédités + erreurs
   const soldeAjuste = soldeComptable + (input.lignes ?? []).reduce((s, l) => s + (l.sens === 'en_Retrait' ? -l.montant : l.sens === 'en_Depot' ? l.montant : l.montant), 0);
@@ -266,13 +324,13 @@ export async function actualiserBudgetRealise(ecoleId: string, budgetId: string,
   // par le cycle scolarité, on prend donc l'union).
   const lignesEcritures = await db.ligneEcriture.findMany({
     where: {
-      ecriture: { ecoleId, date: { gte: dateDebut, lte: dateFin } },
+      ecriture: { ecoleId, statut: 'valide', date: { gte: dateDebut, lte: dateFin } }, // F16 — validées seules
       OR: [{ compte: { numero: { startsWith: '7' } } }, { compte: { numero: '411' } }],
     },
   });
   const lignesCharges = await db.ligneEcriture.findMany({
     where: {
-      ecriture: { ecoleId, date: { gte: dateDebut, lte: dateFin } },
+      ecriture: { ecoleId, statut: 'valide', date: { gte: dateDebut, lte: dateFin } }, // F16 — validées seules
       compte: { numero: { startsWith: '6' } },
     },
   });
@@ -314,7 +372,8 @@ export async function cloturerExerciceComptableCore(ctx: Ctx, dateDebut: Date, d
   if (existante) return { dejaClos: true, ecritureId: existante.id };
 
   const lignes = await db.ligneEcriture.findMany({
-    where: { ecriture: { ecoleId, date: { gte: dateDebut, lte: dateFin } } },
+    // F16 FIX — clôture sur les seules écritures VALIDÉES
+    where: { ecriture: { ecoleId, statut: 'valide', date: { gte: dateDebut, lte: dateFin } } },
     include: { compte: true },
   });
   const parCompte = new Map<string, { id: string; numero: string; libelle: string; type: string; solde: number }>();
@@ -364,7 +423,8 @@ export async function genererFecCore(ctx: Ctx, dateDebut: Date, dateFin: Date) {
   assertPermission(ctx, 'finances.voir');
   const ecoleId = ctx.ecoleId!;
   const ecritures = await db.ecritureComptable.findMany({
-    where: { ecoleId, date: { gte: dateDebut, lte: dateFin } },
+    // F16 FIX — le FEC ne contient que les écritures validées (norme DGFiP)
+    where: { ecoleId, statut: 'valide', date: { gte: dateDebut, lte: dateFin } },
     include: { journal: true, lignes: { include: { compte: true } } },
     orderBy: [{ date: 'asc' }, { numeroPiece: 'asc' }],
   });
@@ -389,7 +449,7 @@ export async function genererFecCore(ctx: Ctx, dateDebut: Date, dateFin: Date) {
 export async function genererBalanceCsvCore(ctx: Ctx, sectionId: string | null | 'toutes') {
   assertPermission(ctx, 'finances.voir');
   const ecoleId = ctx.ecoleId!;
-  const where: any = { ecriture: { ecoleId } };
+  const where: any = { ecriture: { ecoleId, statut: 'valide' } }; // F16 — brouillons exclus
   if (sectionId && sectionId !== 'toutes') where.ecriture.sectionComptableId = sectionId;
   const lignes = await db.ligneEcriture.findMany({ where, include: { compte: true } });
   const parCompte = new Map<string, { numero: string; libelle: string; debit: number; credit: number }>();
@@ -429,21 +489,19 @@ export async function provisionnerCreancesDouteusesCore(ctx: Ctx) {
   if (echues.length === 0 || totalDu <= 0) {
     throw new ActionError('Aucune créance douteuse (+90 jours) à provisionner.', 'RIEN_A_PROVISIONNER');
   }
-  // Comptes 659/431 créés à la volée
-  async function compteOuCreer(numero: string, libelle: string, type: string) {
-    const existe = await db.compteComptable.findFirst({ where: { ecoleId: ctx.ecoleId!, numero } });
-    if (existe) return existe;
-    return db.compteComptable.create({ data: { ecoleId: ctx.ecoleId!, numero, libelle, type, solde: 0, devise: 'XOF', actif: true } });
-  }
-  const c659 = await compteOuCreer('659', 'Charges provisionnées d\u2019exploitation', 'charge');
-  const c431 = await compteOuCreer('431', 'Clients — créances douteuses', 'actif');
+  // Comptes 659/416 créés à la volée
+  // F5 FIX — 431 est désormais réservé aux organismes sociaux (écriture de
+  // paie) : les clients douteux passent en 416 conformément au SYSCOHADA,
+  // sinon la provision créditait le compte que la paie débite.
+  const c659 = await compteOuCreer(ctx.ecoleId, '659', 'Charges provisionnées d\u2019exploitation', 'charge');
+  const c416 = await compteOuCreer(ctx.ecoleId, '416', 'Clients douteux ou litigieux', 'actif');
   const journalOD = await db.journalComptable.findFirst({ where: { ecoleId: ctx.ecoleId, code: 'OD' } });
   if (!journalOD) throw new ActionError('Journal OD introuvable — initialisez le plan comptable.', 'PLAN_VIDE');
   await passerEcritureInterne(db as never, ctx, ctx.ecoleId!, {
     journalCode: 'OD', libelle: `Provision créances douteuses ${annee} (${echues.length} créance(s) +90 j)`, piece,
     lignes: [
       { compteId: c659.id, libelle: 'Dotation aux provisions', debit: totalDu, credit: 0 },
-      { compteId: c431.id, libelle: 'Clients douteux', debit: 0, credit: totalDu },
+      { compteId: c416.id, libelle: 'Clients douteux', debit: 0, credit: totalDu },
     ],
   });
   await logAction(db, ctx.ecoleId, ctx.utilisateurId, 'compta.provisions_creances', undefined, undefined, { creances: echues.length, totalDu });
@@ -458,12 +516,16 @@ export async function provisionnerCreancesDouteusesCore(ctx: Ctx) {
 
 export async function clotureMensuelleCore(ctx: Ctx, periode?: string) {
   assertPermission(ctx, 'finances.valider');
+  if (!ctx.ecoleId) throw new ActionError('Aucune école associée.', 'ECOLE_ABSENTE');
   const mois = periode ?? new Date().toISOString().slice(0, 7);
-  const r = await genererEcrituresAutomatiquesCore(ctx as never, mois);
+  // F1 FIX — genererEcrituresAutomatiquesCore(ctx, ecoleId) : le 2e argument
+  // est l'ID de l'école, PAS la période (l'ancien code passait "2026-10" comme
+  // ecoleId → plan vide → PLAN_VIDE systématique)
+  const r = await genererEcrituresAutomatiquesCore(ctx, ctx.ecoleId);
   const debut = new Date(mois + '-01T00:00:00');
   const fin = new Date(debut); fin.setMonth(fin.getMonth() + 1);
   const ecritures = await db.ecritureComptable.findMany({
-    where: { ecoleId: ctx.ecoleId!, date: { gte: debut, lt: fin }, statut: 'valide' },
+    where: { ecoleId: ctx.ecoleId, date: { gte: debut, lt: fin }, statut: 'valide' },
     include: { lignes: true },
   });
   const totalDebit = ecritures.reduce((s2, e) => s2 + e.lignes.reduce((x, l) => x + l.debit, 0), 0);

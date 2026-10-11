@@ -150,7 +150,7 @@ export async function operationCaisseCore(ctx: Ctx, input: { sessionCaisseId: st
     if (input.type === 'sortie' && session.soldeTheorique - montant < 0) {
       throw new ActionError('Solde de caisse insuffisant.', 'SOLDE_INSUFFISANT');
     }
-    await tx.operationCaisse.create({
+    const op = await tx.operationCaisse.create({
       data: {
         ecoleId: session.ecoleId, sessionCaisseId: session.id, type: input.type, montant,
         motif: input.motif.trim(), reference: input.reference?.trim() || null,
@@ -161,7 +161,38 @@ export async function operationCaisseCore(ctx: Ctx, input: { sessionCaisseId: st
       where: { id: session.id },
       data: { soldeTheorique: { increment: input.type === 'entree' ? montant : -montant } },
     });
-    return { ok: true };
+    // F15 FIX — chaque opération de caisse produit son écriture (journal CA) :
+    // avant, seuls les écarts de fermeture étaient bookés — les mouvements
+    // directs d'espèces traversaient la comptabilité sans trace et le compte
+    // 571 était faux dès la première entrée/sortie manuelle.
+    // entrée → D 571 / C 771 (produit divers) ; sortie → D 618 (charge
+    // diverse) / C 571. Silencieux si le plan n'est pas initialisé.
+    try {
+      const comptes = await tx.compteComptable.findMany({ where: { ecoleId: session.ecoleId, numero: { in: ['571', '771', '618'] } } });
+      const parNum = new Map(comptes.map((c: any) => [c.numero, c]));
+      const caisseC = parNum.get('571');
+      const contreC = input.type === 'entree' ? parNum.get('771') : parNum.get('618');
+      const journalCA = await tx.journalComptable.findFirst({ where: { ecoleId: session.ecoleId, code: 'CA' } });
+      if (caisseC && contreC && journalCA) {
+        await tx.ecritureComptable.create({
+          data: {
+            ecoleId: session.ecoleId, journalId: journalCA.id, date: new Date(),
+            numeroPiece: `OCA-${op.id.slice(-10)}`,
+            libelle: `Caisse ${input.type === 'entree' ? 'entrée' : 'sortie'} : ${input.motif.trim().slice(0, 60)}`,
+            statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+            sectionComptableId: session.sectionComptableId ?? null,
+            lignes: { create: input.type === 'entree'
+              ? [{ compteId: caisseC.id, libelle: 'Caisse', debit: montant, credit: 0 }, { compteId: contreC.id, libelle: input.motif.trim().slice(0, 60), debit: 0, credit: montant }]
+              : [{ compteId: contreC.id, libelle: input.motif.trim().slice(0, 60), debit: montant, credit: 0 }, { compteId: caisseC.id, libelle: 'Caisse', debit: 0, credit: montant }] },
+          },
+        });
+        const deltaCaisse = ['actif', 'charge'].includes(caisseC.type) ? (input.type === 'entree' ? montant : -montant) : (input.type === 'entree' ? -montant : montant);
+        const deltaContre = ['actif', 'charge'].includes(contreC.type) ? (input.type === 'sortie' ? montant : -montant) : (input.type === 'entree' ? montant : -montant);
+        await tx.compteComptable.update({ where: { id: caisseC.id }, data: { solde: { increment: deltaCaisse } } });
+        await tx.compteComptable.update({ where: { id: contreC.id }, data: { solde: { increment: deltaContre } } });
+      }
+    } catch { /* plan absent — caisse métier prioritaire */ }
+    return { ok: true, operationId: op.id };
   });
 }
 
@@ -319,6 +350,18 @@ export async function enregistrerFactureFournisseurCore(ctx: Ctx, input: {
   const tva = Math.round((input.montantTVA ?? 0) * 100);
   const ttc = ht + tva;
   const commande = input.commandeId ? await db.commandeFournisseur.findUnique({ where: { id: input.commandeId } }) : null;
+  // F9 FIX — la chaîne achats est désormais close-able (UI envoie commandeId),
+  // mais le lien doit être SÛR : même école, même fournisseur, commande
+  // effectivement facturable (reçue ou au moins envoyée).
+  if (commande) {
+    assertTenant(commande.ecoleId, ctx, 'Cette commande');
+    if (commande.fournisseurId !== fournisseur.id) {
+      throw new ActionError('La commande liée n\'appartient pas à ce fournisseur.', 'CORRESPONDANCE_INVALIDE');
+    }
+    if (!['envoyee', 'livraison_partielle', 'livree'].includes(commande.statut)) {
+      throw new ActionError(`Commande ${commande.numero} non facturable (statut : ${commande.statut}).`, 'STATUT_INVALIDE');
+    }
+  }
   const facture = await db.factureFournisseur.create({
     data: {
       ecoleId: fournisseur.ecoleId, fournisseurId: fournisseur.id, numero: input.numero.trim(),
@@ -329,8 +372,11 @@ export async function enregistrerFactureFournisseurCore(ctx: Ctx, input: {
   });
   if (commande) await db.commandeFournisseur.update({ where: { id: commande.id }, data: { statut: 'facturee' } });
   // Écriture : charge (60x) + TVA déductible (445) / 401 Fournisseurs
+  // F12 FIX — journal ACH (le plan crée VE/ACH/CA/BQ/OD) : l'ancien code
+  // demandait 'AC', inexistant → repli silencieux sur le PREMIER journal de
+  // l'école (souvent VE Ventes) : une facture fournisseur bookée en ventes.
   await passerEcritureCore(ctx, {
-    journalCode: 'AC', libelle: `Facture ${input.numero} — ${fournisseur.nom}`,
+    journalCode: 'ACH', libelle: `Facture ${input.numero} — ${fournisseur.nom}`,
     piece: input.numero, sectionComptableId: commande?.sectionComptableId ?? null,
     lignes: [
       { compte: '618', debit: ht, libelle: `Achat ${fournisseur.nom}` },
@@ -392,7 +438,10 @@ export async function balanceComptableCore(ctx: Ctx, sectionId: string | null | 
   assertPermission(ctx, 'finances.voir');
   const ecoleId = ctx.ecoleId!;
   const lignes = await ouEst(
-    db.ligneEcriture.findMany({ where: { ecriture: { ecoleId } }, include: { compte: true, ecriture: { select: { sectionComptableId: true } } } }),
+    // F16 FIX — seules les écritures VALIDÉES alimentent la balance (et donc
+    // le compte de résultat et le bilan) : l'ancien code incluait les
+    // BROUILLONS, qui gonflaient débits/crédits jamais actés.
+    db.ligneEcriture.findMany({ where: { ecriture: { ecoleId, statut: 'valide' } }, include: { compte: true, ecriture: { select: { sectionComptableId: true } } } }),
     sectionId, (l) => l.ecriture.sectionComptableId,
   ) as any[];
   const parCompte = new Map<string, { numero: string; libelle: string; type: string; debit: number; credit: number }>();
@@ -414,7 +463,9 @@ export async function grandLivreCore(ctx: Ctx, numeroCompte: string) {
   const compte = await db.compteComptable.findFirst({ where: { ecoleId: ctx.ecoleId!, numero: numeroCompte } });
   if (!compte) throw new ActionError('Compte introuvable.', 'INTROUVABLE');
   const lignes = await db.ligneEcriture.findMany({
-    where: { compteId: compte.id },
+    // F16 FIX — le grand livre exclut les brouillons (sinon Σ grand livre ≠
+    // solde du compte, les soldes n'étant mis à jour qu'à la validation).
+    where: { compteId: compte.id, ecriture: { statut: 'valide' } },
     include: { ecriture: { include: { journal: true } } },
     orderBy: [{ ecriture: { date: 'asc' } }],
   });

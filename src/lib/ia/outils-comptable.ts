@@ -60,12 +60,20 @@ export const outilsComptableFull: OutilIA[] = [
     permission: 'finances.valider',
     parametres: P({ libelle: { type: 'string', description: 'Libellé de l\\u2019écriture (ou début)' } }, ['libelle']),
     executer: async (ctx, args) => {
-      const norm = (s: string) => s.normalize('NFD').replace(/[u0300-u036f]/g, '').toLowerCase();
+      // F13 FIX — la classe avait perdu ses antislashs ([u0300-u036f] au lieu
+      // de [\u0300-\u036f]) : le range interne « 0-u » strippait chiffres ET
+      // majuscules des libellés → « Écriture 1 » et « Écriture 2 » devenaient
+      // indiscernables et le MAUVAIS brouillon était validé.
+      const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const brouillons = await db.ecritureComptable.findMany({
         where: { ecoleId: ctx.ecoleId!, statut: 'brouillon' }, orderBy: { date: 'desc' }, take: 50, include: { lignes: true },
       });
       const q = norm(String(args.libelle));
-      const ev = brouillons.find((e) => norm(e.libelle).includes(q)) ?? null;
+      // correspondance exacte d'abord, puis inclusion — plus jamais un choix ambigu
+      const ev = brouillons.find((e) => norm(e.libelle) === q)
+        ?? brouillons.find((e) => norm(e.libelle).startsWith(q))
+        ?? brouillons.find((e) => norm(e.libelle).includes(q))
+        ?? null;
       if (!ev) return { erreur: `Écriture brouillon « ${args.libelle} » introuvable. Brouillons : ${brouillons.slice(0, 5).map((b) => b.libelle).join(' ; ') || 'aucun'}` };
       const { validerEcritureCore } = await import('@/lib/business/paie');
       await validerEcritureCore(ctx as never, ev.id);
@@ -106,11 +114,17 @@ export const outilsComptableFull: OutilIA[] = [
       prixUnitaire: { type: 'number', description: 'Prix unitaire en FCFA' },
     }, ['fournisseur', 'produit', 'quantite', 'prixUnitaire']),
     executer: async (ctx, args) => {
+      // F2 FIX — résoudre le fournisseur par nom → ID, puis utiliser la bonne
+      // signature du core : { fournisseurId, lignes: [{ designation, ... }] }
+      const fournisseur = await db.fournisseur.findFirst({
+        where: { ecoleId: ctx.ecoleId!, nom: { contains: String(args.fournisseur), mode: 'insensitive' } },
+      });
+      if (!fournisseur) return { erreur: `Fournisseur « ${args.fournisseur} » introuvable. Créez-le d'abord (creer_fournisseur).` };
       const { creerCommandeCore } = await import('@/lib/business/comptabilite');
       return creerCommandeCore(ctx as never, {
-        fournisseurNom: String(args.fournisseur),
-        lignes: [{ produit: String(args.produit), quantite: Number(args.quantite), prixUnitaire: Number(args.prixUnitaire) }],
-      } as never);
+        fournisseurId: fournisseur.id,
+        lignes: [{ designation: String(args.produit), quantite: Number(args.quantite), prixUnitaire: Number(args.prixUnitaire) }],
+      });
     },
   },
 
@@ -150,14 +164,16 @@ export const outilsComptableFull: OutilIA[] = [
       unite: { type: 'string', description: 'Unité (ex: unité, kg, litre)' },
     }, ['nom']),
     executer: async (ctx, args) => {
+      // F3 FIX — le core attend `quantite` (pas `quantiteInitiale`)
       const { creerArticleStockCore } = await import('@/lib/business/finances');
       return creerArticleStockCore(ctx as never, ctx.ecoleId!, {
-        nom: String(args.nom), categorie: args.categorie ? String(args.categorie) : undefined,
-        quantiteInitiale: Number(args.quantite ?? 0),
+        nom: String(args.nom),
+        categorie: args.categorie ? String(args.categorie) : undefined,
+        quantite: Number(args.quantite ?? 0),
         prixUnitaire: args.prixUnitaire ? Math.round(Number(args.prixUnitaire) * 100) : undefined,
         seuilAlerte: args.seuilAlerte ? Number(args.seuilAlerte) : undefined,
         unite: args.unite ? String(args.unite) : undefined,
-      } as never);
+      });
     },
   },
   {
@@ -245,7 +261,9 @@ export const outilsComptableFull: OutilIA[] = [
   {
     nom: 'rapprochement_auto',
     description: "Rapproche automatiquement les lignes du relevé bancaire avec les paiements (montant identique à ±3 jours).",
-    permission: 'finances.ecrire',
+    // F25 FIX — aligné sur le core (rapprocherAutoCore exige finances.VALIDER) :
+    // déclaré « finances.ecrire », l'outil était proposé puis refusé à l'exécution.
+    permission: 'finances.valider',
     parametres: P({}),
     executer: async (ctx) => {
       const { rapprocherAutoCore } = await import('@/lib/business/completions');

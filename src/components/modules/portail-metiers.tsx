@@ -131,13 +131,16 @@ export default function PortailMetiers({ initialData, portal }: { initialData: a
             id: e.id,
             eleve: nomComplet(eleveById.get(e.eleveId)),
             classe: classeDeEleve(e.eleveId),
-            restant: (e.montant ?? 0) - (e.montantPaye ?? 0),
+            // F14 FIX — le restant est NET de la remise (bourse), comme
+            // partout ailleurs : montant − remise − payé.
+            restant: (e.montant ?? 0) - (e.remise ?? 0) - (e.montantPaye ?? 0),
             jours: Math.max(1, joursEntre(new Date(e.dateEcheance), refDate)),
             statut: e.statut,
           }))
           .sort((a: any, b: any) => b.jours - a.jours)
       : [];
-    const restantDu = echeances.filter((e: any) => e.statut !== 'annulee').reduce((s: number, e: any) => s + (e.montant ?? 0) - (e.montantPaye ?? 0), 0);
+    // F14 FIX — idem pour le KPI « Restant dû scolarité » (remise déduite)
+    const restantDu = echeances.filter((e: any) => e.statut !== 'annulee').reduce((s: number, e: any) => s + (e.montant ?? 0) - (e.remise ?? 0) - (e.montantPaye ?? 0), 0);
     const budgetLignes = budgets.flatMap((b: any) => (b.lignes ?? []).map((l: any) => ({ ...l, budget: b.libelle })));
 
     return (

@@ -6,7 +6,7 @@
 // ====================================================================
 
 import { useEffect, useState, useTransition } from 'react';
-import { Calculator, Wallet, Truck, BarChart3, Split, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
+import { Calculator, Wallet, Truck, BarChart3, Split, CheckCircle2, AlertTriangle, Plus, Landmark } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
 import { ModalForm, CreateButton } from '@/components/shared-ui';
@@ -26,6 +26,14 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
   const immobilisations = initialData?.immobilisations ?? [];
   const rapprochements = initialData?.rapprochementsBancaires ?? [];
   const budgets = initialData?.budgets ?? [];
+  // F23 FIX — l'exercice comptable d'une école suit l'ANNÉE SCOLAIRE
+  // (ex. 2026-09-01 → 2027-08-31), pas l'année civile : la clôture et les
+  // dotations utilisent les dates réelles de l'année active (repli : année
+  // civile si aucune année scolaire n'est active).
+  const anneeScolaire = initialData?.anneeScolaire ?? null;
+  const debutExercice = anneeScolaire?.dateDebut ? new Date(anneeScolaire.dateDebut) : new Date(new Date().getFullYear(), 0, 1);
+  const finExercice = anneeScolaire?.dateFin ? new Date(anneeScolaire.dateFin) : new Date(new Date().getFullYear(), 11, 31);
+  const libelleExercice = anneeScolaire?.libelle ?? String(new Date().getFullYear());
   const [pending, start] = useTransition();
   const [data, setData] = useState<any>(null);
   const [onglet, setOnglet] = useState('accueil');
@@ -54,7 +62,10 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
       {retours.c.Message}{retours.r.Message}
 
       <div className="flex flex-wrap gap-2 border-b pb-2">
-        {[['accueil', 'Accueil', Calculator], ['caisse', 'Caisse', Wallet], ['achats', 'Fournisseurs & achats', Truck], ['etats', 'États financiers', BarChart3]].map(([id, lib, Ic]: any) => (
+        {/* F22 FIX — les sections avancées (immos, relevé, rapprochement,
+            budget, revue, clôture) ont désormais LEUR onglet : avant elles se
+            rendaient SOUS chaque onglet (accueil/caisse/achats/états). */}
+        {[['accueil', 'Accueil', Calculator], ['caisse', 'Caisse', Wallet], ['achats', 'Fournisseurs & achats', Truck], ['etats', 'États financiers', BarChart3], ['avance', 'Immos & budget', Landmark]].map(([id, lib, Ic]: any) => (
           <button key={id} onClick={() => setOnglet(id)} className={`px-3.5 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 ${onglet === id ? 'bg-emerald-600 text-white' : 'bg-white border hover:border-emerald-300'}`}>
             <Ic className="h-4 w-4" />{lib}
           </button>
@@ -87,20 +98,21 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
           </SectionBlock>
           {!data.planInitialise && (
             <SectionBlock title="Plan comptable" description="Génération du plan SYSCOHADA adapté aux écoles (caisse, banque, clients, fournisseurs, achats, ventes scolarité…) + journaux standards.">
+              {/* F8 FIX — plus de bouton « Compléter » ici : compléter avant
+                  d'initialiser créait quelques comptes qui bloquaient ensuite
+                  DÉFINITIVEMENT l'initialisation du plan de base. Le bouton
+                  « Compléter » n'apparaît qu'une fois le plan initialisé. */}
               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending} onClick={() => run(retours.c, 'Plan comptable créé', () => ext.initialiserPlanComptable())}>
                 <Plus className="h-3.5 w-3.5 mr-1" />Initialiser le plan comptable
               </Button>
-              <Button
-                variant="outline" size="sm" className="ml-2" disabled={pending}
-                onClick={() => run(retours.c, 'Plan complété : comptes 241/281/681/110 + journal Paie.', () => ext.completerPlanComptable())}
-                title="Ajoute les comptes d'immobilisations/amortissements et le journal de paie"
-              >
-                Compléter le plan
-              </Button>
+              <span className="text-xs text-gray-500 self-center ml-2">Étape 1 : base SYSCOHADA · l'extension (immobilisations, paie) viendra ensuite.</span>
             </SectionBlock>
           )}
           {/* AUDIT COMPTA — bouton Compléter le plan quand le plan de base existe déjà */}
-          {data.planInitialise && !(data.comptes ?? []).some((c: any) => c.numero === '241') && (
+          {/* F21 FIX — la clé du payload est `plan` (lireComptabilite), pas
+              `comptes` : l'ancien test lisait un tableau inexistant → le bloc
+              restait affiché même après extension du plan. */}
+          {data.planInitialise && !(data.plan ?? []).some((c: any) => c.numero === '241') && (
             <SectionBlock title="Extension du plan comptable" description="Comptes d'immobilisations (241), amortissements cumulés (281), dotations (681), reports à nouveau (110) + journal de paie (PA)">
               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={pending}
                 onClick={() => run(retours.c, 'Plan complété : comptes 241/281/681/110 + journal Paie.', () => ext.completerPlanComptable())}>
@@ -187,6 +199,40 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
       {/* ═══ ACHATS ═══ */}
       {onglet === 'achats' && (
         <div className="space-y-4">
+          {/* F4 FIX — le répertoire fournisseurs est désormais une section autonome
+              AVANT le cycle d'achats. Avant : imbriqué dans la carte de CHAQUE
+              commande → avec 0 commande il n'apparaissait nulle part (impossible
+              de créer le 1er fournisseur) et la mise en page explosait dès la 1re
+              commande. */}
+          <SectionBlock title="Fournisseurs — répertoire" description={`${fournisseurs.length} fournisseur(s) actif(s) — le point de départ du cycle achats`}>
+            <ModalForm
+              trigger={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1" />Nouveau fournisseur</Button>}
+              title="Créer un fournisseur"
+              fields={[
+                { name: 'nom', label: 'Nom / raison sociale', required: true },
+                { name: 'type', label: 'Type', type: 'select', options: [{ value: 'fournisseur_prestataire', label: 'Fournisseur / prestataire' }, { value: 'sous_traitant', label: 'Sous-traitant' }] },
+                { name: 'contact', label: 'Personne de contact' },
+                { name: 'telephone', label: 'Téléphone' },
+                { name: 'email', label: 'Email' },
+                { name: 'rib', label: 'RIB' },
+                { name: 'adresse', label: 'Adresse', type: 'textarea' },
+              ]}
+              action={ext.creerFournisseur}
+            />
+            <div className="mt-3">
+              <DataTable
+                columns={[
+                  { key: 'nom', label: 'Fournisseur' },
+                  { key: 'type', label: 'Type' },
+                  { key: 'contact', label: 'Contact', render: (f: any) => f.contact ?? '—' },
+                  { key: 'telephone', label: 'Téléphone', render: (f: any) => f.telephone ?? '—' },
+                  { key: 'rib', label: 'RIB', render: (f: any) => f.rib ?? '—' },
+                ]}
+                rows={fournisseurs}
+                emptyLabel="Aucun fournisseur — créez-en un pour démarrer le cycle achats"
+              />
+            </div>
+          </SectionBlock>
           <SectionBlock title="Nouvelle commande fournisseur" description="Bons de commande → réceptions (bons de livraison) → facture → règlement.">
             <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); run(retours.c, 'Commande créée', () => ext.creerCommandeFournisseur(fd)); }}>
               <Champ label="Fournisseur"><select name="fournisseurId" className={sel + ' w-48'} required><option value="">—</option>{fournisseurs.map((f: any) => <option key={f.id} value={f.id}>{f.nom}</option>)}</select></Champ>
@@ -196,39 +242,13 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             </form>
           </SectionBlock>
           <SectionBlock title="Commandes" description="Cycle : brouillon → envoyée → livraison (partielle/totale) → facturée → payée.">
+            {(data.commandes ?? []).length === 0 && (
+              <div className="text-sm text-gray-500">Aucune commande — sélectionnez un fournisseur ci-dessus et passez votre première commande.</div>
+            )}
             {(data.commandes ?? []).map((c: any) => (
               <div key={c.id} className="border rounded-lg p-3 mb-3">
                 <div className="flex flex-wrap justify-between gap-2 items-center mb-2">
-                  <div className="text-sm"><b>{c.numero}</b> — {c.fournisseur?.nom} · {fmt(c.montantTotal)}<SectionBlock title="Fournisseurs — répertoire" description={`${fournisseurs.length} fournisseur(s) actif(s)`}>
-              <ModalForm
-                trigger={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1" />Nouveau fournisseur</Button>}
-                title="Créer un fournisseur"
-                fields={[
-                  { name: 'nom', label: 'Nom / raison sociale', required: true },
-                  { name: 'type', label: 'Type', type: 'select', options: [{ value: 'fournisseur_prestataire', label: 'Fournisseur / prestataire' }, { value: 'sous_traitant', label: 'Sous-traitant' }] },
-                  { name: 'contact', label: 'Personne de contact' },
-                  { name: 'telephone', label: 'Téléphone' },
-                  { name: 'email', label: 'Email' },
-                  { name: 'rib', label: 'RIB' },
-                  { name: 'adresse', label: 'Adresse', type: 'textarea' },
-                ]}
-                action={ext.creerFournisseur}
-              />
-              <div className="mt-3">
-                <DataTable
-                  columns={[
-                    { key: 'nom', label: 'Fournisseur' },
-                    { key: 'type', label: 'Type' },
-                    { key: 'contact', label: 'Contact', render: (f: any) => f.contact ?? '—' },
-                    { key: 'telephone', label: 'Téléphone', render: (f: any) => f.telephone ?? '—' },
-                    { key: 'rib', label: 'RIB', render: (f: any) => f.rib ?? '—' },
-                  ]}
-                  rows={fournisseurs}
-                  emptyLabel="Aucun fournisseur — créez-en un pour démarrer le cycle achats"
-                />
-              </div>
-            </SectionBlock>
-          </div>
+                  <div className="text-sm"><b>{c.numero}</b> — {c.fournisseur?.nom} · {fmt(c.montantTotal)}</div>
                   <div className="flex items-center gap-2"><StatusBadge statut={c.statut} />
                     {c.statut === 'brouillon' && <button className="text-xs text-emerald-700 font-semibold" disabled={pending} onClick={() => run(retours.c, 'Commande envoyée', () => ext.envoyerCommande(c.id))}>Envoyer</button>}
                   </div>
@@ -250,6 +270,15 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
           <SectionBlock title="Factures fournisseurs" description="Comptabilisées en partie double (charge + TVA / dette fournisseur).">
             <form className="flex flex-wrap items-end gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); run(retours.c, 'Facture enregistrée', () => ext.enregistrerFacture(fd)); }}>
               <Champ label="Fournisseur"><select name="fournisseurId" className={sel + ' w-44'} required><option value="">—</option>{fournisseurs.map((f: any) => <option key={f.id} value={f.id}>{f.nom}</option>)}</select></Champ>
+              {/* F9 FIX — chaîne achats complète : sans commandeId, la facture
+                  n'était JAMAIS rattachée à sa commande et celle-ci restait
+                  bloquée en « livrée » (jamais facturée/payée). */}
+              <Champ label="Commande liée"><select name="commandeId" className={sel + ' w-56'}>
+                <option value="">— aucune —</option>
+                {(data.commandes ?? []).filter((c: any) => ['envoyee', 'livraison_partielle', 'livree'].includes(c.statut)).map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.numero} — {c.fournisseur?.nom} · {fmt(c.montantTotal)}</option>
+                ))}
+              </select></Champ>
               <Champ label="N° facture"><Input name="numero" required className="w-28" /></Champ>
               <Champ label="HT (F)"><Input name="montantHT" type="number" required className="w-28" /></Champ>
               <Champ label="TVA (F)"><Input name="montantTVA" type="number" defaultValue={0} className="w-24" /></Champ>
@@ -326,7 +355,8 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
         </SectionBlock>
       )}
 
-        {/* ═══ COMPTA+ ═══ */}
+        {/* ═══ COMPTA+ — onglet dédié (F22) ═══ */}
+        {onglet === 'avance' && (<>
         <SectionBlock title="Amortissements des immobilisations" description="Acquisition (241/521) et dotation annuelle linéaire (681/281) avec prorata la 1re année">
           <div className="flex flex-wrap gap-2 mb-3">
             <ModalForm
@@ -344,7 +374,10 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
               ]}
               action={ext.enregistrerImmobilisation}
             />
-            <Button variant="outline" size="sm" onClick={() => ext.genererDotations(new Date().getFullYear())}>
+            {/* F19 FIX — feedback + verrou pending : avant, le clic partait
+                dans le vide (aucun retour, double-clic possible) */}
+            <Button variant="outline" size="sm" disabled={pending}
+              onClick={() => run(retours.c, `Dotations ${new Date().getFullYear()} passées (681/281).`, () => ext.genererDotations(new Date().getFullYear()))}>
               Passer les dotations {new Date().getFullYear()}
             </Button>
           </div>
@@ -459,18 +492,22 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
             </Button>
           </div>
         </SectionBlock>
-        <SectionBlock title="Clôture d'exercice & exports" description="Solde des comptes de gestion vers 120 Résultat — exports FEC/balance pour l'expert-comptable">
+        <SectionBlock title="Clôture d'exercice & exports" description={`Solde des comptes de gestion vers 120 Résultat — exports FEC/balance pour l'expert-comptable${anneeScolaire ? ` · exercice ${libelleExercice} (${debutExercice.toLocaleDateString('fr-FR')} → ${finExercice.toLocaleDateString('fr-FR')})` : ''}`}>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => ext.cloturerExercice(
-              new Date(new Date().getFullYear(), 0, 1).toISOString(),
-              new Date(new Date().getFullYear(), 11, 31).toISOString(),
-            )}>
-              Clôturer l'exercice {new Date().getFullYear()}
+            {/* F19 FIX — feedback + confirmation + pending (avant : silent) */}
+            {/* F23 FIX — dates de l'ANNÉE SCOLAIRE active, pas de l'année civile */}
+            <Button variant="outline" size="sm" disabled={pending}
+              onClick={() => { if (window.confirm(`Clôturer l'exercice ${libelleExercice} (${debutExercice.toLocaleDateString('fr-FR')} → ${finExercice.toLocaleDateString('fr-FR')}) ? Les comptes de gestion seront soldés vers 120.`)) run(retours.c, `Exercice ${libelleExercice} clôturé.`, () => ext.cloturerExercice(
+                debutExercice.toISOString(),
+                finExercice.toISOString(),
+              )); }}>
+              Clôturer l'exercice {libelleExercice}
             </Button>
             <a href="/api/compta/export?type=fec" className="text-sm px-3 py-1.5 border rounded-md hover:bg-gray-50">⬇ Export FEC (CSV)</a>
             <a href="/api/compta/export?type=balance" className="text-sm px-3 py-1.5 border rounded-md hover:bg-gray-50">⬇ Balance (CSV)</a>
           </div>
         </SectionBlock>
+        </>)}
     </div>
   );
 }

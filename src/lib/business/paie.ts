@@ -107,8 +107,11 @@ export async function traiterBulletinPaieCore(ctx: Ctx, bulletinId: string, deci
   // Silencieux si le plan comptable n'est pas initialisé.
   let ecriturePaie: string | null = null;
   if (decision === 'valide') {
+    // F20 FIX — la regex tolérait « plan vide / compte absent » mais PAS
+    // « journal …introuvable » : valider un bulletin sans journal PAie
+    // faisait ÉCHOUER toute la validation RH au lieu de passer outre.
     try { ecriturePaie = (await passerEcriturePaieCore(ctx, bulletinId)).ecritureId; }
-    catch (e: any) { if (!/PLAN_VIDE|compte .*absent/i.test(String(e?.message))) throw e; }
+    catch (e: any) { if (!/PLAN_VIDE|compte .*absent|journal/i.test(String(e?.message))) throw e; }
   }
   await logAction(db, b.ecoleId, ctx.utilisateurId, `paie.${decision}`, 'bulletin_paie', bulletinId, { ecriturePaie });
   return { bulletinId, statut: decision, ecriturePaie };
@@ -156,7 +159,10 @@ export async function creerEcritureCore(ctx: Ctx, ecoleId: string, input: { jour
     if ((l.debit ?? 0) < 0 || (l.credit ?? 0) < 0) throw new ActionError('Montants négatifs interdits.', 'MONTANT_INVALIDE');
   }
 
-  const numero = input.numeroPiece?.trim() || `OD-${Date.now().toString(36).toUpperCase()}`;
+  // F24 FIX — le préfixe du numéro de pièce suit le JOURNAL réellement
+  // sélectionné (VE/ACH/CA/BQ/OD/PA) : avant, toute écriture manuelle
+  // recevait « OD-… » même passée en journal Ventes ou Banque.
+  const numero = input.numeroPiece?.trim() || `${journal.code}-${Date.now().toString(36).toUpperCase()}`;
   const ecriture = await db.ecritureComptable.create({
     data: {
       ecoleId, journalId: input.journalId, date: input.date, libelle: input.libelle, numeroPiece: numero, statut: 'brouillon',
@@ -181,8 +187,17 @@ export async function validerEcritureCore(ctx: Ctx, ecritureId: string) {
   await db.$transaction(async (tx) => {
     await tx.ecritureComptable.update({ where: { id: ecritureId }, data: { statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date() } });
     // Application aux soldes des comptes
-    for (const l of e.lignes) {
-      await tx.compteComptable.update({ where: { id: l.compteId }, data: { solde: { increment: l.debit - l.credit } } });
+    // F7 FIX — le sens du solde dépend du TYPE de compte, comme partout
+    // ailleurs (passerEcritureInterne, encaissements auto…) : actif/charge →
+    // +(D−C) ; passif/capitaux/produit → +(C−D). L'ancien code incrémentait
+    // D−C brut sur TOUS les comptes → passif et produits inversés dès la
+    // première écriture brouillon validée manuellement.
+    const parCompte = new Map<string, number>();
+    for (const l of e.lignes) parCompte.set(l.compteId, (parCompte.get(l.compteId) ?? 0) + l.debit - l.credit);
+    for (const [compteId, net] of parCompte) {
+      const compte = await tx.compteComptable.findUnique({ where: { id: compteId }, select: { type: true } });
+      const delta = compte && ['actif', 'charge'].includes(compte.type) ? net : -net;
+      await tx.compteComptable.update({ where: { id: compteId }, data: { solde: { increment: delta } } });
     }
   });
   await logAction(db, e.ecoleId, ctx.utilisateurId, 'compta.ecriture_validation', 'ecriture_comptable', ecritureId);

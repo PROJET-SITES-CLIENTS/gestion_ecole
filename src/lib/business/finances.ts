@@ -81,9 +81,21 @@ export async function encaisserPaiementCore(ctx: Ctx, input: EncaissementInput) 
   // contrôle du restant dû, création du paiement et allocation.
   const résultat = await avecVerrou(`fin:${input.eleveId}`, () => avecRetryConflit(() => db.$transaction(async (tx) => {
     const dejaEncaisse = await tx.paiement.findUnique({ where: { referenceTransaction: reference } });
-    if (dejaEncaisse && !dejaEncaisse.annule) {
-      // Tentative précédente COMMITÉE malgré l'erreur rapportée : rien à refaire.
-      return { paiementId: dejaEncaisse.id, reference, alloue: 0, dejaEncaisse: true };
+    if (dejaEncaisse) {
+      // Idempotence (T2) : MÊME élève + MÊME montant + non annulé → retry d'une
+      // tentative précédente dont le COMMIT a réussi → rien à refaire.
+      if (!dejaEncaisse.annule && dejaEncaisse.eleveId === input.eleveId && dejaEncaisse.montant === input.montant) {
+        return { paiementId: dejaEncaisse.id, reference, alloue: 0, dejaEncaisse: true };
+      }
+      // F10 FIX — collision de référence : une référence déjà portée par un
+      // AUTRE paiement (autre élève, autre montant, ou paiement annulé — la
+      // colonne est @unique) ne doit JAMAIS être réabsorbée silencieusement :
+      // l'ancien code renvoyait « déjà encaissé » et le paiement était PERDU
+      // (ou l'insert explosait en P2002 sur un paiement annulé).
+      throw new ActionError(
+        `La référence « ${reference} » est déjà utilisée par un autre paiement${dejaEncaisse.annule ? ' annulé' : ''}. Utilisez une référence différente.`,
+        'REFERENCE_COLLISION',
+      );
     }
     const toutes = await tx.echeanceFrais.findMany({
       where: { eleveId: input.eleveId, statut: { in: ['impayee', 'partiel'] } },
@@ -251,31 +263,44 @@ export async function annulerPaiementCore(ctx: Ctx, paiementId: string, motif: s
     });
     // 2bis) AUDIT COMPTA — écriture INVERSE (débit 411, crédit 571/521 selon
     // le mode d'origine) : l'annulation remet la créance due et sort la trésorerie.
+    // F11 FIX — on ne passe l'extourne QUE si l'écriture d'ORIGINE existe
+    // (pièce ENC-<id>) et si aucune extourne n'existe déjà. Avant : l'annulation
+    // bookait systématiquement ANN-<id>, même pour un encaissement jamais
+    // comptabilisé (plan initialisé après coup) → trésorerie et clients
+    // amputés d'un flux que la comptabilité n'avait jamais enregistré.
     try {
-      const comptesTreso = await tx.compteComptable.findMany({ where: { ecoleId: p.ecoleId, numero: { in: ['571', '521', '411'] } } });
-      const parNum = new Map(comptesTreso.map((c: any) => [c.numero, c]));
-      const treso = /esp|mobile|cash/i.test(p.modePaiement) ? parNum.get('571') ?? parNum.get('521') : parNum.get('521') ?? parNum.get('571');
-      const clientsC = parNum.get('411');
-      const journalVE = await tx.journalComptable.findFirst({ where: { ecoleId: p.ecoleId, code: 'VE' } });
-      if (treso && clientsC && journalVE) {
-        await tx.ecritureComptable.create({
-          data: {
-            ecoleId: p.ecoleId, journalId: journalVE.id, date: new Date(),
-            numeroPiece: `ANN-${p.id.slice(-10)}`,
-            libelle: `Annulation encaissement ${p.referenceTransaction ?? p.id} : ${motif.trim().slice(0, 60)}`,
-            statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
-            lignes: {
-              create: [
-                { compteId: clientsC.id, libelle: 'Clients — familles (annulation)', debit: p.montant, credit: 0 },
-                { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse (annulation)' : 'Banque (annulation)', debit: 0, credit: p.montant },
-              ],
+      const pieceOrigine = `ENC-${p.id.slice(-10)}`;
+      const pieceAnnulation = `ANN-${p.id.slice(-10)}`;
+      const [origine, extourneExistante] = await Promise.all([
+        tx.ecritureComptable.findFirst({ where: { ecoleId: p.ecoleId, numeroPiece: pieceOrigine } }),
+        tx.ecritureComptable.findFirst({ where: { ecoleId: p.ecoleId, numeroPiece: pieceAnnulation } }),
+      ]);
+      if (origine && !extourneExistante) {
+        const comptesTreso = await tx.compteComptable.findMany({ where: { ecoleId: p.ecoleId, numero: { in: ['571', '521', '411'] } } });
+        const parNum = new Map(comptesTreso.map((c: any) => [c.numero, c]));
+        const treso = /esp|mobile|cash/i.test(p.modePaiement) ? parNum.get('571') ?? parNum.get('521') : parNum.get('521') ?? parNum.get('571');
+        const clientsC = parNum.get('411');
+        const journalVE = await tx.journalComptable.findFirst({ where: { ecoleId: p.ecoleId, code: 'VE' } });
+        if (treso && clientsC && journalVE) {
+          await tx.ecritureComptable.create({
+            data: {
+              ecoleId: p.ecoleId, journalId: journalVE.id, date: new Date(),
+              numeroPiece: pieceAnnulation,
+              libelle: `Annulation encaissement ${p.referenceTransaction ?? p.id} : ${motif.trim().slice(0, 60)}`,
+              statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+              lignes: {
+                create: [
+                  { compteId: clientsC.id, libelle: 'Clients — familles (annulation)', debit: p.montant, credit: 0 },
+                  { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse (annulation)' : 'Banque (annulation)', debit: 0, credit: p.montant },
+                ],
+              },
             },
-          },
-        });
-        const deltaTreso = ['actif', 'charge'].includes(treso.type) ? -p.montant : p.montant;
-        const deltaClients = ['actif', 'charge'].includes(clientsC.type) ? p.montant : -p.montant;
-        await tx.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: deltaTreso } } });
-        await tx.compteComptable.update({ where: { id: clientsC.id }, data: { solde: { increment: deltaClients } } });
+          });
+          const deltaTreso = ['actif', 'charge'].includes(treso.type) ? -p.montant : p.montant;
+          const deltaClients = ['actif', 'charge'].includes(clientsC.type) ? p.montant : -p.montant;
+          await tx.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: deltaTreso } } });
+          await tx.compteComptable.update({ where: { id: clientsC.id }, data: { solde: { increment: deltaClients } } });
+        }
       }
     } catch { /* plan absent — comptabilité non activée */ }
     // 3) Remboursement : émission d'un avoir (F3).

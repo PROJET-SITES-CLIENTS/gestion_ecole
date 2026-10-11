@@ -34,20 +34,25 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
   const devise = initialData.ecole?.devise ?? 'XOF';
   const { run, Message, pending } = useActionFeedback();
 
-  // B2 — COMPTABILITÉ : le plan comptable n'est pas chargé dans initialData,
-  // on dérive comptes et journaux des écritures existantes (dédupliqués).
-  const comptesComptables: any[] = Object.values(
+  // B2 — COMPTABILITÉ : le portail comptable charge le plan complet et les
+  // journaux dans initialData (loader par-portail). F18 FIX — l'ancien code
+  // IGNORAIT ces listes et les dérivait des écritures existantes : avec
+  // zéro écriture, les selects de saisie étaient VIDES (impossible de passer
+  // la première écriture). On utilise le plan chargé, avec repli dérivé.
+  const comptesDerives = Object.values(
     ecritures.flatMap((e: any) => e.lignes ?? []).reduce((acc: Record<string, any>, l: any) => {
       if (l.compte && !acc[l.compte.id]) acc[l.compte.id] = l.compte;
       return acc;
     }, {}),
   );
-  const journauxComptables: any[] = Object.values(
+  const journauxDerives = Object.values(
     ecritures.reduce((acc: Record<string, any>, e: any) => {
       if (e.journal && !acc[e.journal.id]) acc[e.journal.id] = e.journal;
       return acc;
     }, {}),
   );
+  const comptesComptables: any[] = initialData.comptesComptables?.length ? initialData.comptesComptables : comptesDerives;
+  const journauxComptables: any[] = initialData.journauxComptables?.length ? initialData.journauxComptables : journauxDerives;
   const ecrituresValides = ecritures.filter((e: any) => e.statut === 'valide');
   const totalDebitValide = ecrituresValides.reduce((s: number, e: any) => s + (e.lignes ?? []).reduce((s2: number, l: any) => s2 + (l.debit ?? 0), 0), 0);
 
@@ -397,7 +402,7 @@ export default function FinancesModule({ initialData }: { initialData: any }) {
           <div className="overflow-x-auto grid grid-cols-1 md:grid-cols-3 gap-3">
             <StatCard title="Écritures" value={ecritures.length} sub={`${ecrituresValides.length} validée(s) · ${ecritures.filter((e: any) => e.statut === 'brouillon').length} brouillon(s)`} icon={BookOpen} color="blue" />
             <StatCard title="Total débit (valides)" value={formatXOF(totalDebitValide, devise)} sub="débit = crédit (partie double)" icon={Landmark} color="emerald" />
-            <StatCard title="Comptes actifs" value={comptesComptables.filter((c: any) => c.actif !== false).length} sub="issus des écritures du journal" icon={Calculator} color="purple" />
+            <StatCard title="Comptes actifs" value={comptesComptables.filter((c: any) => c.actif !== false).length} sub="plan comptable de l'école" icon={Calculator} color="purple" />
           </div>
 
           <SectionBlock
