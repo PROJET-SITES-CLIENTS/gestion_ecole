@@ -510,7 +510,12 @@ const outilsAction: OutilIA[] = [
         roleCode: { type: 'string', description: 'Rôle métier', enum: ['enseignant', 'surveillant', 'secretariat', 'comptabilite', 'rh', 'censeur', 'infirmier', 'assistant_direction', 'direction'] },
       }, ['nom', 'prenom', 'dateEmbauche', 'roleCode']),
       executer: async (ctx, args) => {
-        return biz.creerPersonnelCore(ctx as never, ctx.ecoleId!, {
+        // RH-4 FIX — avant : mot de passe CONSTANT ('Scola<année>!') lisible
+        // dans le code → quiconque connaissait l'email rentrait. Désormais
+        // aléatoire, retourné UNE seule fois à l'opérateur.
+        const { genererMotDePasse } = await import('@/lib/auth-hash');
+        const mdp = genererMotDePasse(12);
+        const r = await biz.creerPersonnelCore(ctx as never, ctx.ecoleId!, {
           nom: String(args.nom),
           prenom: String(args.prenom),
           email: args.email ? String(args.email) : undefined,
@@ -520,8 +525,11 @@ const outilsAction: OutilIA[] = [
           salaireBrut: args.salaireMensuel ? Math.round(Number(args.salaireMensuel) * 100) : undefined,
           roleCode: String(args.roleCode),
           creerCompte: !!args.email,
-          motDePasseInitial: args.email ? 'Scola' + new Date().getFullYear() + '!' : undefined,
+          motDePasseInitial: args.email ? mdp : undefined,
         } as never);
+        return args.email
+          ? { ...r, motDePasseTemporaire: mdp, note: 'Mot de passe à communiquer au personnel maintenant — il ne sera plus affiché.' }
+          : r;
       },
     },
     {

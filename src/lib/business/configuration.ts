@@ -164,6 +164,9 @@ export type DonneesPersonnel = {
   diplomePrincipal?: string;
   numeroSecuriteSociale?: string;
   contactUrgence?: string;
+  fonction?: string; // RH-15 — poste exercé (certificats, attestations, entretiens)
+  rib?: string; // RH-16 — RIB/IBAN pour l'export des virements de paie
+  perimetreSecretariat?: 'primaire' | 'secondaire' | null; // RH-31
   statut?: string;
 };
 
@@ -174,22 +177,30 @@ export async function modifierPersonnelCore(ctx: Ctx, personnelId: string, donne
   assertTenant(pers.ecoleId, ctx, 'Ce personnel');
   if (donnees.nom !== undefined && !donnees.nom.trim()) throw new ActionError('Le nom ne peut pas être vide.', 'CHAMP_INVALIDE');
   if (donnees.salaireBrut !== undefined && donnees.salaireBrut < 0) throw new ActionError('Le salaire ne peut pas être négatif.', 'CHAMP_INVALIDE');
-  // AUDIT RH — historisation : un changement de salaire ou de type de contrat
-  // clôture le contrat courant et en ouvre un nouveau (l'historique des
-  // salaires dans ContratPersonnel reste ainsi complet, comme le renouvellement)
+  // AUDIT RH — historisation : un changement RÉEL de salaire ou de type de
+  // contrat clôture le contrat courant et en ouvre un nouveau.
+  // RH-10 FIX — on historise SEULEMENT si la valeur CHANGE : le formulaire de
+  // modification renvoie toujours les champs pré-remplis, l'ancien code créait
+  // un ContratPersonnel à CHAQUE enregistrement, même sans changement.
   if (donnees.salaireBrut !== undefined || donnees.typeContrat !== undefined) {
     const contratActif = await db.contratPersonnel.findFirst({ where: { personnelId, actif: true }, orderBy: { dateDebut: 'desc' } });
-    if (contratActif) {
-      await db.contratPersonnel.update({ where: { id: contratActif.id }, data: { actif: false, dateFin: new Date() } });
+    const salaireChange = donnees.salaireBrut !== undefined && donnees.salaireBrut !== pers.salaireBrut
+      && donnees.salaireBrut !== (contratActif?.salaireBrut ?? null);
+    const typeChange = !!donnees.typeContrat && donnees.typeContrat !== pers.typeContrat
+      && donnees.typeContrat !== (contratActif?.typeContrat ?? null);
+    if (salaireChange || typeChange) {
+      if (contratActif) {
+        await db.contratPersonnel.update({ where: { id: contratActif.id }, data: { actif: false, dateFin: new Date() } });
+      }
+      await db.contratPersonnel.create({
+        data: {
+          personnelId,
+          typeContrat: donnees.typeContrat ?? contratActif?.typeContrat ?? pers.typeContrat ?? 'CDI',
+          salaireBrut: donnees.salaireBrut ?? pers.salaireBrut ?? contratActif?.salaireBrut ?? 0,
+          dateDebut: new Date(),
+        },
+      });
     }
-    await db.contratPersonnel.create({
-      data: {
-        personnelId,
-        typeContrat: donnees.typeContrat ?? contratActif?.typeContrat ?? pers.typeContrat ?? 'CDI',
-        salaireBrut: donnees.salaireBrut ?? pers.salaireBrut ?? contratActif?.salaireBrut ?? 0,
-        dateDebut: new Date(),
-      },
-    });
   }
   const maj = await db.personnel.update({
     where: { id: personnelId },
@@ -205,7 +216,13 @@ export async function modifierPersonnelCore(ctx: Ctx, personnelId: string, donne
       ...(donnees.salaireBrut !== undefined ? { salaireBrut: donnees.salaireBrut } : {}),
       ...(donnees.diplomePrincipal !== undefined ? { diplomePrincipal: donnees.diplomePrincipal.trim() || null } : {}),
       ...(donnees.numeroSecuriteSociale !== undefined ? { numeroSecuriteSociale: donnees.numeroSecuriteSociale.trim() || null } : {}),
-      ...(donnees.contactUrgence !== undefined ? { contactUrgence: donnees.contactUrgence.trim() || null } : {}),
+      // RH-28 FIX — contactUrgence est une colonne JSON : le téléphone saisi
+      // est enveloppé ({ telephone }), plus stocké en texte brut invalide.
+      ...(donnees.contactUrgence !== undefined ? { contactUrgence: donnees.contactUrgence.trim() ? JSON.stringify({ telephone: donnees.contactUrgence.trim() }) : null } : {}),
+      // RH-15 / RH-16 / RH-31 — fonction + RIB + périmètre persistés
+      ...(donnees.fonction !== undefined ? { fonction: donnees.fonction.trim() || null } : {}),
+      ...(donnees.rib !== undefined ? { rib: donnees.rib.trim() || null } : {}),
+      ...(donnees.perimetreSecretariat !== undefined ? { perimetreSecretariat: donnees.perimetreSecretariat } : {}),
       ...(donnees.statut !== undefined && donnees.statut ? { statut: donnees.statut } : {}),
     },
   });
@@ -228,9 +245,14 @@ export async function supprimerPersonnelCore(ctx: Ctx, personnelId: string) {
   });
   if (!pers) throw new ActionError('Personnel introuvable.', 'INTROUVABLE');
   assertTenant(pers.ecoleId, ctx, 'Ce personnel');
-  if (pers._count.bulletinPaies > 0 || pers._count.contrats > 0) {
+  // RH-9 FIX — le contrat INITIAL créé à l'embauche ne bloque plus la
+  // suppression (il est supprimable avec la fiche) : seuls un HISTORIQUE
+  // (plusieurs contrats = renouvellements/avenants) ou des bulletins de paie
+  // la refusent. Avant : aucune fiche n'était supprimable, jamais.
+  const aHistorique = pers._count.contrats > 1;
+  if (pers._count.bulletinPaies > 0 || aHistorique) {
     throw new ActionError(
-      'Suppression impossible : ce personnel a un historique de paie ou de contrats. Utilisez plutôt « Sortie formelle » (statut sorti) pour préserver l\'historique.',
+      'Suppression impossible : ce personnel a un historique de paie ou de contrats (renouvellements/avenants). Utilisez plutôt « Sortie formelle » (statut sorti) pour préserver l\'historique.',
       'SUPPRESSION_BLOQUEE',
     );
   }

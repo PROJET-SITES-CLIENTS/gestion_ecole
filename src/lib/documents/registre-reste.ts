@@ -770,12 +770,17 @@ const docsRh: ModeleDoc[] = [
       const p = await personnelComplet(c.identite.ecoleId, c.p.personnelId);
       const contrat = p.contrats?.[0];
       const sal = contrat?.salaireBrut ?? p.salaireBrut;
+      // RH-8 FIX — le net est déduit du TAUX SALARIAL RÉEL de l'école (défaut
+      // IPM/RC 5,24 %), plus un coefficient 0,79 codé dur qui sous-évaluait
+      // le salaire déclaré d'environ 16 % dans un document bancaire officiel.
+      const configPaie = await db.configurationPaie.findUnique({ where: { ecoleId: c.identite.ecoleId } });
+      const tauxSalarie = configPaie?.tauxSalarie ?? 0.0524;
       return {
         titre: 'Attestation de travail',
         corps: trameAttestation({
           titre: c.p.avecSalaire === 'oui' ? 'Attestation de travail et de rémunération' : 'Attestation de travail',
           intro: `L'établissement <b>${echapper(c.identite.nom)}</b> atteste que ${echapper(p.prenom)} ${echapper(String(p.nom).toUpperCase())} est employé(e) au sein de l'établissement depuis le <b>${dateFr(p.dateEmbauche)}</b> en qualité de <b>${echapper(p.fonction || 'membre du personnel')}</b>, sous contrat ${echapper(p.typeContrat || '—')}${c.p.destinataire ? `, et ce à l'attention de ${echapper(c.p.destinataire)}` : ''}.`,
-          blocsHtml: c.p.avecSalaire === 'oui' && sal ? tableauKV([['Rémunération brute mensuelle', `<b>${formatXOF(sal)}</b>`], ['Rémunération nette mensuelle moyenne', formatXOF(Math.round(sal * 0.79))]]) : '',
+          blocsHtml: c.p.avecSalaire === 'oui' && sal ? tableauKV([['Rémunération brute mensuelle', `<b>${formatXOF(sal)}</b>`], ['Rémunération nette mensuelle moyenne', formatXOF(Math.round(sal * (1 - tauxSalarie)))]]) : '',
           finale: 'La présente attestation est délivrée à l\'intéressé(e) pour servir et valoir ce que de droit, sans engagement de l\'employeur au-delà des informations constatées.',
         }) + zoneSignature(c.identite),
       };

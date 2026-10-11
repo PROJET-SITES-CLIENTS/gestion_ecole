@@ -5,7 +5,7 @@
 // évaluations du personnel.
 // ====================================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GraduationCap, Users, CalendarOff, FileText, Banknote, CalendarClock, Briefcase, UserPlus } from 'lucide-react';
 import { PageHeader, StatCard, DataTable, StatusBadge, SectionBlock, InfoRow, EmptyState, ModalForm, CreateButton, useActionFeedback } from '@/components/shared-ui';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import * as actionsComp from '@/app/actions/completions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { formatXOF, formatDate, initiales } from '@/lib/format';
+import { telechargerCsv } from '@/lib/cockpit'; // RH-16 — export virements paie
 
 export default function PersonnelModule({ initialData }: { initialData: any }) {
   const [statsRh, setStatsRh] = useState<any>(null);
@@ -37,6 +38,8 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
   const moisCourant = new Date().toISOString().slice(0, 7);
   const [moisPaie, setMoisPaie] = useState(moisCourant);
   const [detailGeneration, setDetailGeneration] = useState<string | null>(null);
+  // RH-30 FIX — filtre par période (avant : toutes les périodes mélangées)
+  const [periodeFiltre, setPeriodeFiltre] = useState<string>('toutes');
   const portal = initialData.session?.portal;
   const estDirection = portal === 'direction' || portal === 'super_admin';
 
@@ -49,6 +52,9 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
   const dernierePeriode = bulletinsPaie.reduce((max: string | null, b: any) => (!max || (b.periode ?? '') > max ? b.periode : max), null as string | null);
   const bulletinsDernierePeriode = bulletinsPaie.filter((b: any) => b.periode === dernierePeriode);
   const totalNetDernierePeriode = bulletinsDernierePeriode.reduce((s: number, b: any) => s + (b.netAPayer ?? 0), 0);
+  // RH-30 — périodes distinctes + tableau filtré
+  const periodesDisponibles = ([...new Set(bulletinsPaie.map((b: any) => b.periode).filter(Boolean))] as string[]).sort().reverse();
+  const bulletinsAffiches = periodeFiltre === 'toutes' ? bulletinsPaie : bulletinsPaie.filter((b: any) => b.periode === periodeFiltre);
 
   // Soldes de congés : le plus récent par personnel (jours restants / droits acquis)
   const soldeParPersonnel = new Map<string, any>();
@@ -69,6 +75,13 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
       return r;
     }, 'Génération de la paie terminée');
   }
+
+  // RH-17 — pilotage RH chargé automatiquement à l'ouverture du module
+  useEffect(() => {
+    let actif = true;
+    actionsExt.statsRh().then((r: any) => { if (actif && r?.ok) setStatsRh(r); }).catch(() => undefined);
+    return () => { actif = false; };
+  }, []);
 
   const rolesParPersonnel = (pid: string) => roles.filter((r: any) => r.ecoleId !== null && personnels.find((p: any) => p.id === pid)?.utilisateurId);
 
@@ -169,6 +182,8 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               ], required: true },
               { name: 'salaireBrut', label: 'Salaire brut (XOF)', type: 'number', required: true },
               { name: 'diplomePrincipal', label: 'Diplôme principal' },
+              // RH-15 — fonction/poste : alimente certificat de travail, attestations, entretiens
+              { name: 'fonction', label: 'Fonction / poste (ex: Censeur, Professeur de maths…)' },
               { name: 'roleCode', label: 'Rôle (détermine ses accès)', type: 'select', options: [
                 { value: 'enseignant', label: '👨‍🏫 Enseignant (appel, notes, devoirs, incidents)' },
                 { value: 'secretariat', label: '📝 Secrétariat (inscriptions, admissions, documents)' },
@@ -197,7 +212,9 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
 
       <div className="overflow-x-auto grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard title="Personnels actifs" value={personnels.filter((p: any) => p.statut === 'actif').length} icon={Users} color="emerald" />
-        <StatCard title="Congés en cours" value={personnelConges.filter((c: any) => c.statut === 'demande' || c.statut === 'valide').length} icon={CalendarOff} color="amber" />
+        {/* RH-13 FIX — KPI GLOBAL (avant : mesuré sur le SEUL personnel
+            sélectionné dans la liste) */}
+        <StatCard title="Congés en cours" value={conges.filter((c: any) => c.statut === 'demande' || c.statut === 'valide').length} sub={`${conges.filter((c: any) => c.statut === 'demande').length} en attente`} icon={CalendarOff} color="amber" />
         <StatCard title="Remplacements" value={remplacements.length} icon={FileText} color="blue" />
         <StatCard title="Évaluations RH" value={evaluationsRh.length} icon={GraduationCap} color="purple" />
       </div>
@@ -299,6 +316,8 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                       <InfoRow label="Téléphone" value={personnel.telephone} />
                       <InfoRow label="Date d'embauche" value={formatDate(personnel.dateEmbauche)} />
                       <InfoRow label="Type de contrat" value={personnel.typeContrat} />
+                      {/* RH-15 — fonction enfin portée par la fiche et les documents */}
+                      <InfoRow label="Fonction" value={personnel.fonction ?? '—'} />
                       <InfoRow label="Salaire brut" value={formatXOF(personnel.salaireBrut, 'XOF')} />
                       <InfoRow label="Diplôme principal" value={personnel.diplomePrincipal} />
                       {afficheSoldes && soldeParPersonnel.get(personnel.id) && (
@@ -321,6 +340,22 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                           { key: 'statut', label: 'Statut', render: (c) => <StatusBadge statut={c.statut} /> },
                         ]}
                         rows={personnelConges}
+                      />
+                    )}
+                  </CardContent></Card>
+
+                  {/* RH-14 FIX — les remplacements étaient calculés puis jamais
+                      affichés : la fiche complète les montre désormais */}
+                  <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Remplacements (cette personne absente)</CardTitle></CardHeader><CardContent>
+                    {personnelRemplacements.length === 0 ? <p className="text-sm text-gray-500">Aucun remplacement</p> : (
+                      <DataTable
+                        columns={[
+                          { key: 'remplacant', label: 'Remplaçant', render: (r) => { const p = personnels.find((x: any) => x.id === r.personnelRemplacantId); return p ? `${p.prenom} ${p.nom}` : '—'; } },
+                          { key: 'dateDebut', label: 'Du', render: (r) => formatDate(r.dateDebut) },
+                          { key: 'dateFin', label: 'Au', render: (r) => formatDate(r.dateFin) },
+                          { key: 'statut', label: 'Statut', render: (r) => <StatusBadge statut={r.statut} /> },
+                        ]}
+                        rows={personnelRemplacements}
                       />
                     )}
                   </CardContent></Card>
@@ -413,7 +448,17 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                           ] },
                           { name: 'salaireBrut', label: 'Salaire brut (XOF)', type: 'number' },
                           { name: 'diplomePrincipal', label: 'Diplôme principal' },
-                          { name: 'contactUrgence', label: "Contact d'urgence" },
+                          // RH-15 — fonction éditable après création
+                          { name: 'fonction', label: 'Fonction / poste' },
+                          // RH-16 — RIB éditable (alimente l'export des virements de paie)
+                          { name: 'rib', label: 'RIB / IBAN (virements de paie)' },
+                          { name: 'contactUrgence', label: "Contact d'urgence (téléphone)" },
+                          // RH-31 — périmètre secrétariat éditable après création
+                          { name: 'perimetreSecretariat', label: 'Périmètre (si secrétariat scindé)', type: 'select', options: [
+                            { value: '', label: 'École entière (secrétariat unique)' },
+                            { value: 'primaire', label: 'Primaire uniquement (maternelle incluse)' },
+                            { value: 'secondaire', label: 'Secondaire uniquement (collège + lycée)' },
+                          ] },
                         ]}
                         defaultValues={{
                           personnelId: personnel.id,
@@ -426,7 +471,10 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                           typeContrat: personnel.typeContrat ?? 'CDI',
                           salaireBrut: personnel.salaireBrut != null ? String(Math.round(personnel.salaireBrut / 100)) : '',
                           diplomePrincipal: personnel.diplomePrincipal ?? '',
-                          contactUrgence: personnel.contactUrgence ?? '',
+                          fonction: personnel.fonction ?? '',
+                          rib: personnel.rib ?? '',
+                          contactUrgence: contactUrgenceTexte(personnel.contactUrgence),
+                          perimetreSecretariat: personnel.perimetreSecretariat ?? '',
                         }}
                         action={actionsExt.modifierPersonnel}
                       />
@@ -434,7 +482,7 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                         variant="outline" size="sm" className="text-rose-600 hover:text-rose-700"
                         disabled={pending}
                         onClick={() => {
-                          if (!window.confirm(`Supprimer définitivement la fiche de ${personnel.prenom} ${personnel.nom} ?\n\nLe compte d'accès sera désactivé. Refusé si un historique de paie ou de contrats existe (utilisez alors « Sortie formelle »).`)) return;
+                          if (!window.confirm(`Supprimer définitivement la fiche de ${personnel.prenom} ${personnel.nom} ?\n\nLe compte d'accès sera désactivé. Refusé si des bulletins de paie ou des renouvellements de contrat existent (utilisez alors « Sortie formelle »).`)) return;
                           run(() => actionsExt.supprimerPersonnel(personnel.id), 'Fiche personnel supprimée.');
                         }}
                       >
@@ -487,17 +535,25 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actions.annulerConge(c.id), 'Demande annulée')}>Annuler</Button>
                     </div>
                   ) : c.statut === 'valide' ? (
-                    <ModalForm
-                      trigger={<Button size="sm" variant="outline">Remplacement</Button>}
-                      title="Planifier le remplacement"
-                      fields={[
-                        { name: 'congeId', type: 'hidden', label: 'Congé', defaultValue: c.id },
-                        { name: 'personnelRemplacantId', label: 'Remplaçant', type: 'select', options: personnels.filter((p: any) => p.id !== c.personnelId && p.statut === 'actif').map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })), required: true },
-                        { name: 'dateDebut', label: 'Du', type: 'date', defaultValue: c.dateDebut?.toISOString().slice(0, 10), required: true },
-                        { name: 'dateFin', label: 'Au', type: 'date', defaultValue: c.dateFin?.toISOString().slice(0, 10), required: true },
-                      ]}
-                      action={actions.assignerRemplacement}
-                    />
+                    <div className="flex gap-1 items-center">
+                      <ModalForm
+                        trigger={<Button size="sm" variant="outline">Remplacement</Button>}
+                        title="Planifier le remplacement"
+                        fields={[
+                          { name: 'congeId', type: 'hidden', label: 'Congé', defaultValue: c.id },
+                          { name: 'personnelRemplacantId', label: 'Remplaçant', type: 'select', options: personnels.filter((p: any) => p.id !== c.personnelId && p.statut === 'actif').map((p: any) => ({ value: p.id, label: `${p.prenom} ${p.nom}` })), required: true },
+                          { name: 'dateDebut', label: 'Du', type: 'date', defaultValue: c.dateDebut?.toISOString().slice(0, 10), required: true },
+                          { name: 'dateFin', label: 'Au', type: 'date', defaultValue: c.dateFin?.toISOString().slice(0, 10), required: true },
+                        ]}
+                        action={actions.assignerRemplacement}
+                      />
+                      {/* RH-19 UI — annulation possible d'un congé VALIDÉ :
+                          le core reverse les jours au solde */}
+                      <Button size="sm" variant="outline" className="text-rose-600 hover:text-rose-700" disabled={pending}
+                        onClick={() => { if (window.confirm('Annuler ce congé validé ? Les jours décomptés seront reversés au solde de congés.')) run(() => actions.annulerConge(c.id), 'Congé annulé — jours reversés au solde.'); }}>
+                        Annuler
+                      </Button>
+                    </div>
                   ) : null,
                 },
               ]}
@@ -560,10 +616,40 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               <Button type="submit" disabled={pending} className="bg-emerald-600 hover:bg-emerald-700">
                 {pending ? 'Génération…' : 'Générer les bulletins du mois'}
               </Button>
+              {/* RH-16 FIX — export des virements ENFIN câblé : l'action existait
+                  mais aucun bouton ne l'appelait (et le RIB n'était pas
+                  saisignable → export vide) */}
+              <Button type="button" variant="outline" disabled={pending}
+                onClick={() => run(async () => {
+                  const r: any = await actionsComp.exporterVirementsPaie(moisPaie);
+                  if (r?.ok && r.csv) {
+                    const lignes = String(r.csv).split('\n').map((l: string) => l.split(';'));
+                    telechargerCsv(`virements-paie-${moisPaie}.csv`, lignes[0] ?? [], lignes.slice(1));
+                    setDetailGeneration(`Virements ${moisPaie} : ${r.bulletins} bulletin(s) exporté(s) · ${r.sansRib} sans RIB ignoré(s).`);
+                  }
+                  return r;
+                }, 'Export des virements généré.')}>
+                ⬇ Export virements banque
+              </Button>
             </form>
             {detailGeneration && (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 mb-4" role="status">
                 {detailGeneration}
+              </div>
+            )}
+
+            {/* RH-30 — filtre période (défaut : dernière période générée) */}
+            {periodesDisponibles.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                <span className="text-xs text-gray-500">Période :</span>
+                <button onClick={() => setPeriodeFiltre('toutes')} className={`px-2.5 py-1 rounded-full text-xs border ${periodeFiltre === 'toutes' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                  Toutes ({bulletinsPaie.length})
+                </button>
+                {periodesDisponibles.slice(0, 12).map((p: string) => (
+                  <button key={p} onClick={() => setPeriodeFiltre(p)} className={`px-2.5 py-1 rounded-full text-xs border ${periodeFiltre === p ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                    {p} ({bulletinsPaie.filter((b: any) => b.periode === p).length})
+                  </button>
+                ))}
               </div>
             )}
 
@@ -577,21 +663,24 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
                 { key: 'statut', label: 'Statut', render: (b) => b.statut === 'paye' ? <StatusBadge statut="payee" label="Payé" /> : b.statut === 'valide' ? <StatusBadge statut="confirme" label="Validé" /> : <StatusBadge statut="en_attente" label="Brouillon" /> },
                 {
                   key: 'actions', label: 'Action', render: (b) => b.statut === 'brouillon' ? (
-                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actionsExt.traiterBulletinPaie(b.id, 'valide'), 'Bulletin validé')}>Valider</Button>
+                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actionsExt.traiterBulletinPaie(b.id, 'valide'), 'Bulletin validé (écriture de paie passée si comptabilité active)')}>Valider</Button>
                   ) : b.statut === 'valide' ? (
-                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actionsExt.traiterBulletinPaie(b.id, 'paye'), 'Bulletin marqué payé')}>Marquer payé</Button>
+                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => actionsExt.traiterBulletinPaie(b.id, 'paye'), 'Bulletin payé — règlement comptabilisé (D 421 / C trésorerie)')}>Marquer payé</Button>
                   ) : null,
                 },
               ]}
-              rows={bulletinsPaie}
+              rows={bulletinsAffiches}
               emptyLabel="Aucun bulletin — générez la paie du mois ci-dessus"
             />
           </SectionBlock>
 
-          {estDirection && (
+          {/* RH-29 FIX — la configuration des taux exige rh.gerer : visible du
+              portail RH (avant : direction uniquement, alors que le cœur
+              l'autorisait déjà aux RH) */}
+          {(estDirection || portal === 'rh') && (
             <SectionBlock
               title="Configuration de la paie"
-              description="Taux de cotisations sociales appliqués lors de la génération des bulletins"
+              description="Taux de cotisations sociales appliqués lors de la génération des bulletins — les primes récurrentes éventuelles s'appliquent à tout le personnel (utilisez les variables de paie pour un montant individuel)"
               action={
                 <ModalForm
                   trigger={<CreateButton label="Taux de cotisations" />}
@@ -664,6 +753,9 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
               </select>
             </label>
             <input name="periode" defaultValue={moisCourant} className="h-8 border rounded px-2 text-sm w-24" title="Période (AAAA-MM)" />
+            {/* RH-1 FIX — l'action exige tauxHoraire (FCFA/h) : le champ manquait
+                et la conversion échouait systématiquement (erreur zod) */}
+            <input name="tauxHoraire" type="number" min="1" step="25" required placeholder="Taux/h (F)" className="h-8 border rounded px-2 text-sm w-28" title="Taux horaire des heures supplémentaires (FCFA)" />
             <Button type="submit" size="sm" variant="outline" className="h-8" disabled={pending}>Convertir</Button>
           </form>
         </div>
@@ -674,7 +766,10 @@ export default function PersonnelModule({ initialData }: { initialData: any }) {
         description="Masse salariale, effectifs par contrat, ancienneté, fins de contrats imminentes (60 j)"
         action={
           <div className="flex gap-2">
-            <Button size="sm" onClick={async () => { const r = await actionsExt.statsRh(); setStatsRh(r); }}>Actualiser</Button>
+            {/* RH-17 FIX — feedback via run() (erreurs visibles, pending) +
+                chargement AUTOMATIQUE au montage (avant : clic obligatoire
+                sur un bouton muet, tableau vide à l'arrivée) */}
+            <Button size="sm" disabled={pending} onClick={() => run(async () => { const r = await actionsExt.statsRh(); setStatsRh(r); return r; }, 'Tableau de bord RH actualisé.')}>Actualiser</Button>
             <ModalForm
               trigger={<Button variant="outline" size="sm">Renouveler un contrat</Button>}
               title="Renouvellement de contrat (CDD)"
@@ -761,6 +856,8 @@ const STATUTS_CANDIDATURE: Record<string, { label: string; classe: string }> = {
   entretien: { label: 'Entretien', classe: 'bg-amber-100 text-amber-700 border-amber-200' },
   retenu: { label: 'Retenu', classe: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   refuse: { label: 'Refusée', classe: 'bg-rose-100 text-rose-700 border-rose-200' },
+  // RH-3a — état terminal après conversion (bouton disparaît, plus de doublon)
+  converti: { label: 'Converti ✓', classe: 'bg-violet-100 text-violet-700 border-violet-200' },
 };
 
 const ETAPES_RECRUTEMENT = [
@@ -894,6 +991,19 @@ function SectionRecrutement({ initialData, run, pending }: {
                           { name: 'candidatureId', type: 'hidden', label: 'Candidature', defaultValue: c.id },
                           { name: 'dateEmbauche', label: 'Date d\'embauche', type: 'date', required: true },
                           { name: 'salaireBrut', label: 'Salaire brut (XOF)', type: 'number', required: true },
+                          // RH-3c — rôle réel du poste (le défaut « enseignant »
+                          // était appliqué aux postes administratifs)
+                          { name: 'roleCode', label: 'Rôle / portail d\'accès', type: 'select', required: true, options: [
+                            { value: 'enseignant', label: '👨‍🏫 Enseignant' },
+                            { value: 'secretariat', label: '📝 Secrétariat' },
+                            { value: 'comptabilite', label: '💰 Comptabilité' },
+                            { value: 'rh', label: '👥 RH' },
+                            { value: 'censeur', label: '🛡️ Censeur' },
+                            { value: 'surveillant', label: '👀 Surveillant' },
+                            { value: 'infirmier', label: '🏥 Infirmerie' },
+                            { value: 'assistant_direction', label: '💼 Assistant de direction' },
+                            { value: 'direction', label: '🎓 Direction' },
+                          ] },
                         ]}
                         action={actionsExt.convertirCandidat}
                       />
@@ -917,4 +1027,17 @@ function SectionRecrutement({ initialData, run, pending }: {
 function fmtMontant(centimes: number | null | undefined) {
   if (!centimes) return '—';
   return (centimes / 100).toLocaleString('fr-FR') + ' F';
+}
+
+/** RH-28 — la colonne contactUrgence est documentée JSON : on en extrait le
+ *  téléphone pour l'affichage, avec tolérance pour les anciennes valeurs texte. */
+function contactUrgenceTexte(brut: unknown): string {
+  if (!brut) return '';
+  if (typeof brut !== 'string') return String(brut);
+  try {
+    const j = JSON.parse(brut);
+    return j?.telephone ?? j?.nom ?? '';
+  } catch {
+    return brut; // valeur historique stockée en texte brut
+  }
 }

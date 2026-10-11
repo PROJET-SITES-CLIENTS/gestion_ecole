@@ -822,6 +822,7 @@ model Personnel {
   contrats              ContratPersonnel[]
   cvUrl                 String?
   diplomePrincipal      String?
+  fonction              String? // RH-15 — poste/fonction exercée (affichée sur certificat de travail, attestations, entretiens)
   numeroSecuriteSociale String?
   rib                   String? // M16 — RIB/IBAN pour l'export des virements de paie
   contactUrgence        String? // JSON

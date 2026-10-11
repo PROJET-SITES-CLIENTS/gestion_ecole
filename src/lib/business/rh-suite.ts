@@ -24,6 +24,19 @@ export async function quitterPersonnelCore(ctx: Ctx, input: {
   }
   if (isNaN(input.dateSortie?.getTime())) throw new ActionError('Date de sortie invalide.', 'DATE_INVALIDE');
   if (input.dateSortie < p.dateEmbauche) throw new ActionError('La date de sortie précède l\'embauche.', 'DATE_INVALIDE');
+  // RH-21 FIX — pas de sortie avec de la paie en suspens : les bulletins
+  // VALIDÉS non payés doivent être réglés (ou explicitement annulés) avant —
+  // sinon le salarié part avec un net dû invisible. Le solde de tout compte
+  // (document) reste à éditer ensuite depuis Documents.
+  const bulletinsImpayes = await db.bulletinPaie.count({
+    where: { personnelId: input.personnelId, statut: { in: ['brouillon', 'valide'] } },
+  });
+  if (bulletinsImpayes > 0) {
+    throw new ActionError(
+      `${bulletinsImpayes} bulletin(s) de paie non réglé(s) : validez/réglez la paie avant la sortie (le solde de tout compte en dépend).`,
+      'PAIE_EN_SUSPENS',
+    );
+  }
 
   await db.$transaction(async (tx) => {
     await tx.personnel.update({
@@ -66,6 +79,12 @@ export async function renouvelerContratCore(ctx: Ctx, input: {
   if (!courant) throw new ActionError('Aucun contrat actif à renouveler.', 'INTROUVABLE');
   if (courant.typeContrat === 'CDI') throw new ActionError('Un CDI n\'a pas de terme à renouveler (passez par une avenant de salaire).', 'TYPE_INVALIDE');
   if (input.nouvelleDateFin <= courant.dateDebut) throw new ActionError('Nouveau terme invalide.', 'DATE_INVALIDE');
+  // RH-20 FIX — le nouveau terme doit être dans le FUTUR : avant, une date
+  // entre dateDebut et aujourd'hui était acceptée → contrat « actif » déjà
+  // expiré dès sa création.
+  if (input.nouvelleDateFin.getTime() < Date.now() - 86400000) {
+    throw new ActionError('Le nouveau terme doit être postérieur à aujourd\'hui.', 'DATE_INVALIDE');
+  }
 
   await db.$transaction(async (tx) => {
     // L'ancien contrat est clos (historique conservé), le nouveau prend le relais
@@ -166,7 +185,7 @@ export async function statsRhCore(ctx: Ctx) {
 
 export async function creerEvaluationPersonnelCore(ctx: Ctx, input: {
   personnelId: string; periode: string; criteres: Array<{ critere: string; note: number }>;
-  commentaireGlobal?: string; evaluateurId?: string;
+  commentaireGlobal?: string;
 }) {
   assertPermission(ctx, 'rh.gerer');
   const p = await db.personnel.findUnique({ where: { id: input.personnelId } });
@@ -182,11 +201,13 @@ export async function creerEvaluationPersonnelCore(ctx: Ctx, input: {
     }
   }
   // L'évaluateur est TOUJOURS l'utilisateur connecté (jamais falsifiable)
+  // RH-22 FIX — le paramètre evaluateurId accepté « en priorité » contredisait
+  // ce contrat : il est supprimé, seule la session fait foi.
   const moi = await db.personnel.findFirst({ where: { utilisateurId: ctx.utilisateurId, deletedAt: null } });
   const ev = await db.evaluationPersonnel.create({
     data: {
       personnelId: p.id,
-      evaluateurId: input.evaluateurId ?? moi?.id ?? ctx.utilisateurId,
+      evaluateurId: moi?.id ?? ctx.utilisateurId,
       periode: input.periode.trim(),
       criteres: JSON.stringify(input.criteres),
       commentaireGlobal: input.commentaireGlobal?.trim() || null,

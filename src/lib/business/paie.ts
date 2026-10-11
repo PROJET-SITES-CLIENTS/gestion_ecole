@@ -60,7 +60,10 @@ export async function genererBulletinsPaieCore(ctx: Ctx, ecoleId: string, period
       const brut = lignes.reduce((s, l) => s + (l.sens === 'plus' ? l.montant : -l.montant), 0);
       const partEmployeur = Math.round(brut * tauxE);
       const partSalarie = Math.round(brut * tauxS);
-      const primes = lignes.filter((l) => l.type === 'prime' || l.type === 'indemnite' || l.type === 'heures_sup' || l.type === 'avantage_nature').reduce((s, l) => s + l.montant, 0);
+      // RH-32 FIX — « avantage » (valeur acceptée à la saisie) est compté dans
+      // primesTotales comme « avantage_nature » : avant, le montant entrait
+      // dans le brut mais disparaissait du décompte des primes.
+      const primes = lignes.filter((l) => ['prime', 'indemnite', 'heures_sup', 'avantage_nature', 'avantage'].includes(l.type) && l.sens === 'plus').reduce((s, l) => s + l.montant, 0);
       const net = brut - partSalarie;
 
       const bulletin = await tx.bulletinPaie.create({
@@ -103,7 +106,7 @@ export async function traiterBulletinPaieCore(ctx: Ctx, bulletinId: string, deci
       ? { statut: 'valide', dateValidation: new Date(), valideParId: ctx.utilisateurId }
       : { statut: 'paye', datePaiement: new Date() },
   });
-  // COMPTA+ — écriture comptable automatique à la VALIDATION (641/644/421).
+  // COMPTA+ — écriture comptable automatique à la VALIDATION (641/644/421/431).
   // Silencieux si le plan comptable n'est pas initialisé.
   let ecriturePaie: string | null = null;
   if (decision === 'valide') {
@@ -113,8 +116,45 @@ export async function traiterBulletinPaieCore(ctx: Ctx, bulletinId: string, deci
     try { ecriturePaie = (await passerEcriturePaieCore(ctx, bulletinId)).ecritureId; }
     catch (e: any) { if (!/PLAN_VIDE|compte .*absent|journal/i.test(String(e?.message))) throw e; }
   }
-  await logAction(db, b.ecoleId, ctx.utilisateurId, `paie.${decision}`, 'bulletin_paie', bulletinId, { ecriturePaie });
-  return { bulletinId, statut: decision, ecriturePaie };
+  // RH-7 FIX — RÈGLEMENT du net au moment du paiement : D 421 (dû au
+  // personnel) / C 521 Banque (ou 571 Caisse en espèces). Avant, rien n'était
+  // booké au paiement : le 421 crédité à la validation gonflait à l'infini et
+  // la trésorerie ne sortait jamais. Idempotent par pièce PAYREG-<id>.
+  let ecritureReglement: string | null = null;
+  if (decision === 'paye') {
+    try {
+      const piece = `PAYREG-${b.id.slice(-10)}`;
+      const deja = await db.ecritureComptable.findFirst({ where: { ecoleId: b.ecoleId, numeroPiece: piece } });
+      if (!deja && b.netAPayer > 0) {
+        const comptes = await db.compteComptable.findMany({ where: { ecoleId: b.ecoleId, numero: { in: ['421', '521', '571'] } } });
+        const parNum = new Map(comptes.map((c: any) => [c.numero, c]));
+        const c421 = parNum.get('421');
+        const treso = parNum.get('521') ?? parNum.get('571');
+        const journal = (await db.journalComptable.findFirst({ where: { ecoleId: b.ecoleId, code: 'PA' } }))
+          ?? (await db.journalComptable.findFirst({ where: { ecoleId: b.ecoleId, code: 'BQ' } }));
+        if (c421 && treso && journal) {
+          const e = await db.ecritureComptable.create({
+            data: {
+              ecoleId: b.ecoleId, journalId: journal.id, date: new Date(), numeroPiece: piece,
+              libelle: `Règlement salaire ${b.periode} — ${b.personnelId.slice(-6)}`,
+              statut: 'valide', valideParId: ctx.utilisateurId, dateValidation: new Date(),
+              lignes: { create: [
+                { compteId: c421.id, libelle: 'Personnel — rémunérations dues', debit: b.netAPayer, credit: 0 },
+                { compteId: treso.id, libelle: treso.numero === '571' ? 'Caisse' : 'Banque', debit: 0, credit: b.netAPayer },
+              ] },
+            },
+          });
+          ecritureReglement = e.id;
+          const delta421 = ['actif', 'charge'].includes(c421.type) ? b.netAPayer : -b.netAPayer;
+          const deltaTreso = ['actif', 'charge'].includes(treso.type) ? -b.netAPayer : b.netAPayer;
+          await db.compteComptable.update({ where: { id: c421.id }, data: { solde: { increment: delta421 } } });
+          await db.compteComptable.update({ where: { id: treso.id }, data: { solde: { increment: deltaTreso } } });
+        }
+      }
+    } catch { /* plan absent — comptabilité non activée */ }
+  }
+  await logAction(db, b.ecoleId, ctx.utilisateurId, `paie.${decision}`, 'bulletin_paie', bulletinId, { ecriturePaie, ecritureReglement });
+  return { bulletinId, statut: decision, ecriturePaie, ecritureReglement };
 }
 
 /** Ajoute une variable de paie (prime, heure sup) pour un personnel et une période. */

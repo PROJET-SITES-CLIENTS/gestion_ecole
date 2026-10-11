@@ -82,29 +82,54 @@ export async function traiterCongeCore(ctx: Ctx, congeId: string, decision: 'val
   if (c.statut !== 'demande') {
     throw new ActionError(`Congé déjà traité (statut « ${c.statut} »).`, 'DEJA_TRAITE');
   }
-  await db.conge.update({
-    where: { id: congeId },
-    data: { statut: decision, traiteParId: ctx.utilisateurId, motif: commentaire?.trim() || c.motif },
-  });
-  // Solde de congés : les jours validés sont décomptés (fin de flux)
-  if (decision === 'valide') {
-    const jours = Math.max(1, Math.round((c.dateFin.getTime() - c.dateDebut.getTime()) / 86400000));
-    const annee = String(c.dateDebut.getFullYear());
-    const solde = await db.soldeConge.findUnique({ where: { personnelId_annee: { personnelId: c.personnelId, annee } } });
-    if (solde) {
-      const pris = solde.joursPris + jours;
-      await db.soldeConge.update({
-        where: { id: solde.id },
-        data: { joursPris: pris, joursRestants: Math.max(0, solde.droitsAcquis + solde.reliquatAnterieur - pris), derniereMaj: new Date() },
-      });
-    } else {
-      await db.soldeConge.create({
-        data: { ecoleId: p!.ecoleId, personnelId: c.personnelId, annee, droitsAcquis: 25, joursPris: jours, joursRestants: Math.max(0, 25 - jours) },
-      });
+  // RH-5 FIX — décompte INCLUSIF des bornes (lun→mer = 3 jours), aligné sur
+  // statsRhCore qui comptait déjà +1 : avant, le solde était sous-débité d'un
+  // jour à chaque congé.
+  const jours = Math.max(1, Math.round((c.dateFin.getTime() - c.dateDebut.getTime()) / 86400000) + 1);
+  const annee = String(c.dateDebut.getFullYear());
+  // RH-24 FIX — validation + décompte du solde dans UNE transaction (avant :
+  // deux écritures indépendantes, solde perdu si crash entre les deux)
+  await db.$transaction(async (tx) => {
+    // RH-18 FIX — le motif de la DEMANDE est conservé ; le commentaire de
+    // décision est annexé, jamais substitué
+    const motifFinal = decision === 'refuse' && commentaire?.trim()
+      ? `${c.motif ? c.motif + ' — ' : ''}motif du refus : ${commentaire.trim()}`
+      : c.motif;
+    await tx.conge.update({
+      where: { id: congeId },
+      data: { statut: decision, traiteParId: ctx.utilisateurId, motif: motifFinal },
+    });
+    // Solde de congés : les jours validés sont décomptés (fin de flux)
+    if (decision === 'valide') {
+      const solde = await tx.soldeConge.findUnique({ where: { personnelId_annee: { personnelId: c.personnelId, annee } } });
+      if (solde) {
+        const pris = solde.joursPris + jours;
+        await tx.soldeConge.update({
+          where: { id: solde.id },
+          data: { joursPris: pris, joursRestants: Math.max(0, solde.droitsAcquis + solde.reliquatAnterieur - pris), derniereMaj: new Date() },
+        });
+      } else {
+        await tx.soldeConge.create({
+          data: { ecoleId: p!.ecoleId, personnelId: c.personnelId, annee, droitsAcquis: 25, joursPris: jours, joursRestants: Math.max(0, 25 - jours) },
+        });
+      }
     }
+  }, { timeout: 30000, maxWait: 10000 });
+  // RH-26 FIX — le salarié est notifié de la décision (avant : silence total)
+  if (p?.utilisateurId) {
+    await db.notification.create({
+      data: {
+        ecoleId: p.ecoleId, destinataireType: 'personnel', destinataireId: p.utilisateurId,
+        sujet: decision === 'valide' ? '✅ Congé validé' : '❌ Congé refusé',
+        corps: decision === 'valide'
+          ? `Votre congé du ${c.dateDebut.toLocaleDateString('fr-FR')} au ${c.dateFin.toLocaleDateString('fr-FR')} (${jours} j) est VALIDÉ.${commentaire?.trim() ? ` Note : ${commentaire.trim()}` : ''}`
+          : `Votre demande de congé du ${c.dateDebut.toLocaleDateString('fr-FR')} au ${c.dateFin.toLocaleDateString('fr-FR')} a été REFUSÉE.${commentaire?.trim() ? ` Motif : ${commentaire.trim()}` : ''}`,
+        canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
+      },
+    }).catch(() => undefined);
   }
-  await logAction(db, p!.ecoleId, ctx.utilisateurId, `conge.${decision}`, 'conge', congeId, { personnelId: c.personnelId });
-  return { congeId, decision };
+  await logAction(db, p!.ecoleId, ctx.utilisateurId, `conge.${decision}`, 'conge', congeId, { personnelId: c.personnelId, jours });
+  return { congeId, decision, jours };
 }
 
 // --------------------------------------------------------------------
@@ -132,6 +157,16 @@ export async function assignerRemplacementCore(ctx: Ctx, input: RemplacementInpu
     throw new ActionError('Le congé doit être validé avant de planifier un remplacement.', 'CONGE_NON_VALIDE');
   }
   validerDates(input.dateDebut, input.dateFin);
+  // RH-6 FIX — le remplacement couvre une période INCLUSE dans le congé :
+  // avant, des dates sans aucun rapport avec l'absence étaient acceptées.
+  const debutConge = new Date(conge.dateDebut); debutConge.setHours(0, 0, 0, 0);
+  const finConge = new Date(conge.dateFin); finConge.setHours(23, 59, 59, 999);
+  if (input.dateDebut < debutConge || input.dateFin > finConge) {
+    throw new ActionError(
+      `Le remplacement doit être inclus dans la période du congé (du ${conge.dateDebut.toLocaleDateString('fr-FR')} au ${conge.dateFin.toLocaleDateString('fr-FR')}).`,
+      'PERIODE_INVALIDE',
+    );
+  }
   // Le remplaçant ne doit pas être en congé ni déjà remplaçant sur la période.
   if (await congeEnChevauchement(remplacant.id, input.dateDebut, input.dateFin)) {
     throw new ActionError('Le remplaçant est en congé (ou a une demande) sur cette période.', 'CHEVAUCHEMENT');
@@ -254,6 +289,11 @@ export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: Creat
             email: input.email?.trim() || undefined,
             telephone: input.telephone?.trim() || undefined,
             dateEmbauche: input.dateEmbauche,
+            // RH-2 FIX — la fiche ET le contrat portent le salaire/type : avant,
+            // seul le contrat était rempli → la fiche affichait « — » juste
+            // après création malgré un salaire saisi dans le formulaire.
+            typeContrat: input.typeContrat || 'CDI',
+            salaireBrut: input.salaireBrut || 0,
             contrats: { create: { typeContrat: input.typeContrat || 'CDI', salaireBrut: input.salaireBrut || 0, dateDebut: input.dateEmbauche } },
             diplomePrincipal: input.diplomePrincipal?.trim() || undefined,
             ...(input.perimetreSecretariat ? { perimetreSecretariat: input.perimetreSecretariat } : {}),
@@ -283,30 +323,49 @@ export async function creerPersonnelCore(ctx: Ctx, ecoleId: string, input: Creat
   });
 }
 
-/** F3 — annulation d'une demande de congé (jamais d'un congé déjà validé avec remplacement). */
+/** F3 — annulation d'une demande de congé. RH-19 — un congé VALIDÉ peut
+ *  désormais être annulé (sans remplacement en cours) : les jours décomptés
+ *  sont REVERSÉS au solde (avant : aucune sortie possible, jours perdus). */
 export async function annulerCongeCore(ctx: Ctx, congeId: string) {
   assertPermission(ctx, 'rh.gerer');
   const c = await db.conge.findUnique({ where: { id: congeId }, include: { remplacements: true } });
   if (!c) throw new ActionError('Congé introuvable.', 'INTROUVABLE');
   const p = await db.personnel.findUnique({ where: { id: c.personnelId } });
   assertTenant(p?.ecoleId, ctx, 'Ce congé');
-  if (c.statut !== 'demande') {
-    throw new ActionError('Seule une demande EN ATTENTE peut être annulée (congé déjà traité).', 'DEJA_TRAITE');
+  if (c.statut === 'refuse' || c.statut === 'annule') {
+    throw new ActionError('Ce congé est déjà clos.', 'DEJA_TRAITE');
   }
-  if (c.remplacements.length > 0) {
-    throw new ActionError('Des remplacements sont liés à ce congé : annulez-les d\'abord.', 'REMPLACEMENT_LIE');
+  const remplacementsActifs = c.remplacements.filter((r) => ['planifie', 'en_cours'].includes(r.statut));
+  if (remplacementsActifs.length > 0) {
+    throw new ActionError('Des remplacements actifs sont liés à ce congé : annulez-les d\'abord.', 'REMPLACEMENT_LIE');
+  }
+  // Reversement des jours si le congé avait été validé (décompte inclusif)
+  if (c.statut === 'valide') {
+    const jours = Math.max(1, Math.round((c.dateFin.getTime() - c.dateDebut.getTime()) / 86400000) + 1);
+    const annee = String(c.dateDebut.getFullYear());
+    const solde = await db.soldeConge.findUnique({ where: { personnelId_annee: { personnelId: c.personnelId, annee } } });
+    if (solde) {
+      const pris = Math.max(0, solde.joursPris - jours);
+      await db.soldeConge.update({
+        where: { id: solde.id },
+        data: { joursPris: pris, joursRestants: Math.max(0, solde.droitsAcquis + solde.reliquatAnterieur - pris), derniereMaj: new Date() },
+      });
+    }
+    await logAction(db, p!.ecoleId, ctx.utilisateurId, 'conge.reversement_solde', 'conge', congeId, { joursReverses: jours });
   }
   await db.conge.update({ where: { id: congeId }, data: { statut: 'annule' } });
-  await logAction(db, p!.ecoleId, ctx.utilisateurId, 'conge.annulation', 'conge', congeId);
-  return { congeId };
+  await logAction(db, p!.ecoleId, ctx.utilisateurId, 'conge.annulation', 'conge', congeId, { statutPrecedent: c.statut });
+  return { congeId, statutPrecedent: c.statut };
 }
 
 // --------------------------------------------------------------------
-// SECRÉTARIAT SPLIT — périmètre primaire/secondaire éditable (direction)
+// SECRÉTARIAT SPLIT — périmètre primaire/secondaire éditable
+// RH-31 FIX — permission rh.gerer (l'admin.saas rendait l'action inatteignable
+// et aucun formulaire ne permettait de corriger le périmètre après création).
 // --------------------------------------------------------------------
 
 export async function majPerimetreSecretariatCore(ctx: Ctx, personnelId: string, perimetre: 'primaire' | 'secondaire' | null) {
-  assertPermission(ctx, 'admin.saas');
+  assertPermission(ctx, 'rh.gerer');
   const p = await db.personnel.findUnique({ where: { id: personnelId } });
   if (!p) throw new ActionError('Personnel introuvable.', 'INTROUVABLE');
   assertTenant(p.ecoleId, ctx, 'Ce personnel');

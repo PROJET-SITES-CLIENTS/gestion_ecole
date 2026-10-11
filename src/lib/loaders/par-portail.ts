@@ -21,12 +21,13 @@ const SELECT_PERSONNEL_PUBLIC = {
   id: true, ecoleId: true, matricule: true, nom: true, prenom: true,
   sexe: true, telephone: true, email: true, dateEmbauche: true,
   statut: true, typeContrat: true, diplomePrincipal: true, photoUrl: true,
-  utilisateurId: true,
+  utilisateurId: true, fonction: true, // RH-15 — poste affiché fiches/documents
 } as const;
 
 const SELECT_PERSONNEL_RESTREINT = {
   ...SELECT_PERSONNEL_PUBLIC,
   salaireBrut: true, numeroSecuriteSociale: true, contactUrgence: true,
+  rib: true, dateSortie: true, motifSortie: true, // RH-16 — RIB pour virements paie + sortie
 } as const;
 
 // Plafonds F14

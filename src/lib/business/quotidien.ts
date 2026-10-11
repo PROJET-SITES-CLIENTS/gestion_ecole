@@ -140,6 +140,21 @@ export async function clôturerFeuilleRouteCore(ctx: Ctx, feuilleId: string) {
 // O3 — POINTAGE DU PERSONNEL
 // --------------------------------------------------------------------
 
+/** RH-12 FIX — décalage horaire (minutes) d'un fuseau IANA à une date
+ *  donnée (gère UTC+0/+1 d'Afrique de l'Ouest comme les fuseaux à DST). */
+function decalageFuseau(fuseau: string, date: Date): number {
+  try {
+    const parties = new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, timeZoneName: 'shortOffset' })
+      .formatToParts(date);
+    const nom = parties.find((p) => p.type === 'timeZoneName')?.value ?? '';
+    const m = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(nom);
+    if (!m) return 0;
+    return (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0));
+  } catch {
+    return 0;
+  }
+}
+
 export async function pointerPersonnelCore(ctx: Ctx, personnelId: string, sens: 'arrivee' | 'depart', heure: Date, référence?: string) {
   assertPermission(ctx, 'presences.saisir'); // surveillant/enseignant/assistant peuvent pointer
   const p = await db.personnel.findUnique({ where: { id: personnelId } });
@@ -151,9 +166,15 @@ export async function pointerPersonnelCore(ctx: Ctx, personnelId: string, sens: 
   if (sens === 'arrivee') {
     if (existant?.heureArrivee) throw new ActionError('Arrivée déjà pointée aujourd\'hui.', 'DEJA_TRAITE');
     // Retard : arrivée après 8h05 par défaut (ou référence fournie "HH:MM")
+    // RH-12 FIX — comparaison dans le FUSEAU DE L'ÉCOLE (Ecole.fuseauHoraire),
+    // plus en UTC brut : le serveur (Vercel) tourne en UTC et l'école en
+    // UTC+1 → tous les retards étaient décalés d'une heure.
+    const ecole = await db.ecole.findUnique({ where: { id: p.ecoleId }, select: { fuseauHoraire: true } });
+    const decalage = decalageFuseau(ecole?.fuseauHoraire ?? 'UTC', heure);
+    const minutesLocales = heure.getUTCHours() * 60 + heure.getUTCMinutes() + decalage;
     const ref = référence ?? '08:05';
     const toMin = (h: string) => Number(h.split(':')[0]) * 60 + Number(h.split(':')[1]);
-    const retard = Math.max(0, (heure.getUTCHours() * 60 + heure.getUTCMinutes()) - toMin(ref));
+    const retard = Math.max(0, minutesLocales - toMin(ref));
     await db.pointagePersonnel.upsert({
       where: { personnelId_date: { personnelId, date: jour } },
       create: { ecoleId: p.ecoleId, personnelId, date: jour, heureArrivee: heure, retardMin: retard },
@@ -197,8 +218,18 @@ export async function convertirHeuresSupCore(ctx: Ctx, personnelId: string, peri
   if (!Number.isInteger(tauxHoraire) || tauxHoraire <= 0) throw new ActionError('Taux horaire invalide (centimes).', 'MONTANT_INVALIDE');
   const synthese = await synthesePointageCore(ctx, personnelId, periode);
   if (synthese.minutesSup <= 0) throw new ActionError('Aucune heure supplémentaire ce mois-ci.', 'SAISIE_VIDE');
-  const { ajouterVariablePaieCore } = await import('./paie');
+  // RH-11 FIX — refuser si la paie de la période est DÉJÀ générée : la
+  // variable créée ne serait rattachée à AUCUN bulletin (le rattrapage filtre
+  // par période) et l'argent du salarié serait silencieusement perdu.
   const p = await db.personnel.findUnique({ where: { id: personnelId } });
+  const bulletinExistant = await db.bulletinPaie.findFirst({ where: { ecoleId: p!.ecoleId, personnelId, periode } });
+  if (bulletinExistant) {
+    throw new ActionError(
+      `La paie ${periode} est déjà générée pour ce personnel : les heures sup ne pourraient y être rattachées. Comptez-les sur la période suivante (ajustez la variable) ou régénérez après correction.`,
+      'PAIE_DEJA_GENEREE',
+    );
+  }
+  const { ajouterVariablePaieCore } = await import('./paie');
   const montant = Math.round((synthese.minutesSup / 60) * tauxHoraire);
   const r = await ajouterVariablePaieCore(ctx, p!.ecoleId, {
     personnelId, periode, type: 'heure_sup',

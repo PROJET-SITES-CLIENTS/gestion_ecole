@@ -256,9 +256,10 @@ export async function genererBulletinsPaie(periode: string): Promise<ActionResul
 export async function traiterBulletinPaie(bulletinId: string, decision: 'valide' | 'paye'): Promise<ActionResult> {
   try {
     const ctx = await ctxSession();
-    await traiterBulletinPaieCore(ctx, bulletinId, decision);
+    const r = await traiterBulletinPaieCore(ctx, bulletinId, decision);
     revalidatePath('/');
-    return { ok: true };
+    // RH-30 — l'action restituait { ok } en jetant les références d'écritures
+    return { ok: true, ...r };
   } catch (e) { return echec(e); }
 }
 
@@ -382,10 +383,12 @@ export async function convertirCandidat(formData: FormData): Promise<ActionResul
   try {
     const ctx = await ctxSession();
     const ecoleId = await ecoleIdDuCtx(ctx);
-    const d = z.object({ candidatureId: idReq, dateEmbauche: dateReq, salaireBrut: z.coerce.number().min(0) }).parse(Object.fromEntries(formData));
-    const r = await convertirCandidatCore(ctx, ecoleId, d.candidatureId, { dateEmbauche: d.dateEmbauche, salaireBrut: versCentimes(d.salaireBrut) });
+    // RH-3c — le rôle du poste converti est désormais demandé (défaut enseignant)
+    const d = z.object({ candidatureId: idReq, dateEmbauche: dateReq, salaireBrut: z.coerce.number().min(0), roleCode: str }).parse(Object.fromEntries(formData));
+    const r = await convertirCandidatCore(ctx, ecoleId, d.candidatureId, { dateEmbauche: d.dateEmbauche, salaireBrut: versCentimes(d.salaireBrut), roleCode: d.roleCode || undefined });
     revalidatePath('/');
-    return { ok: true, ...r };
+    // RH-3b — mot de passe temporaire affiché UNE seule fois
+    return { ok: true, ...r, message: `Personnel créé (${r.matricule}). Mot de passe temporaire à communiquer : ${r.motDePasseTemporaire}` };
   } catch (e) { return echec(e); }
 }
 
@@ -1341,7 +1344,10 @@ export async function modifierPersonnel(formData: FormData): Promise<ActionResul
       typeContrat: str,
       salaireBrut: z.coerce.number().optional(), // en FCFA (converti en centimes)
       diplomePrincipal: str,
+      fonction: str, // RH-15
+      rib: str, // RH-16
       contactUrgence: str,
+      perimetreSecretariat: z.enum(['', 'primaire', 'secondaire']).optional(), // RH-31
     }).parse(brut);
     const r = await modifierPersonnelCore(ctx, d.personnelId, {
       nom: d.nom, prenom: d.prenom, sexe: d.sexe || undefined,
@@ -1349,7 +1355,12 @@ export async function modifierPersonnel(formData: FormData): Promise<ActionResul
       dateEmbauche: d.dateEmbauche || undefined,
       typeContrat: d.typeContrat || undefined,
       salaireBrut: d.salaireBrut !== undefined && d.salaireBrut > 0 ? versCentimes(d.salaireBrut) : undefined,
-      diplomePrincipal: d.diplomePrincipal, contactUrgence: d.contactUrgence,
+      diplomePrincipal: d.diplomePrincipal,
+      fonction: d.fonction, // RH-15
+      rib: d.rib, // RH-16
+      contactUrgence: d.contactUrgence,
+      // RH-31 — périmètre secrétariat corrigible après création
+      perimetreSecretariat: d.perimetreSecretariat === 'primaire' || d.perimetreSecretariat === 'secondaire' ? d.perimetreSecretariat : null,
     });
     revalidatePath('/'); return { ok: true, ...r };
   } catch (e) { return echec(e); }

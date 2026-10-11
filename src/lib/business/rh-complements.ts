@@ -32,6 +32,16 @@ export async function majFormationCore(ctx: Ctx, formationId: string, statut: 'e
   const f = await db.formationPersonnel.findUnique({ where: { id: formationId } });
   if (!f) throw new ActionError('Formation introuvable.', 'INTROUVABLE');
   assertTenant(f.ecoleId, ctx, 'Cette formation');
+  // RH-27 FIX — machine à états : planifiée → en cours → terminée, annulable
+  // depuis planifiée/en cours. Avant, toute transition était libre (une
+  // formation ANNULÉE pouvait repasser « terminée »).
+  const AUTORISEES: Record<string, string[]> = {
+    planifiee: ['en_cours', 'annulee'],
+    en_cours: ['terminee', 'annulee'],
+  };
+  if (!(AUTORISEES[f.statut] ?? []).includes(statut)) {
+    throw new ActionError(`Transition invalide : « ${f.statut} » → « ${statut} ».`, 'STATUT_INVALIDE');
+  }
   await db.formationPersonnel.update({
     where: { id: formationId },
     data: { statut, ...(certificatObtenu != null ? { certificatObtenu } : {}), ...(statut === 'terminee' ? { dateFin: f.dateFin ?? new Date() } : {}) },
@@ -59,14 +69,18 @@ export async function sanctionnerPersonnelCore(ctx: Ctx, input: { personnelId: s
     },
   });
   // Notification écrite au salarié
-  await db.notification.create({
-    data: {
-      ecoleId: p.ecoleId, destinataireType: 'personnel', destinataireId: p.utilisateurId ?? ctx.utilisateurId,
-      sujet: `⚠️ Sanction disciplinaire : ${input.typeSanction}`,
-      corps: `Une sanction de type « ${input.typeSanction} » a été notifiée à la suite des faits du ${input.dateFaits.toLocaleDateString('fr-FR')}. Consultez les RH pour un entretien.`,
-      canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
-    },
-  }).catch(() => {});
+  // RH-25 FIX — notifiée UNIQUEMENT si le salarié a un compte : l'ancien
+  // repli envoyait la sanction... à l'admin qui la prononçait.
+  if (p.utilisateurId) {
+    await db.notification.create({
+      data: {
+        ecoleId: p.ecoleId, destinataireType: 'personnel', destinataireId: p.utilisateurId,
+        sujet: `⚠️ Sanction disciplinaire : ${input.typeSanction}`,
+        corps: `Une sanction de type « ${input.typeSanction} » a été notifiée à la suite des faits du ${input.dateFaits.toLocaleDateString('fr-FR')}. Consultez les RH pour un entretien.`,
+        canal: 'in_app', statut: 'envoye', dateEnvoi: new Date(),
+      },
+    }).catch(() => {});
+  }
   await logAction(db, p.ecoleId, ctx.utilisateurId, 'rh.sanction', 'sanction_personnel', s.id, { personnelId: p.id, type: input.typeSanction });
   return { sanctionId: s.id };
 }
@@ -91,16 +105,17 @@ export async function acquitterSoldesCongesCore(ctx: Ctx, opts: { joursParMois?:
   for (const p of personnels) {
     // Embauche : l'acquisition démarre le mois suivant
     const moisEmbauche = new Date(p.dateEmbauche).getUTCFullYear() * 12 + new Date(p.dateEmbauche).getUTCMonth() + 1;
-    const moisDernier = Math.min(moisCourant, moisCourant); // crédit jusqu'au mois précédent inclus
+    // RH-23 FIX — l'ancienne ligne « Math.min(moisCourant, moisCourant) » était
+    // un no-op ; on crédite jusqu'au mois précédent inclus, borné à l'embauche.
     const moisCreditableMax = moisCourant - 1 >= moisEmbauche ? moisCourant - 1 : 0;
     let solde = await db.soldeConge.findFirst({ where: { personnelId: p.id, annee: String(maintenant.getUTCFullYear()) } });
     const creditedThrough = solde ? (solde as any).creditedThrough ?? 0 : 0;
-    const moisADecrediter = Math.max(0, Math.min(moisCreditableMax, moisDernier) - Math.max(creditedThrough, moisEmbauche - 1));
+    const moisADecrediter = Math.max(0, moisCreditableMax - Math.max(creditedThrough, moisEmbauche - 1));
     if (moisADecrediter <= 0) continue;
     const jours = moisADecrediter * joursParMois;
     if (!solde) {
       solde = await db.soldeConge.create({
-        data: { ecoleId: p.ecoleId, personnelId: p.id, annee: String(maintenant.getUTCFullYear()), droitsAcquis: jours, joursPris: 0, creditedThrough: moisCreditableMax } as never,
+        data: { ecoleId: p.ecoleId, personnelId: p.id, annee: String(maintenant.getUTCFullYear()), droitsAcquis: jours, joursPris: 0, joursRestants: jours, creditedThrough: moisCreditableMax } as never,
       });
     } else {
       await db.soldeConge.update({
@@ -108,13 +123,18 @@ export async function acquitterSoldesCongesCore(ctx: Ctx, opts: { joursParMois?:
         data: { droitsAcquis: { increment: jours }, creditedThrough: moisCreditableMax } as never,
       });
     }
-    // Plafond de report
+    // Plafond de report — RH-23 : joursRestants est TOUJOURS recalculé
+    // (droits − pris + reliquat) après crédit et après plafonnement.
     const apres = await db.soldeConge.findUnique({ where: { id: solde.id } });
-    const acquis = (apres?.droitsAcquis ?? 0) - (apres?.joursPris ?? 0);
-    if (acquis > plafond) {
-      const excess = acquis - plafond;
-      await db.soldeConge.update({ where: { id: solde.id }, data: { droitsAcquis: { decrement: excess } } });
-      totalJours -= excess;
+    if (apres) {
+      const acquisNet = apres.droitsAcquis - apres.joursPris;
+      const excess = acquisNet > plafond ? acquisNet - plafond : 0;
+      const droitsFinaux = apres.droitsAcquis - excess;
+      if (excess > 0) totalJours -= excess;
+      await db.soldeConge.update({
+        where: { id: apres.id },
+        data: { ...(excess > 0 ? { droitsAcquis: droitsFinaux } : {}), joursRestants: Math.max(0, droitsFinaux + (apres.reliquatAnterieur ?? 0) - apres.joursPris), derniereMaj: new Date() } as never,
+      });
     }
     credites++; totalJours += jours;
   }

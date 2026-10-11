@@ -49,6 +49,7 @@ export async function avancerCandidatureCore(ctx: Ctx, ecoleId: string, candidat
   const c = await db.candidature.findUnique({ where: { id: candidatureId }, include: { offre: true } });
   if (!c) throw new ActionError('Candidature introuvable.', 'INTROUVABLE');
   assertTenant(c.offre.ecoleId, ctx, 'Cette candidature');
+  if (c.statut === 'converti') throw new ActionError('Candidature déjà convertie en personnel — workflow clos.', 'DEJA_TRAITE');
   if (!['tri_cv', 'entretien_rh', 'entretien_direction', 'essai', 'decision'].includes(etape)) {
     throw new ActionError('Étape invalide.', 'CHAMP_INVALIDE');
   }
@@ -62,12 +63,25 @@ export async function avancerCandidatureCore(ctx: Ctx, ecoleId: string, candidat
 }
 
 /** Décision finale → conversion du candidat RETENU en personnel (avec compte). */
-export async function convertirCandidatCore(ctx: Ctx, ecoleId: string, candidatureId: string, input: { dateEmbauche: Date; salaireBrut: number }) {
+export async function convertirCandidatCore(ctx: Ctx, ecoleId: string, candidatureId: string, input: { dateEmbauche: Date; salaireBrut: number; roleCode?: string }) {
   assertPermission(ctx, 'rh.gerer');
   const c = await db.candidature.findUnique({ where: { id: candidatureId }, include: { offre: true } });
   if (!c) throw new ActionError('Candidature introuvable.', 'INTROUVABLE');
   assertTenant(c.offre.ecoleId, ctx, 'Cette candidature');
   if (c.statut !== 'retenu') throw new ActionError('Seule une candidature marquée « retenu » peut être convertie.', 'STATUT_INVALIDE');
+  // RH-3a FIX — idempotence : une candidature déjà convertie ne peut plus
+  // l'être (le statut passe à « converti ») ; avant, N clics = N fiches
+  // dupliquées sans aucun garde.
+  const dejaConvertie = await db.personnel.findFirst({
+    where: { ecoleId, nom: c.nom.trim(), prenom: c.prenom.trim(), email: c.email, deletedAt: null },
+    select: { id: true },
+  });
+  if (dejaConvertie) {
+    throw new ActionError('Ce candidat a déjà été converti en personnel (fiche existante).', 'DEJA_TRAITE');
+  }
+  // RH-3b FIX — le mot de passe temporaire est généré puis RETOURNÉ une
+  // seule fois (avant : généré et perdu → compte inutilisable).
+  const motDePasse = genererMotDePasse(12);
 
   const { creerPersonnelCore } = await import('./rh');
   const r = await creerPersonnelCore(ctx, ecoleId, {
@@ -76,12 +90,16 @@ export async function convertirCandidatCore(ctx: Ctx, ecoleId: string, candidatu
     typeContrat: c.offre.typeContrat === 'Stage' ? 'stagiaire' : c.offre.typeContrat === 'Vacataire' ? 'vacataire' : (c.offre.typeContrat as 'CDI' | 'CDD'),
     salaireBrut: input.salaireBrut,
     diplomePrincipal: c.offre.poste,
+    // RH-3c FIX — le rôle est explicitement demandé au lieu du défaut
+    // « enseignant » appliqué à tort aux postes administratifs.
+    roleCode: input.roleCode || 'enseignant',
     creerCompte: true,
-    motDePasseInitial: genererMotDePasse(12),
+    motDePasseInitial: motDePasse,
   });
-  await db.candidature.update({ where: { id: candidatureId }, data: { statut: 'retenu' } });
+  // RH-3a — la candidature quitte définitivement le statut « retenu »
+  await db.candidature.update({ where: { id: candidatureId }, data: { statut: 'converti' } });
   await logAction(db, ecoleId, ctx.utilisateurId, 'recrutement.conversion_personnel', 'candidature', candidatureId, { personnelId: r.personnelId });
-  return { personnelId: r.personnelId, matricule: r.matricule, compteCree: true };
+  return { personnelId: r.personnelId, matricule: r.matricule, compteCree: true, motDePasseTemporaire: motDePasse };
 }
 
 // --------------------------------------------------------------------
