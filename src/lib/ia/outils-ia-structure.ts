@@ -89,7 +89,7 @@ export const outilsIaStructure: OutilIA[] = [
 
   // ═══ MATIÈRES ═══
   {
-    nom: 'creer_matiere_ia',
+    nom: 'creer_matiere',
     description: "Crée une matière (code court, libellé, coefficient). Ex : MATHS / Mathématiques / coefficient 4.",
     permission: 'admin.saas',
     parametres: P({
@@ -104,7 +104,7 @@ export const outilsIaStructure: OutilIA[] = [
       } as never),
   },
   {
-    nom: 'modifier_matiere_ia',
+    nom: 'modifier_matiere',
     description: "Modifie le libellé, le coefficient ou la couleur d'une matière.",
     permission: 'admin.saas',
     parametres: P({
@@ -123,7 +123,7 @@ export const outilsIaStructure: OutilIA[] = [
     },
   },
   {
-    nom: 'supprimer_matiere_ia',
+    nom: 'supprimer_matiere',
     description: "Supprime une matière (refusée si des notes/évaluations/programmes l'utilisent).",
     permission: 'admin.saas',
     parametres: P({ matiere: { type: 'string', description: 'Code ou libellé' } }, ['matiere']),

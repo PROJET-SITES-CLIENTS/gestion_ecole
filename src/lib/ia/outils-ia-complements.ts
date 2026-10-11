@@ -832,6 +832,74 @@ export const outilsIaComplements: OutilIA[] = [
     executer: async (ctx, args) => biz.relancerAbsencesCore(ctx as never, Number(args.seuil), Number(args.periodeJours)),
   },
 
+  // ═══ AFFECTATIONS ENSEIGNANT × MATIÈRE × CLASSE ═══
+  {
+    nom: 'affecter_enseignant',
+    description: "Affecte un enseignant à une matière sur un ensemble de classes (avec exceptions possibles : « partout SAUF la 3e »).",
+    permission: ['edt.gerer', 'admin.saas', 'notes.saisir'],
+    parametres: P({
+      enseignant: { type: 'string', description: 'Nom de l\'enseignant' },
+      matiere: { type: 'string', description: 'Matière' },
+      classes: { type: 'string', description: 'Classes séparées par ; (ex: 6A; 6B)' },
+      saufClasses: { type: 'string', description: 'Exceptions séparées par ; (optionnel)' },
+    }, ['enseignant', 'matiere', 'classes']),
+    executer: async (ctx, args) => {
+      const rp = await resoudrePersonnel(ctx.ecoleId!, String(args.enseignant));
+      if (!rp.trouve) return { erreur: rp.erreur, candidats: rp.candidats };
+      const { resoudreMatiere } = await import('./resolution');
+      const rm = await resoudreMatiere(ctx.ecoleId!, String(args.matiere));
+      if (!rm.trouve) return { erreur: 'Matière : ' + rm.erreur, candidats: rm.candidats };
+      const classeIds: string[] = [];
+      for (const c of String(args.classes).split(';').map((s) => s.trim()).filter(Boolean)) {
+        const rc = await resoudreClasse(ctx.ecoleId!, c);
+        if (!rc.trouve) return { erreur: `Classe « ${c} » : ${rc.erreur}` };
+        classeIds.push(rc.entite.id);
+      }
+      const saufClasseIds: string[] = [];
+      for (const c of String(args.saufClasses ?? '').split(';').map((s) => s.trim()).filter(Boolean)) {
+        const rc = await resoudreClasse(ctx.ecoleId!, c);
+        if (rc.trouve) saufClasseIds.push(rc.entite.id);
+      }
+      return biz.affecterEnseignantCore(ctx as never, {
+        personnelId: rp.entite.id, matiereId: rm.entite.id, classeIds,
+        ...(saufClasseIds.length > 0 ? { saufClasseIds } : {}),
+      } as never);
+    },
+  },
+  {
+    nom: 'retirer_affectation',
+    description: "Retire une affectation d'enseignant (par son ID — obtenu via voir_affectations).",
+    permission: ['edt.gerer', 'admin.saas', 'notes.saisir'],
+    parametres: P({ affectationId: { type: 'string', description: 'ID de l\'affectation' } }, ['affectationId']),
+    executer: async (ctx, args) => biz.retirerAffectationCore(ctx as never, String(args.affectationId)),
+  },
+  {
+    nom: 'voir_affectations',
+    description: "Liste les affectations enseignant × matière × classe (filtres optionnels par enseignant, matière ou classe).",
+    permission: ['eleves.lire', 'edt.gerer', 'notes.saisir', 'admin.saas'],
+    parametres: P({
+      enseignant: { type: 'string', description: 'Filtre enseignant (optionnel)' },
+      matiere: { type: 'string', description: 'Filtre matière (optionnel)' },
+      classe: { type: 'string', description: 'Filtre classe (optionnel)' },
+    }),
+    executer: async (ctx, args) => {
+      const where: Record<string, unknown> = { ecoleId: ctx.ecoleId! };
+      if (args.enseignant) where.personnel = { nom: { contains: String(args.enseignant), mode: 'insensitive' } };
+      if (args.matiere) where.matiere = { libelle: { contains: String(args.matiere), mode: 'insensitive' } };
+      if (args.classe) where.classe = { libelle: { contains: String(args.classe), mode: 'insensitive' } };
+      const affectations = await db.affectationEnseignant.findMany({
+        where: where as never, take: 300,
+        include: { personnel: { select: { prenom: true, nom: true } }, matiere: { select: { libelle: true } }, classe: { select: { code: true, libelle: true } } },
+      });
+      return { total: affectations.length, affectations: affectations.map((a) => ({
+        affectationId: a.id,
+        enseignant: `${a.personnel?.prenom ?? ''} ${a.personnel?.nom ?? ''}`.trim(),
+        matiere: a.matiere?.libelle ?? '—', classe: a.classe?.libelle ?? a.classe?.code ?? '—',
+        depuis: a.createdAt,
+      })) };
+    },
+  },
+
   // ═══ ADMIN / RGPD COMPLÉMENTS ═══
   {
     nom: 'creer_compte_parent_ia',

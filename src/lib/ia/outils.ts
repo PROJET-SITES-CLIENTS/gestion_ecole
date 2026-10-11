@@ -1955,17 +1955,35 @@ export function outilsPourSession(permissions: Set<string>): OutilIA[] {
   });
 }
 
-/** Format OpenAI tools — descriptions tronquées à 220 caractères : le
- *  catalogue dépasse 140 outils ; des descriptions très longues portaient
- *  le payload à 60+ Ko et le modèle gratuit répondait « impossible » au
- *  lieu d'appeler les outils. */
+/** Format OpenAI tools — COMPACT : le catalogue atteint 320+ outils
+ *  (accès total) ; sans compression le payload dépassait 115 Ko / 34k tokens
+ *  et le modèle gratuit resaturait (« impossible » au lieu d'appeler).
+ *  Descriptions d'outils tronquées à 150 c., descriptions de PARAMÈTRES à
+ *  60 c. (elles constituent l'essentiel du poids). Les descriptions
+ *  complètes restent dans le code pour la maintenance. */
 export function versOutilsOpenAI(outils: OutilIA[]) {
+  const couper = (s: string, max: number) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+  const compacterParams = (p: any) => {
+    if (!p || typeof p !== 'object') return p;
+    const sortie: any = { type: p.type };
+    if (p.required) sortie.required = p.required;
+    if (p.properties) {
+      sortie.properties = {};
+      for (const [cle, val] of Object.entries(p.properties) as Array<[string, any]>) {
+        const v: any = { type: val?.type };
+        if (val?.enum) v.enum = val.enum;
+        if (val?.description) v.description = couper(val.description, 60);
+        sortie.properties[cle] = v;
+      }
+    }
+    return sortie;
+  };
   return outils.map((t) => ({
     type: 'function' as const,
     function: {
       name: t.nom,
-      description: t.description.length > 220 ? t.description.slice(0, 217) + '…' : t.description,
-      parameters: t.parametres as object,
+      description: couper(t.description, 150),
+      parameters: compacterParams(t.parametres) as object,
     },
   }));
 }
