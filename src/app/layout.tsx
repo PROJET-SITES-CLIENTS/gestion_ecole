@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Archivo, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 
 const archivo = Archivo({
   variable: "--font-heading",
@@ -58,6 +59,20 @@ export default function RootLayout({
       >
         {children}
         <Toaster />
+        {/* FX — toasts Sonner : confirmations qui tombent avec un ressort */}
+        <SonnerToaster
+          position="top-center"
+          richColors
+          closeButton
+          toastOptions={{
+            style: {
+              border: '2px solid #0A0A0A',
+              borderRadius: 0,
+              boxShadow: '4px 4px 0px #0A0A0A',
+              fontWeight: 600,
+            },
+          }}
+        />
       </body>
     </html>
   );

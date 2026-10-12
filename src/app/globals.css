@@ -96,6 +96,131 @@
 }
 
 /* ═════════════════════════════════════════════════════════════════
+   FX SYSTEM — ScolaGestion v4 « Sticky »
+   Aurora · Shimmer · Dark mode smooth · Sons · Animations
+   ═════════════════════════════════════════════════════════════════ */
+
+/* ── AURORA : orbes de couleur qui ondulent lentement ── */
+.aurora-orbe {
+  position: absolute;
+  width: 50vw;
+  height: 50vw;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.18;
+  will-change: transform;
+}
+.aurora-1 {
+  background: radial-gradient(circle, #2563EB 0%, transparent 60%);
+  top: -15%;
+  left: -10%;
+  animation: aurora-flotte 14s ease-in-out infinite alternate;
+}
+.aurora-2 {
+  background: radial-gradient(circle, #F97316 0%, transparent 60%);
+  bottom: -20%;
+  right: -8%;
+  animation: aurora-flotte 18s ease-in-out infinite alternate-reverse;
+}
+.aurora-3 {
+  background: radial-gradient(circle, #8B5CF6 0%, transparent 60%);
+  top: 30%;
+  left: 40%;
+  animation: aurora-flotte 22s ease-in-out infinite alternate;
+  opacity: 0.12;
+}
+@keyframes aurora-flotte {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33% { transform: translate(6vw, -4vh) scale(1.1) rotate(10deg); }
+  66% { transform: translate(-4vw, 5vh) scale(0.95) rotate(-8deg); }
+  100% { transform: translate(3vw, 2vh) scale(1.05) rotate(5deg); }
+}
+
+/* ── SHIMMER : skeletons qui brillent en vague ── */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* ── DARK MODE : transition fluide des couleurs ── */
+html.theme-fluide, html.theme-fluide * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease !important;
+}
+
+/* ── PULSE : pour les badges de notification temps réel ── */
+@keyframes fx-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.8; }
+}
+.fx-pulse { animation: fx-pulse 1.6s ease-in-out infinite; }
+
+/* ── APPARITION : entrée douce de bas en haut ── */
+@keyframes fx-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fx-slide-up { animation: fx-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ── CASCADE : éléments qui arrivent en dominos ── */
+@keyframes fx-stagger {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fx-stagger { animation: fx-stagger 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ── VAGUE DE LUMIÈRE : quand une valeur se met à jour en temps réel ── */
+@keyframes fx-flash {
+  0% { background-color: rgba(37, 99, 235, 0.15); }
+  100% { background-color: transparent; }
+}
+.fx-flash { animation: fx-flash 1s ease-out; }
+
+/* ── ANNEAU DE PROGRESSION ANIMÉ (SVG stroke-dashoffset) ── */
+.fx-anneau {
+  stroke-dasharray: var(--circonference);
+  animation: fx-anneau-remplir 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes fx-anneau-remplir {
+  from { stroke-dashoffset: var(--circonference); }
+  to { stroke-dashoffset: var(--decalage); }
+}
+
+/* ── TOAST : entrée avec ressort ── */
+@keyframes fx-toast-entree {
+  0% { opacity: 0; transform: translateY(-16px) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fx-toast { animation: fx-toast-entree 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* ── REDUIRE LES MOUVEMENTS (accessibilité) ── */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-orbe { animation: none; }
+  .fx-pulse { animation: none; }
+  .fx-stagger { animation-duration: 0.01s; }
+  .fx-slide-up { animation-duration: 0.01s; }
+}
+
+/* ── DARK MODE : styles additionnels pour les modules ── */
+.dark .brutal-card {
+  background: var(--card);
+  border-color: var(--foreground);
+  box-shadow: 4px 4px 0px rgba(250, 250, 250, 0.15);
+}
+.dark .brutal-btn {
+  border-color: var(--foreground);
+  box-shadow: 3px 3px 0px rgba(250, 250, 250, 0.15);
+}
+.dark .brutal-input {
+  border-color: var(--foreground);
+  background: var(--card);
+}
+.dark .brutal-table-header {
+  background: var(--foreground);
+  color: var(--background);
+}
+.dark ::-webkit-scrollbar-track { background: #1a1a1a; border-color: #262626; }
+.dark ::-webkit-scrollbar-thumb { background: #FAFAFA; }
+
+/* ═════════════════════════════════════════════════════════════════
    NEO-BRUTALIST DESIGN SYSTEM — ScolaGestion v3
    Couleurs vives · Angles droits · Ombres sticker · Typographie forte
    ═════════════════════════════════════════════════════════════════ */

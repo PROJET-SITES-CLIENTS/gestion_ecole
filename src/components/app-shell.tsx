@@ -2,6 +2,8 @@
 
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { BarreProgression } from '@/components/fx';
 
 // ====================================================================
 // CODE SPLITTING — Chargement à la demande (lazy loading)
@@ -240,6 +242,24 @@ export default function AppShell({ initialData }: { initialData: any }) {
   const [tempsReel, setTempsReel] = useState(false); // D1 — SSE connecté
   const [pendingEcole, startEcole] = useTransition(); // D5 — bascule d'école
   const [pendingNotifs, startNotifs] = useTransition(); // C2 — tout marquer lu
+  const [darkMode, setDarkMode] = useState(false); // FX — dark mode
+
+  // FX — initialisation du dark mode depuis localStorage
+  useEffect(() => {
+    const stocke = localStorage.getItem('sg-theme');
+    const sombre = stocke === 'dark';
+    setDarkMode(sombre);
+    document.documentElement.classList.toggle('dark', sombre);
+    document.documentElement.classList.add('theme-fluide');
+  }, []);
+
+  // FX — bascule dark mode avec transition fluide
+  function basculerTheme() {
+    const nouveau = !darkMode;
+    setDarkMode(nouveau);
+    localStorage.setItem('sg-theme', nouveau ? 'dark' : 'light');
+    document.documentElement.classList.toggle('dark', nouveau);
+  }
 
   // ---- Temps réel : SSE /api/flux (D1) + polling /api/pulse en repli ----
   // Le serveur pousse « changement » dès qu'un compteur bouge →
@@ -500,6 +520,16 @@ export default function AppShell({ initialData }: { initialData: any }) {
             </select>
           )}
 
+          {/* FX — Toggle dark mode */}
+          <button
+            onClick={basculerTheme}
+            className="hidden sm:flex items-center justify-center h-8 w-8 border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            title={darkMode ? 'Passer en mode clair' : 'Passer en mode sombre'}
+            aria-label="Basculer le thème"
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+
           {/* Indicateur temps réel — D1 : badge « Temps réel » quand le SSE est connecté */}
           <span
             className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
@@ -576,8 +606,23 @@ export default function AppShell({ initialData }: { initialData: any }) {
           </DropdownMenu>
         </header>
 
+        {/* FX — barre de progression fine en haut (feedback visuel d'action) */}
+        <BarreProgression />
+
         <main className="flex-1 overflow-y-auto">
+          {/* FX — transition douce entre modules (glissement + fondu) */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={active}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="h-full"
+            >
           {renderModule()}
+            </motion.div>
+          </AnimatePresence>
         </main>
 
         <footer className="bg-white border-t border-gray-200 py-2 px-4 text-xs text-gray-500 flex items-center justify-between">

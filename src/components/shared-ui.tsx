@@ -6,6 +6,7 @@
 // ====================================================================
 
 import { ReactNode, useCallback, useState, useTransition, isValidElement, cloneElement } from 'react';
+import { motion } from 'motion/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,24 +18,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, X, Eye, Pencil, ChevronDown, Inbox } from 'lucide-react';
 import { statutColor, statutLabel } from '@/lib/format';
+import { CountUp, useCelebration } from '@/components/fx';
 
-// ── FEEDBACK ──
+// ── FEEDBACK ── (avec confettis + sons automatiques sur succès)
 export function useActionFeedback() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const celebrer = useCelebration();
   const run = useCallback(
     (fn: () => Promise<{ ok: boolean; error?: string } | null | undefined>, succes: string) => {
       setMessage(null);
       startTransition(async () => {
         try {
           const r = await fn();
-          setMessage(r && r.ok === false ? `✗ ${r.error ?? 'Opération refusée.'}` : `✓ ${succes}`);
+          if (r && r.ok === false) {
+            setMessage(`✗ ${r.error ?? 'Opération refusée.'}`);
+          } else {
+            setMessage(`✓ ${succes}`);
+            celebrer(succes); // FX : confettis + son selon le message
+          }
         } catch {
           setMessage('✗ Une erreur est survenue. Réessayez.');
         }
       });
     },
-    [startTransition],
+    [startTransition, celebrer],
   );
   return {
     run, message, pending,
@@ -88,25 +96,33 @@ export function StatCard({ title, value, sub, icon, color = 'electric' }: { titl
   const Icon = typeof icon === 'function' || typeof icon === 'string' ? icon : null;
   const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-[1.1rem] w-[1.1rem]" /> : null;
   return (
-    <div
-      className="border-2 shadow-[4px_4px_0px_#0A0A0A] p-4 transition-transform hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#0A0A0A]"
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+      className="border-2 shadow-[4px_4px_0px_#0A0A0A] p-4 transition-shadow hover:shadow-[6px_6px_0px_#0A0A0A]"
       style={{ background: p.bg, color: p.text, borderColor: p.border }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[0.65rem] font-bold uppercase tracking-[0.08em] opacity-80">{title}</p>
           <p className="text-[1.65rem] font-bold mt-1 leading-none tabular-nums" style={{ fontFamily: 'var(--font-mono), JetBrains Mono, monospace' }}>
-            {value}
+            {typeof value === 'number' ? <CountUp value={value} /> : value}
           </p>
           {sub && <p className="text-[0.68rem] mt-1.5 font-medium opacity-70">{sub}</p>}
         </div>
         {icone && (
-          <div className="flex-shrink-0 h-10 w-10 border-2 flex items-center justify-center" style={{ borderColor: p.border, background: 'rgba(255,255,255,0.2)' }}>
+          <motion.div
+            className="flex-shrink-0 h-10 w-10 border-2 flex items-center justify-center"
+            style={{ borderColor: p.border, background: 'rgba(255,255,255,0.2)' }}
+            whileHover={{ scale: 1.1, rotate: -5 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+          >
             {cloneElement(icone as any, { className: 'h-[1.1rem] w-[1.1rem]' })}
-          </div>
+          </motion.div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -161,22 +177,37 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center py-14">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="h-12 w-12 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A]">
+                  <motion.div
+                    className="flex flex-col items-center gap-3"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  >
+                    <motion.div
+                      className="h-12 w-12 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A]"
+                      animate={{ rotate: [0, -3, 3, 0] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    >
                       <Inbox className="h-5 w-5 text-[#0A0A0A]" />
-                    </div>
+                    </motion.div>
                     <p className="text-sm text-neutral-500 font-medium">{emptyLabel}</p>
-                  </div>
+                  </motion.div>
                 </TableCell>
               </TableRow>
             ) : rows.map((r, i) => (
-              <TableRow key={r.id ?? i} className="border-b border-neutral-200 [&>td]:py-2.5 [&>td]:px-3 hover:bg-[#CFFAFE]">
+              <motion.tr
+                key={r.id ?? i}
+                className="border-b border-neutral-200 [&>td]:py-2.5 [&>td]:px-3 hover:bg-[#CFFAFE] [&:hover>td]:bg-[#CFFAFE]"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.03, 0.6), duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              >
                 {columns.map(c => (
                   <TableCell key={c.key} className="text-[0.8rem] text-[#0A0A0A]">
                     {c.render ? c.render(r) : (r as any)[c.key] ?? '—'}
                   </TableCell>
                 ))}
-              </TableRow>
+              </motion.tr>
             ))}
           </TableBody>
         </Table>

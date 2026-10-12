@@ -12,11 +12,13 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'motion/react';
 import { GraduationCap, Lock, Mail, LogIn, AlertCircle, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { FondAurore } from '@/components/fx';
 import * as actions from '@/app/actions';
 import * as ext from '@/app/actions/extensions';
 
@@ -159,14 +161,27 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+    <div className="relative min-h-screen bg-gray-50 flex items-center justify-center p-4 overflow-hidden">
+      {/* FX — fond aurore : la page vit dès la première seconde */}
+      <FondAurore />
+      <div className="relative w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
         {/* Formulaire */}
+        <motion.div
+          initial={{ opacity: 0, y: 24, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 22, delay: 0.1 }}
+          className="w-full"
+        >
         <Card className="w-full">
           <CardHeader className="text-center pb-2">
-            <div className="mx-auto h-12 w-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold mb-3">
+            <motion.div
+              className="mx-auto h-12 w-12 border-2 border-[#0A0A0A] bg-[#F97316] text-white flex items-center justify-center font-bold mb-3 shadow-[3px_3px_0px_#0A0A0A]"
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 16, delay: 0.3 }}
+            >
               <GraduationCap className="h-6 w-6" />
-            </div>
+            </motion.div>
             <CardTitle className="text-xl">ScolaGestion V4</CardTitle>
             <p className="text-sm text-gray-500 mt-1">Plateforme SaaS de gestion scolaire</p>
           </CardHeader>
@@ -339,8 +354,59 @@ export default function LoginPage() {
             )}
           </CardContent>
         </Card>
+        </motion.div>
 
-        {/* Comptes démo — SUPPRIMÉS définitivement (repartir de zéro) */}
+        {/* Côté visuel — slogan + animations (remplace les comptes démo supprimés) */}
+        <motion.div
+          className="hidden lg:flex flex-col items-center justify-center gap-6 text-center"
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: 'spring', stiffness: 180, damping: 20, delay: 0.2 }}
+        >
+          <motion.h2
+            className="text-3xl font-extrabold text-[#0A0A0A] leading-tight max-w-sm"
+            style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            Votre école,
+            <br />
+            <span className="text-[#2563EB]">enfin sous contrôle.</span>
+          </motion.h2>
+          <motion.div
+            className="grid grid-cols-2 gap-3 max-w-xs"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.55 }}
+          >
+            {[
+              ['📊', 'Cockpit 360°'],
+              ['🎙️', 'ARIA vocale'],
+              ['💰', 'Compta SYSCOHADA'],
+              ['🎯', 'Paie & RH complets'],
+            ].map(([ico, label], i) => (
+              <motion.div
+                key={label}
+                className="border-2 border-[#0A0A0A] bg-white px-3 py-2.5 text-sm font-semibold shadow-[3px_3px_0px_#0A0A0A]"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 + i * 0.1 }}
+                whileHover={{ scale: 1.05, rotate: i % 2 === 0 ? -1 : 1 }}
+              >
+                {ico} {label}
+              </motion.div>
+            ))}
+          </motion.div>
+          <motion.p
+            className="text-sm text-gray-500 max-w-xs"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1 }}
+          >
+            340 outils IA · 77 documents officiels · multi-portails sécurisés
+          </motion.p>
+        </motion.div>
       </div>
     </div>
   );

@@ -15,8 +15,10 @@
 // ====================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Bot, X, Send, Mic, MicOff, Volume2, VolumeX, Headphones, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Bot, X, Send, Mic, MicOff, Volume2, VolumeX, Headphones, CheckCircle2, XCircle } from 'lucide-react';
 import { demanderAssistant } from '@/app/actions/ia';
+import { PointsDeFrappe, sons } from '@/components/fx';
 
 // Tour affiché à l'écran (le champ outils_ctx est technique, jamais affiché)
 type Tour = {
@@ -245,22 +247,40 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
 
   if (!ouvert) {
     return (
-      <button
-        onClick={() => setOuvert(true)}
-        className="fixed bottom-20 lg:bottom-5 right-4 lg:right-5 z-50 h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105"
+      <motion.button
+        onClick={() => { setOuvert(true); sons.pop(); }}
+        className="fixed bottom-20 lg:bottom-5 right-4 lg:right-5 z-50 h-14 w-14 border-2 border-[#0A0A0A] bg-[#F97316] hover:bg-[#2563EB] text-white shadow-[4px_4px_0px_#0A0A0A] flex items-center justify-center transition-transform hover:scale-105"
         title="Assistant IA — parlez-lui ou écrivez"
         aria-label="Ouvrir l'assistant IA"
+        initial={{ scale: 0, rotate: -90 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 16, delay: 0.5 }}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.95 }}
       >
         <Bot className="h-7 w-7" />
-      </button>
+      </motion.button>
     );
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2.5rem))] h-[min(600px,calc(100vh-2.5rem))] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
-      <div className="bg-emerald-600 text-white px-4 py-3 flex items-center justify-between">
+    <motion.div
+      initial={{ opacity: 0, y: 24, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 24, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+      className="fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2.5rem))] h-[min(600px,calc(100vh-2.5rem))] bg-white dark:bg-neutral-900 border-2 border-[#0A0A0A] dark:border-white shadow-[6px_6px_0px_#0A0A0A] dark:shadow-[6px_6px_0px_rgba(255,255,255,0.15)] flex flex-col overflow-hidden"
+    >
+      <div className="bg-[#0A0A0A] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#F97316]">
         <div className="flex items-center gap-2">
-          <Bot className="h-5 w-5" />
+          {/* FX — Avatar ARIA : cligne des yeux pendant qu'elle réfléchit */}
+          <motion.div
+            className="h-8 w-8 border-2 border-[#F97316] bg-[#2563EB] flex items-center justify-center"
+            animate={enCours ? { scale: [1, 1.05, 1] } : {}}
+            transition={{ duration: 0.8, repeat: enCours ? Infinity : 0 }}
+          >
+            <Bot className="h-4 w-4" />
+          </motion.div>
           <div>
             <div className="font-semibold text-sm">ARIA — Assistant ScolaGestion</div>
             <div className="text-[10px] opacity-80">
@@ -306,11 +326,12 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
             </div>
           </div>
         ))}
-        {enCours && (
-          <div className="flex items-center gap-2 text-sm text-gray-500 pl-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> j'analyse et j'agis…
+        {enCours ? (
+          <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 pl-2">
+            <PointsDeFrappe />
+            <span>ARIA analyse et agit…</span>
           </div>
-        )}
+        ) : null}
         <div ref={finRef} />
       </div>
 
@@ -352,6 +373,6 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
