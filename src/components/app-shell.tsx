@@ -190,7 +190,7 @@ function GlobalSearch({ initialData, onNavigate }: { initialData: any; onNavigat
 
   return (
     <div ref={boiteRef} className="relative hidden md:block w-72">
-      <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
       <Input
         value={q}
         onChange={(e) => { setQ(e.target.value); setOuvert(true); }}
@@ -209,7 +209,7 @@ function GlobalSearch({ initialData, onNavigate }: { initialData: any; onNavigat
             const titres: Record<string, string> = { eleves: 'Élèves', parents: 'Parents', personnels: 'Personnels', classes: 'Classes', echeances: 'Échéances de scolarité', paiements: 'Paiements' };
             return (
               <div key={grp} className="border-b border-gray-100 last:border-0">
-                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{titres[grp]}</p>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{titres[grp]}</p>
                 {items.map((r: any) => (
                   <button
                     key={`${grp}-${r.id}`}
@@ -217,7 +217,7 @@ function GlobalSearch({ initialData, onNavigate }: { initialData: any; onNavigat
                     className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
-                      <div className="text-sm text-gray-900 truncate">{r.titre}</div>
+                      <div className="text-sm text-foreground truncate">{r.titre}</div>
                       <div className="text-[11px] text-gray-500 truncate">{r.detail}</div>
                     </div>
                     <span className="text-[10px] text-[#2563EB] whitespace-nowrap">ouvrir →</span>
@@ -452,9 +452,9 @@ export default function AppShell({ initialData }: { initialData: any }) {
   return (
     <div className="flex h-screen bg-[#FAFAFA] text-[#0A0A0A]">
       {/* Sidebar — noir pur, bordure électrique */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0F172A] border-r border-slate-700 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-lg lg:shadow-none`}>
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0F172A] dark:bg-[#0A0F1E] border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-lg lg:shadow-none`}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
-          <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white shadow-sm">
+          <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
             SG
           </div>
           <div className="flex-1 min-w-0">
@@ -508,8 +508,8 @@ export default function AppShell({ initialData }: { initialData: any }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 lg:pb-0">
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 gap-3 flex-shrink-0 z-20">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
+        <header className="h-14 bg-card border-b border-border flex items-center px-4 gap-3 flex-shrink-0 z-20">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-muted-foreground hover:text-foreground">
             <Menu className="h-5 w-5" />
           </button>
 
@@ -519,10 +519,10 @@ export default function AppShell({ initialData }: { initialData: any }) {
             <GlobalSearch initialData={initialData} onNavigate={(m) => setActive(m)} />
           )}
 
-          <div className="hidden sm:block flex-1 text-sm text-gray-600 min-w-0 truncate">
-            <span className="text-gray-400">{PORTAL_LABELS[portal]}</span>
-            <span className="mx-2 text-gray-300">/</span>
-            <span className="font-medium text-gray-900">{MODULES.find((m) => m.id === active)?.label}</span>
+          <div className="hidden sm:block flex-1 text-sm text-muted-foreground min-w-0 truncate">
+            <span className="text-muted-foreground/60">{PORTAL_LABELS[portal]}</span>
+            <span className="mx-2 text-muted-foreground/40">/</span>
+            <span className="font-medium text-foreground">{MODULES.find((m) => m.id === active)?.label}</span>
           </div>
 
           {/* D5 — Sélecteur multi-écoles (affiché si plusieurs établissements accessibles) */}
@@ -532,7 +532,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
               onChange={(e) => changerEcoleActive(e.target.value)}
               disabled={pendingEcole}
               title="Changer l'école active de la session"
-              className="hidden md:block h-8 max-w-[180px] truncate rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="hidden md:block h-8 max-w-[180px] truncate rounded-md border border-border bg-card px-2 text-xs font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               {optionsEcoles.map((e: any) => (
                 <option key={e.id} value={e.id}>{e.nom}</option>
@@ -543,18 +543,18 @@ export default function AppShell({ initialData }: { initialData: any }) {
           {/* FX — Palette ⌘K (bouton recherche rapide) */}
           <button
             onClick={() => setPaletteOuverte(true)}
-            className="hidden sm:flex items-center gap-2 h-8 px-3 border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-xs"
+            className="hidden sm:flex items-center gap-2 h-8 px-3 border border-border text-gray-500 dark:text-muted-foreground/60 hover:bg-muted/50 transition-colors text-xs"
             title="Recherche globale (Ctrl+K)"
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden md:inline">Rechercher…</span>
-            <kbd className="hidden md:inline-flex text-[9px] font-bold border border-gray-300 dark:border-gray-600 px-1 py-0.5">⌘K</kbd>
+            <kbd className="hidden md:inline-flex text-[9px] font-bold border border-border px-1 py-0.5">⌘K</kbd>
           </button>
 
           {/* FX — Toggle sons UI */}
           <button
             onClick={() => { const n = !sonsOn; setSonsOn(n); reglerSons(n); if (n) sons.pop(); }}
-            className="hidden sm:flex items-center justify-center h-8 w-8 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+            className="hidden sm:flex items-center justify-center h-8 w-8 border border-border text-muted-foreground dark:text-muted-foreground/60 hover:bg-muted/50 transition-colors"
             title={sonsOn ? 'Couper les sons' : 'Activer les sons'}
             aria-label="Toggle sons UI"
           >
@@ -564,7 +564,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
           {/* FX — Toggle dark mode */}
           <button
             onClick={basculerTheme}
-            className="hidden sm:flex items-center justify-center h-8 w-8 border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            className="hidden sm:flex items-center justify-center h-8 w-8 border border-gray-200 text-muted-foreground hover:bg-muted/50 transition-colors"
             title={darkMode ? 'Passer en mode clair' : 'Passer en mode sombre'}
             aria-label="Basculer le thème"
           >

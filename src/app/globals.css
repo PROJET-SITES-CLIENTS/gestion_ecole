@@ -24,16 +24,15 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 }
 
 /* ═════════════════════════════════════════════════════════════════
-   INSTITUTIONAL DESIGN SYSTEM — ScolaGestion v5
-   Inspiré de Stripe / Notion / Linear : raffiné, sobre, professionnel.
-   Palette : bleu profond, slate doux, accents mesurés.
+   INSTITUTIONAL DESIGN SYSTEM — ScolaGestion v5.1
+   Angles DROITS · Palette sobre · Dark mode fonctionnel
    ═════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -81,6 +80,7 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    border-radius: 0 !important;
   }
   body {
     @apply bg-background text-foreground antialiased;
@@ -101,7 +101,7 @@
   }
 }
 
-/* ── SCROLLBAR : arrondie, discrète ── */
+/* ── SCROLLBAR : carrée, discrète ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -111,7 +111,6 @@
 }
 ::-webkit-scrollbar-thumb {
   background: #CBD5E1;
-  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
@@ -120,32 +119,26 @@
 .dark ::-webkit-scrollbar-thumb:hover { background: #64748B; }
 
 /* ═════════════════════════════════════════════════════════════════
-   COMPOSANTS PROFESSIONNELS (remplacent brutal-*)
+   COMPOSANTS — utilisent les VARIABLES CSS (dark mode automatique)
    ═════════════════════════════════════════════════════════════════ */
 
-/* ── CARD : bordure 1px, ombre douce, coins arrondis ── */
+/* ── CARD : bordure 1px, ombre douce, ANGLES DROITS ── */
 .brutal-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
   transition: box-shadow 0.15s ease;
 }
 .brutal-card:hover {
   box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.08);
 }
-.dark .brutal-card {
-  background: var(--card);
-  border-color: var(--border);
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.2);
-}
 
-/* ── BUTTON : sobre, enfonçable léger ── */
+/* ── BUTTON ── */
 .brutal-btn {
-  border-radius: 8px;
+  border-radius: 0;
   font-weight: 500;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  transition: background-color 0.15s ease;
 }
 .brutal-btn:hover {
   filter: brightness(0.95);
@@ -159,26 +152,22 @@
   transform: none;
 }
 
-/* ── INPUT : bordure subtile, focus ring bleu ── */
+/* ── INPUT ── */
 .brutal-input {
   border: 1px solid var(--input);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--card);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 .brutal-input:focus {
   border-color: var(--ring);
   box-shadow: 0 0 0 3px rgb(30 64 175 / 0.1);
   outline: none;
 }
-.dark .brutal-input {
-  background: var(--card);
-  border-color: var(--input);
-}
 
-/* ── NAV ITEM : accent gauche fin, hover discret ── */
+/* ── NAV ITEM ── */
 .brutal-nav-item {
-  border-radius: 8px;
+  border-radius: 0;
   border-left: 3px solid transparent;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -193,7 +182,7 @@
   font-weight: 600;
 }
 
-/* ── TABLE HEADER : fond clair, texte sobre ── */
+/* ── TABLE HEADER ── */
 .brutal-table-header {
   background: var(--muted);
   color: var(--muted-foreground);
@@ -202,14 +191,10 @@
   font-size: 0.68rem;
   font-weight: 600;
 }
-.dark .brutal-table-header {
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
 
-/* ── BADGE : tons doux (pas saturés) ── */
+/* ── BADGE ── */
 .brutal-badge {
-  border-radius: 6px;
+  border-radius: 0;
   text-transform: capitalize;
   letter-spacing: 0.01em;
   font-weight: 500;
@@ -220,10 +205,9 @@
 }
 
 /* ═════════════════════════════════════════════════════════════════
-   FX SYSTEM — Animations sobres et élégantes
+   ANIMATIONS — sobres
    ═════════════════════════════════════════════════════════════════ */
 
-/* ── AURORA : très subtile (5-8% opacité) ── */
 .aurora-orbe {
   position: absolute;
   width: 50vw;
@@ -245,24 +229,21 @@
   right: -8%;
   animation: aurora-flotte 20s ease-in-out infinite alternate-reverse;
 }
-.aurora-3 { display: none; /* réduit à 2 orbes pour la sobriété */ }
+.aurora-3 { display: none; }
 @keyframes aurora-flotte {
   0% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(4vw, -3vh) scale(1.05); }
   100% { transform: translate(-3vw, 3vh) scale(1); }
 }
 
-/* ── SHIMMER : skeletons ── */
 @keyframes shimmer {
   100% { transform: translateX(100%); }
 }
 
-/* ── DARK MODE : transition fluide ── */
 html.theme-fluide, html.theme-fluide * {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease !important;
 }
 
-/* ── APPARITION : entrée douce ── */
 @keyframes fx-slide-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -275,7 +256,6 @@ html.theme-fluide, html.theme-fluide * {
 }
 .fx-stagger { animation: fx-stagger 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* ── REDUIRE LES MOUVEMENTS (accessibilité) ── */
 @media (prefers-reduced-motion: reduce) {
   .aurora-orbe { animation: none; }
   .fx-stagger { animation-duration: 0.01s; }
