@@ -64,7 +64,7 @@ import {
   ScrollText, Wallet, School, ChevronDown, Bell, Menu, X,
   CheckCircle2, HeartPulse, LogOut, Search, Activity, Gavel, Plug, CheckCheck,
   UserPlus, ShieldAlert, FileText, Settings2, Building, Calculator,
-} from 'lucide-react';
+  Moon, Sun, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -452,14 +452,14 @@ export default function AppShell({ initialData }: { initialData: any }) {
   return (
     <div className="flex h-screen bg-[#FAFAFA] text-[#0A0A0A]">
       {/* Sidebar — noir pur, bordure électrique */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0A0A0A] border-r-4 border-[#2563EB] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_0px_#0A0A0A] lg:shadow-none`}>
-        <div className="flex items-center gap-3 px-5 py-5 border-b-2 border-[#333]">
-          <div className="h-9 w-9 bg-[#F97316] border-2 border-white flex items-center justify-center font-extrabold text-sm text-[#0A0A0A]">
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0F172A] border-r border-slate-700 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-lg lg:shadow-none`}>
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
+          <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white shadow-sm">
             SG
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[0.85rem] font-extrabold text-white leading-tight tracking-tight" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>ScolaGestion</div>
-            <div className="text-[0.65rem] text-[#F97316] font-bold uppercase tracking-wider">{PORTAL_LABELS[portal]}</div>
+            <div className="text-[0.65rem] text-blue-400 font-medium">{PORTAL_LABELS[portal]}</div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-neutral-400 hover:text-white transition-colors">
             <X className="h-5 w-5" />
@@ -476,7 +476,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
                 onClick={() => { setActive(m.id); setSidebarOpen(false); }}
                 className={`brutal-nav-item ${isActive ? 'active' : ''} w-full flex items-center justify-between px-3 py-2.5 text-[0.8rem] mb-1 ${
                   isActive
-                    ? 'bg-[#2563EB] text-white font-bold'
+                    ? 'bg-blue-600 text-white font-medium rounded-lg'
                     : 'text-neutral-400 hover:text-white hover:bg-[#1a1a1a]'
                 }`}
               >
@@ -486,7 +486,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
                 </div>
                 {m.id === 'eleves' && initialData?.totaux?.eleves != null && (
                   <span className={`ml-2 flex-shrink-0 text-[0.65rem] font-extrabold px-2 py-0.5 tabular-nums border ${
-                    isActive ? 'bg-white text-[#2563EB] border-white' : 'bg-[#F97316] text-white border-[#F97316]'
+                    isActive ? 'bg-white text-[#2563EB] border-white' : 'bg-blue-100 text-blue-700 border-blue-200'
                   }`}>
                     {initialData.totaux.eleves}
                   </span>
@@ -496,7 +496,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
           })}
         </nav>
 
-        <div className="px-4 py-4 border-t-2 border-[#333] bg-[#111]">
+        <div className="px-4 py-4 border-t border-slate-800 bg-slate-900/50">
           <div className="text-[0.6rem] text-neutral-500 font-bold uppercase tracking-widest mb-1">École courante</div>
           <div className="text-[0.8rem] font-bold text-white truncate">{school?.nom ?? '—'}</div>
           <div className="text-[0.65rem] text-neutral-500 truncate">{school?.slug}.platforme.com</div>
@@ -508,7 +508,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 lg:pb-0">
-        <header className="h-14 bg-white border-b-2 border-[#0A0A0A] flex items-center px-4 gap-3 flex-shrink-0 z-20">
+        <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 gap-3 flex-shrink-0 z-20">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
             <Menu className="h-5 w-5" />
           </button>
@@ -558,7 +558,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
             title={sonsOn ? 'Couper les sons' : 'Activer les sons'}
             aria-label="Toggle sons UI"
           >
-            {sonsOn ? '🔊' : '🔇'}
+            {sonsOn ? <Volume2 className='h-4 w-4' /> : <VolumeX className='h-4 w-4' />}
           </button>
 
           {/* FX — Toggle dark mode */}
@@ -568,7 +568,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
             title={darkMode ? 'Passer en mode clair' : 'Passer en mode sombre'}
             aria-label="Basculer le thème"
           >
-            {darkMode ? '☀️' : '🌙'}
+            {darkMode ? <Sun className='h-4 w-4' /> : <Moon className='h-4 w-4' />}
           </button>
 
           {/* Indicateur temps réel — D1 : badge « Temps réel » quand le SSE est connecté */}

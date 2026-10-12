@@ -44,38 +44,17 @@ export function CountUpFCFA({ centimes }: { centimes: number }) {
 // ═════════════════════════════════════════════════════════════════
 
 /** Explosion classique — validations, paiements complets */
-export function celebrer(intensite: 'petite' | 'normale' | 'grande' = 'normale') {
-  const configs = {
-    petite: { count: 40, spread: 50 },
-    normale: { count: 80, spread: 70 },
-    grande: { count: 150, spread: 100 },
-  };
-  const c = configs[intensite];
-  confetti({
-    particleCount: c.count,
-    spread: c.spread,
-    origin: { y: 0.7 },
-    colors: ['#2563EB', '#F97316', '#84CC16', '#EC4899', '#FACC15'],
-    disableForReducedMotion: true,
-  });
-}
+export function celebrer(_intensite?: 'petite' | 'normale' | 'grande') { /* institutionnel : pas de confettis */ }
 
 /** Pluie dorée — clôtures, réussites exceptionnelles */
-export function pluieDoree() {
-  const fin = Date.now() + 1200;
-  (function cadre() {
-    confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.6 }, colors: ['#FACC15', '#F59E0B', '#FDE68A'], disableForReducedMotion: true });
-    confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.6 }, colors: ['#FACC15', '#F59E0B', '#FDE68A'], disableForReducedMotion: true });
-    if (Date.now() < fin) requestAnimationFrame(cadre);
-  })();
-}
+export function pluieDoree() { /* institutionnel : pas de pluie dorée */ }
 
 // ═════════════════════════════════════════════════════════════════
 // 3. SONS UI — feedback multisensoriel (Web Audio, zéro fichier)
 // ═════════════════════════════════════════════════════════════════
 
 let ctxAudio: AudioContext | null = null;
-let sonsActifs = true;
+let sonsActifs = false; // institutionnel : sons désactivés par défaut
 
 export function reglerSons(actif: boolean) {
   sonsActifs = actif;
@@ -84,7 +63,7 @@ export function reglerSons(actif: boolean) {
 
 export function sonsEnabled() {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem('sg-sons') !== '0';
+  return false; // institutionnel : sons coupés
 }
 
 function audio(): AudioContext | null {
@@ -166,32 +145,7 @@ export function SkeletonLignes({ n = 5 }: { n?: number }) {
 // 5. BOUTON MAGNÉTIQUE — s'incline vers le curseur
 // ═════════════════════════════════════════════════════════════════
 
-export function Magnetique({ children, force = 0.3 }: { children: React.ReactNode; force?: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-
-  const bouger = (e: React.MouseEvent) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = e.clientX - rect.left - rect.width / 2;
-    const y = e.clientY - rect.top - rect.height / 2;
-    setOffset({ x: x * force, y: y * force });
-  };
-
-  return (
-    <motion.div
-      ref={ref}
-      onMouseMove={bouger}
-      onMouseLeave={() => setOffset({ x: 0, y: 0 })}
-      animate={{ x: offset.x, y: offset.y }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      style={{ display: 'inline-block' }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+export function Magnetique({ children }: { children: React.ReactNode; force?: number }) { return <>{children}</>; }
 
 // ═════════════════════════════════════════════════════════════════
 // 6. INDICATEUR DE FRAPPE — ARIA réfléchit
@@ -245,7 +199,7 @@ export function BarreProgression() {
   if (!visible) return null;
   return (
     <motion.div
-      className="fixed top-0 left-0 right-0 h-[3px] z-[9999] bg-gradient-to-r from-[#2563EB] via-[#06B6D4] to-[#84CC16] origin-left"
+      className="fixed top-0 left-0 right-0 h-[3px] z-[9999] bg-blue-600 origin-left"
       style={{ width: `${largeur}%` }}
       transition={{ ease: 'easeOut' }}
     />
@@ -260,10 +214,4 @@ export function BarreProgression() {
 const MOTS_CONFETTIS = /encaiss|valid|résolu|créé|inscrit|génér|clôtur|payé|complet|publi/i;
 const MOTS_DOREE = /clôtur|exercice|année|parfait|100/i;
 
-export function useCelebration() {
-  return useCallback((message: string) => {
-    if (MOTS_DOREE.test(message)) { pluieDoree(); sons.victoire(); }
-    else if (MOTS_CONFETTIS.test(message)) { celebrer('normale'); sons.succes(); }
-    else { sons.pop(); }
-  }, []);
-}
+export function useCelebration() { return useCallback((_msg: string) => { /* institutionnel : pas de célébration */ }, []); }

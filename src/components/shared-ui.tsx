@@ -1,8 +1,8 @@
 'use client';
 
 // ====================================================================
-// NEO-BRUTALIST DESIGN SYSTEM — ScolaGestion v3
-// Angles droits · Couleurs vives · Ombres sticker · Typographie forte
+// INSTITUTIONAL DESIGN SYSTEM — ScolaGestion v5
+// Inspiré de Stripe / Notion / Linear : raffiné, sobre, professionnel.
 // ====================================================================
 
 import { ReactNode, useCallback, useState, useTransition, isValidElement, cloneElement } from 'react';
@@ -18,41 +18,35 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, X, Eye, Pencil, ChevronDown, Inbox } from 'lucide-react';
 import { statutColor, statutLabel } from '@/lib/format';
-import { CountUp, useCelebration } from '@/components/fx';
+import { CountUp } from '@/components/fx';
 
-// ── FEEDBACK ── (avec confettis + sons automatiques sur succès)
+// ── FEEDBACK ──
 export function useActionFeedback() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const celebrer = useCelebration();
   const run = useCallback(
     (fn: () => Promise<{ ok: boolean; error?: string } | null | undefined>, succes: string) => {
       setMessage(null);
       startTransition(async () => {
         try {
           const r = await fn();
-          if (r && r.ok === false) {
-            setMessage(`✗ ${r.error ?? 'Opération refusée.'}`);
-          } else {
-            setMessage(`✓ ${succes}`);
-            celebrer(succes); // FX : confettis + son selon le message
-          }
+          setMessage(r && r.ok === false ? `✗ ${r.error ?? 'Opération refusée.'}` : `✓ ${succes}`);
         } catch {
           setMessage('✗ Une erreur est survenue. Réessayez.');
         }
       });
     },
-    [startTransition, celebrer],
+    [startTransition],
   );
   return {
     run, message, pending,
     Message: message ? (
       <div
         role="status"
-        className={`animate-pop-in border-2 px-4 py-2.5 text-sm font-semibold ${
+        className={`animate-pop-in rounded-lg border px-4 py-2.5 text-sm font-medium ${
           message.startsWith('✓')
-            ? 'border-[#0A0A0A] bg-[#84CC16] text-[#0A0A0A] shadow-[3px_3px_0px_#0A0A0A]'
-            : 'border-[#0A0A0A] bg-[#EC4899] text-white shadow-[3px_3px_0px_#0A0A0A]'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-red-200 bg-red-50 text-red-700'
         }`}
       >
         {message}
@@ -64,90 +58,84 @@ export function useActionFeedback() {
 // ── PAGE HEADER ──
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 border-b-2 border-[#0A0A0A] pb-4">
+    <div className="fx-slide-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 border-b border-slate-200 pb-4">
       <div className="min-w-0">
-        <h1 className="text-[1.6rem] font-extrabold tracking-tight text-[#0A0A0A] leading-tight" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900">
           {title}
         </h1>
-        {subtitle && <p className="text-[0.8rem] text-neutral-500 mt-1 leading-relaxed">{subtitle}</p>}
+        {subtitle && <p className="text-[0.8rem] text-slate-500 mt-1 leading-relaxed">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
     </div>
   );
 }
 
-// ── STAT CARD — couleur vive pleine ──
+// ── STAT CARD — fond blanc, icône teintée, sobre ──
+const STAT_TINTES: Record<string, { iconBg: string; iconText: string; accent: string }> = {
+  electric: { iconBg: 'bg-blue-50', iconText: 'text-blue-600', accent: 'text-blue-600' },
+  blue: { iconBg: 'bg-blue-50', iconText: 'text-blue-600', accent: 'text-blue-600' },
+  orange: { iconBg: 'bg-amber-50', iconText: 'text-amber-600', accent: 'text-amber-600' },
+  amber: { iconBg: 'bg-amber-50', iconText: 'text-amber-600', accent: 'text-amber-600' },
+  lime: { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', accent: 'text-emerald-600' },
+  emerald: { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', accent: 'text-emerald-600' },
+  pink: { iconBg: 'bg-rose-50', iconText: 'text-rose-600', accent: 'text-rose-600' },
+  rose: { iconBg: 'bg-rose-50', iconText: 'text-rose-600', accent: 'text-rose-600' },
+  violet: { iconBg: 'bg-violet-50', iconText: 'text-violet-600', accent: 'text-violet-600' },
+  purple: { iconBg: 'bg-violet-50', iconText: 'text-violet-600', accent: 'text-violet-600' },
+  cyan: { iconBg: 'bg-cyan-50', iconText: 'text-cyan-600', accent: 'text-cyan-600' },
+  yellow: { iconBg: 'bg-amber-50', iconText: 'text-amber-600', accent: 'text-amber-600' },
+  gray: { iconBg: 'bg-slate-50', iconText: 'text-slate-500', accent: 'text-slate-600' },
+};
+
 export function StatCard({ title, value, sub, icon, color = 'electric' }: { title: string; value: ReactNode; sub?: string; icon?: any; color?: string }) {
-  const palettes: Record<string, { bg: string; text: string; border: string }> = {
-    electric: { bg: '#2563EB', text: '#FFFFFF', border: '#0A0A0A' },
-    orange: { bg: '#F97316', text: '#FFFFFF', border: '#0A0A0A' },
-    lime: { bg: '#84CC16', text: '#0A0A0A', border: '#0A0A0A' },
-    pink: { bg: '#EC4899', text: '#FFFFFF', border: '#0A0A0A' },
-    violet: { bg: '#8B5CF6', text: '#FFFFFF', border: '#0A0A0A' },
-    cyan: { bg: '#06B6D4', text: '#0A0A0A', border: '#0A0A0A' },
-    yellow: { bg: '#FACC15', text: '#0A0A0A', border: '#0A0A0A' },
-    emerald: { bg: '#10B981', text: '#FFFFFF', border: '#0A0A0A' },
-    blue: { bg: '#3B82F6', text: '#FFFFFF', border: '#0A0A0A' },
-    amber: { bg: '#F59E0B', text: '#0A0A0A', border: '#0A0A0A' },
-    purple: { bg: '#A855F7', text: '#FFFFFF', border: '#0A0A0A' },
-    gray: { bg: '#F5F5F5', text: '#0A0A0A', border: '#0A0A0A' },
-  };
-  const p = palettes[color] ?? palettes.electric;
+  const t = STAT_TINTES[color] ?? STAT_TINTES.electric;
   const Icon = typeof icon === 'function' || typeof icon === 'string' ? icon : null;
-  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-[1.1rem] w-[1.1rem]" /> : null;
+  const icone = isValidElement(icon) ? icon : Icon ? <Icon className="h-4 w-4" /> : null;
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-      className="border-2 shadow-[4px_4px_0px_#0A0A0A] p-4 transition-shadow hover:shadow-[6px_6px_0px_#0A0A0A]"
-      style={{ background: p.bg, color: p.text, borderColor: p.border }}
-    >
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[0.65rem] font-bold uppercase tracking-[0.08em] opacity-80">{title}</p>
-          <p className="text-[1.65rem] font-bold mt-1 leading-none tabular-nums" style={{ fontFamily: 'var(--font-mono), JetBrains Mono, monospace' }}>
+          <p className="text-[0.68rem] font-medium text-slate-500">{title}</p>
+          <p className="text-2xl font-semibold mt-1 leading-none text-slate-900 tabular-nums tracking-tight">
             {typeof value === 'number' ? <CountUp value={value} /> : value}
           </p>
-          {sub && <p className="text-[0.68rem] mt-1.5 font-medium opacity-70">{sub}</p>}
+          {sub && <p className="text-[0.68rem] mt-1.5 text-slate-400">{sub}</p>}
         </div>
         {icone && (
-          <motion.div
-            className="flex-shrink-0 h-10 w-10 border-2 flex items-center justify-center"
-            style={{ borderColor: p.border, background: 'rgba(255,255,255,0.2)' }}
-            whileHover={{ scale: 1.1, rotate: -5 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-          >
-            {cloneElement(icone as any, { className: 'h-[1.1rem] w-[1.1rem]' })}
-          </motion.div>
+          <div className={`flex-shrink-0 h-9 w-9 rounded-lg ${t.iconBg} flex items-center justify-center`}>
+            {cloneElement(icone as any, { className: `h-4 w-4 ${t.iconText}` })}
+          </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-// ── STATUS BADGE ──
+// ── STATUS BADGE — tons doux ──
 export function StatusBadge({ statut, label }: { statut: string; label?: string }) {
+  const couleurs: Record<string, string> = {
+    valide: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    payee: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    actif: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    present: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    impayee: 'bg-rose-50 text-rose-700 border-rose-200',
+    absent: 'bg-rose-50 text-rose-700 border-rose-200',
+    refuse: 'bg-rose-50 text-rose-700 border-rose-200',
+    annule: 'bg-rose-50 text-rose-700 border-rose-200',
+    attente: 'bg-amber-50 text-amber-700 border-amber-200',
+    brouillon: 'bg-amber-50 text-amber-700 border-amber-200',
+    partiel: 'bg-amber-50 text-amber-700 border-amber-200',
+    retard: 'bg-orange-50 text-orange-700 border-orange-200',
+    diplome: 'bg-blue-50 text-blue-700 border-blue-200',
+    default: 'bg-slate-50 text-slate-600 border-slate-200',
+  };
+  const s = (statut ?? '').toLowerCase();
+  const cle = Object.keys(couleurs).find((k) => s.includes(k)) ?? 'default';
   return (
-    <span className="brutal-badge" style={{ background: getStatutBg(statut), color: getStatutText(statut) }}>
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[0.7rem] font-medium ${couleurs[cle]}`}>
       {label ?? statutLabel(statut)}
     </span>
   );
-}
-
-function getStatutBg(statut: string): string {
-  const s = statut?.toLowerCase() ?? '';
-  if (/valide|paye|publie|actif|recue|present|execute|admis|termine/.test(s)) return '#84CC16';
-  if (/impayee|absent|rejete|refuse|annule|exclu|supprime/.test(s)) return '#EC4899';
-  if (/attente|brouillon|partiel|soumis|planifie|en_cours|demande/.test(s)) return '#FACC15';
-  if (/diplome|retard/.test(s)) return '#F97316';
-  return '#E5E5E5';
-}
-
-function getStatutText(statut: string): string {
-  const s = statut?.toLowerCase() ?? '';
-  if (/valide|paye|publie|actif|recue|present|execute|admis|termine/.test(s)) return '#0A0A0A';
-  return s === 'impayee' || s === 'absent' || s === 'rejete' || s === 'refuse' || s === 'annule' ? '#FFFFFF' : '#0A0A0A';
 }
 
 // ── DATA TABLE ──
@@ -161,13 +149,13 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
 }) {
   const plafonne = typeof total === 'number' && rows.length < total;
   return (
-    <div className="border-2 border-[#0A0A0A] bg-white overflow-hidden shadow-[4px_4px_0px_#0A0A0A]">
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 max-h-[60vh] overflow-y-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-b-2 border-[#0A0A0A] [&>th]:bg-[#0A0A0A] [&>th]:text-white">
+            <TableRow className="border-b border-slate-200 bg-slate-50/50 hover:bg-slate-50/50">
               {columns.map(c => (
-                <TableHead key={c.key} className="text-[0.63rem] font-bold uppercase tracking-[0.06em] py-3 px-3">
+                <TableHead key={c.key} className="text-[0.66rem] font-semibold uppercase tracking-wide text-slate-500 py-3 px-3">
                   {c.label}
                 </TableHead>
               ))}
@@ -177,33 +165,24 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center py-14">
-                  <motion.div
-                    className="flex flex-col items-center gap-3"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  >
-                    <motion.div
-                      className="h-12 w-12 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A]"
-                      animate={{ rotate: [0, -3, 3, 0] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                    >
-                      <Inbox className="h-5 w-5 text-[#0A0A0A]" />
-                    </motion.div>
-                    <p className="text-sm text-neutral-500 font-medium">{emptyLabel}</p>
-                  </motion.div>
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-slate-50 flex items-center justify-center">
+                      <Inbox className="h-5 w-5 text-slate-300" />
+                    </div>
+                    <p className="text-sm text-slate-400">{emptyLabel}</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : rows.map((r, i) => (
               <motion.tr
                 key={r.id ?? i}
-                className="border-b border-neutral-200 [&>td]:py-2.5 [&>td]:px-3 hover:bg-[#CFFAFE] [&:hover>td]:bg-[#CFFAFE]"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.03, 0.6), duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                className="border-b border-slate-100 hover:bg-slate-50/50"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: Math.min(i * 0.015, 0.3), duration: 0.2 }}
               >
                 {columns.map(c => (
-                  <TableCell key={c.key} className="text-[0.8rem] text-[#0A0A0A]">
+                  <TableCell key={c.key} className="text-[0.8rem] text-slate-700 py-2.5 px-3">
                     {c.render ? c.render(r) : (r as any)[c.key] ?? '—'}
                   </TableCell>
                 ))}
@@ -212,46 +191,91 @@ export function DataTable({ columns, rows, emptyLabel = 'Aucune donnée', total,
           </TableBody>
         </Table>
       </div>
-      {(plafonne || typeof total === 'number') && (
-        <div className="flex items-center justify-between border-t-2 border-[#0A0A0A] bg-[#FACC15] px-4 py-2 text-xs font-bold text-[#0A0A0A]">
-          <span className="tabular-nums">
-            {rows.length} affiché(s){typeof total === 'number' ? ` sur ${total}` : ''}
-          </span>
-          {plafonne && onLoadMore && (
-            <Button size="sm" className="brutal-btn h-7 bg-white text-[#0A0A0A] text-xs" onClick={onLoadMore} disabled={loadingMore}>
-              <ChevronDown className="h-3.5 w-3.5 mr-1" />
-              {loadingMore ? 'Chargement…' : 'Charger plus'}
-            </Button>
-          )}
+      {plafonne && onLoadMore && (
+        <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50/30">
+          <span className="text-xs text-slate-500">{rows.length} affiché(s) sur {total}</span>
+          <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? 'Chargement…' : 'Charger plus'}
+          </Button>
         </div>
       )}
     </div>
   );
 }
 
-// ── FORM FIELD ──
-export function FormField({ label, children, required, hidden }: { label: string; children: ReactNode; required?: boolean; hidden?: boolean }) {
-  if (hidden) return <>{children}</>;
+// ── SECTION BLOCK ──
+export function SectionBlock({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-[0.7rem] font-bold text-[#0A0A0A] uppercase tracking-wide">{label} {required && <span className="text-[#EC4899]">*</span>}</Label>
+    <section className="fx-slide-up rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+        <div className="min-w-0">
+          <h3 className="text-[0.85rem] font-semibold text-slate-800">{title}</h3>
+          {description && <p className="text-[0.7rem] text-slate-400 mt-0.5 leading-relaxed">{description}</p>}
+        </div>
+        {action && <div className="flex items-center gap-2 flex-shrink-0">{action}</div>}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+// ── CREATE BUTTON ──
+export function CreateButton({ label, onClick }: { label: string; onClick?: () => void }) {
+  return (
+    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 font-medium h-8 rounded-lg shadow-sm" onClick={onClick}>
+      <Plus className="h-3.5 w-3.5" /> {label}
+    </Button>
+  );
+}
+
+// ── EMPTY STATE ──
+export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/30">
+      <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center mb-3">
+        <Inbox className="h-5 w-5 text-slate-400" />
+      </div>
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+      {description && <p className="text-xs text-slate-400 mt-1 max-w-sm">{description}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+// ── INFO ROW ──
+export function InfoRow({ label, value }: { label: string; value?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <dt className="text-xs text-slate-400 font-medium flex-shrink-0">{label}</dt>
+      <dd className="text-xs text-slate-700 font-medium text-right">{value ?? '—'}</dd>
+    </div>
+  );
+}
+
+// ── FORM FIELD ──
+export function FormField({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium text-slate-600">
+        {label} {required && <span className="text-rose-500">*</span>}
+      </Label>
       {children}
     </div>
   );
 }
 
+// ── MODAL FORM ──
 type FieldDef = {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'datetime-local' | 'month' | 'select' | 'textarea' | 'checkbox' | 'hidden' | 'email' | 'password';
-  options?: { value: string; label: string }[];
+  type?: 'text' | 'number' | 'date' | 'month' | 'datetime-local' | 'textarea' | 'select' | 'checkbox' | 'hidden' | 'password' | 'email';
+  options?: Array<{ value: string; label: string }>;
   required?: boolean;
+  defaultValue?: string | number;
   placeholder?: string;
-  defaultValue?: string | number | boolean | null;
-  step?: string;
+  step?: string | number;
 };
 
-// ── MODAL FORM ──
 export function ModalForm({
   trigger, title, fields, action, defaultValues,
 }: {
@@ -280,65 +304,57 @@ export function ModalForm({
     });
   }
 
+  const champsVisibles = fields.filter((f) => f.type !== 'hidden');
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="!rounded-none border-2 border-[#0A0A0A] shadow-[6px_6px_0px_#0A0A0A] max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="pb-0 border-b-2 border-[#0A0A0A] mb-3">
-          <DialogTitle className="text-base font-extrabold text-[#0A0A0A]" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
-            {title}
-          </DialogTitle>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto rounded-xl border border-slate-200 shadow-lg">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-base font-semibold text-slate-800">{title}</DialogTitle>
         </DialogHeader>
         {erreur && (
-          <div className="animate-pop-in border-2 border-[#0A0A0A] bg-[#EC4899] px-3.5 py-2.5 text-sm font-semibold text-white" role="alert">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
             {erreur}
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {fields.map(f => (
-            <FormField key={f.name} label={f.label} required={f.required} hidden={f.type === 'hidden'}>
-              {f.type === 'textarea' ? (
-                <Textarea name={f.name} placeholder={f.placeholder} defaultValue={valueOf(f)} required={f.required} className="brutal-input text-sm min-h-[72px]" />
-              ) : f.type === 'select' ? (
-                <select
-                  name={f.name}
-                  defaultValue={valueOf(f) ?? ''}
-                  required={f.required}
-                  className="brutal-input w-full h-10 px-3 py-1 text-sm font-medium"
-                >
-                  <option value="">— Choisir —</option>
-                  {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              ) : f.type === 'checkbox' ? (
-                <Checkbox name={f.name} defaultChecked={valueOf(f)} />
-              ) : (
-                <Input
-                  type={f.type ?? 'text'}
-                  name={f.name}
-                  placeholder={f.placeholder}
-                  defaultValue={valueOf(f)}
-                  required={f.required}
-                  step={f.step ?? (f.type === 'number' ? '0.01' : undefined)}
-                  className="brutal-input text-sm h-10 font-medium"
-                />
-              )}
-            </FormField>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {fields.map((f) => (
+            <input key={f.name} type="hidden" name={f.name} value={f.type === 'hidden' ? valueOf(f) : undefined} />
           ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {champsVisibles.map((f) => (
+              <div key={f.name} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                <FormField label={f.label} required={f.required}>
+                  {f.type === 'textarea' ? (
+                    <Textarea name={f.name} defaultValue={valueOf(f)} placeholder={f.placeholder} required={f.required}
+                      className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                  ) : f.type === 'select' ? (
+                    <select name={f.name} defaultValue={valueOf(f) ?? ''} required={f.required}
+                      className="w-full h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                      <option value="">—</option>
+                      {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  ) : f.type === 'checkbox' ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Checkbox name={f.name} defaultChecked={valueOf(f) === 'on' || valueOf(f) === true} />
+                      <span className="text-sm text-slate-600">{f.placeholder}</span>
+                    </div>
+                  ) : (
+                    <Input type={f.type ?? 'text'} name={f.name} defaultValue={valueOf(f)} placeholder={f.placeholder} required={f.required}
+                      step={f.step}
+                      className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                  )}
+                </FormField>
+              </div>
+            ))}
+          </div>
           <DialogFooter className="pt-2 gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="outline" className="brutal-btn bg-white text-[#0A0A0A] h-9" disabled={pending}>Annuler</Button>
+              <Button type="button" variant="outline" size="sm" className="rounded-lg">Annuler</Button>
             </DialogClose>
-            <Button
-              type="submit"
-              disabled={pending}
-              className="brutal-btn bg-[#2563EB] text-white h-9 font-bold"
-            >
-              {pending ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white animate-spin" />
-                  Enregistrement…
-                </span>
-              ) : 'Enregistrer'}
+            <Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg" disabled={pending}>
+              {pending ? 'Enregistrement…' : 'Enregistrer'}
             </Button>
           </DialogFooter>
         </form>
@@ -346,58 +362,3 @@ export function ModalForm({
     </Dialog>
   );
 }
-
-// ── SECTION BLOCK ──
-export function SectionBlock({ title, description, children, action }: { title: string; description?: string; children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="border-2 border-[#0A0A0A] bg-white mb-5 shadow-[4px_4px_0px_#0A0A0A]">
-      <div className="flex flex-row items-center justify-between gap-3 px-4 pt-3 pb-2.5 border-b-2 border-[#0A0A0A] bg-[#0A0A0A]">
-        <div className="min-w-0">
-          <h3 className="text-[0.88rem] font-extrabold tracking-tight text-white" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>
-            {title}
-          </h3>
-          {description && <p className="text-[0.68rem] text-neutral-400 mt-0.5 leading-relaxed">{description}</p>}
-        </div>
-        {action}
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-// ── EMPTY STATE ──
-export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
-  return (
-    <div className="animate-pop-in text-center py-14 px-6 border-2 border-dashed border-[#0A0A0A] bg-[#FAFAFA]">
-      <div className="mx-auto h-14 w-14 border-2 border-[#0A0A0A] bg-[#FACC15] flex items-center justify-center shadow-[3px_3px_0px_#0A0A0A] mb-4">
-        <Inbox className="h-6 w-6 text-[#0A0A0A]" />
-      </div>
-      <h3 className="text-sm font-bold text-[#0A0A0A]">{title}</h3>
-      {description && <p className="text-xs text-neutral-500 mt-1.5 max-w-sm mx-auto leading-relaxed">{description}</p>}
-      {action && <div className="mt-5">{action}</div>}
-    </div>
-  );
-}
-
-// ── INFO ROW ──
-export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex justify-between items-center py-2.5 border-b border-neutral-200 last:border-0">
-      <dt className="text-[0.72rem] text-neutral-500 font-bold uppercase tracking-wide">{label}</dt>
-      <dd className="text-[0.82rem] font-bold text-[#0A0A0A] text-right">{value ?? '—'}</dd>
-    </div>
-  );
-}
-
-// ── CREATE BUTTON ──
-export const CreateButton = ({ label, onClick }: { label: string; onClick?: () => void }) => (
-  <Button
-    size="sm"
-    className="brutal-btn bg-[#F97316] text-white gap-1.5 font-bold h-8"
-    onClick={onClick}
-  >
-    <Plus className="h-3.5 w-3.5" /> {label}
-  </Button>
-);
-
-export { Plus, X, Eye, Pencil };

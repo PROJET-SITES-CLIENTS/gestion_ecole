@@ -24,391 +24,260 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 }
+
+/* ═════════════════════════════════════════════════════════════════
+   INSTITUTIONAL DESIGN SYSTEM — ScolaGestion v5
+   Inspiré de Stripe / Notion / Linear : raffiné, sobre, professionnel.
+   Palette : bleu profond, slate doux, accents mesurés.
+   ═════════════════════════════════════════════════════════════════ */
 
 :root {
   --background: #FAFAFA;
-  --foreground: #0A0A0A;
+  --foreground: #0F172A;
   --card: #FFFFFF;
-  --card-foreground: #0A0A0A;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #0A0A0A;
-  --primary: #2563EB;
+  --popover-foreground: #0F172A;
+  --primary: #1E40AF;
   --primary-foreground: #FFFFFF;
-  --secondary: #F0F0F0;
-  --secondary-foreground: #0A0A0A;
-  --muted: #F5F5F5;
-  --muted-foreground: #737373;
-  --accent: #DBEAFE;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #0F172A;
+  --muted: #F8FAFC;
+  --muted-foreground: #64748B;
+  --accent: #EFF6FF;
   --accent-foreground: #1E40AF;
-  --destructive: #EC4899;
-  --border: #E5E5E5;
-  --input: #D4D4D4;
-  --ring: #2563EB;
+  --destructive: #DC2626;
+  --border: #E2E8F0;
+  --input: #CBD5E1;
+  --ring: #1E40AF;
 }
 
 .dark {
-  --background: #0A0A0A;
-  --foreground: #FAFAFA;
-  --card: #171717;
-  --card-foreground: #FAFAFA;
-  --popover: #171717;
-  --popover-foreground: #FAFAFA;
-  --primary: #3B82F6;
-  --primary-foreground: #FFFFFF;
-  --secondary: #262626;
-  --secondary-foreground: #FAFAFA;
-  --muted: #262626;
-  --muted-foreground: #A3A3A3;
+  --background: #0F172A;
+  --foreground: #F1F5F9;
+  --card: #1E293B;
+  --card-foreground: #F1F5F9;
+  --popover: #1E293B;
+  --popover-foreground: #F1F5F9;
+  --primary: #60A5FA;
+  --primary-foreground: #0F172A;
+  --secondary: #334155;
+  --secondary-foreground: #F1F5F9;
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
   --accent: #1E3A5F;
   --accent-foreground: #93C5FD;
-  --destructive: #F472B6;
-  --border: #262626;
-  --input: #404040;
-  --ring: #3B82F6;
+  --destructive: #F87171;
+  --border: #334155;
+  --input: #475569;
+  --ring: #60A5FA;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    border-radius: 0 !important;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.011em;
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Archivo', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     letter-spacing: -0.02em;
+    font-weight: 600;
   }
   code, pre, .font-mono, .tabular-nums {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
   }
   ::selection {
-    background: #2563EB;
-    color: #FFFFFF;
+    background: #DBEAFE;
+    color: #1E40AF;
   }
 }
 
+/* ── SCROLLBAR : arrondie, discrète ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
 /* ═════════════════════════════════════════════════════════════════
-   FX SYSTEM — ScolaGestion v4 « Sticky »
-   Aurora · Shimmer · Dark mode smooth · Sons · Animations
+   COMPOSANTS PROFESSIONNELS (remplacent brutal-*)
    ═════════════════════════════════════════════════════════════════ */
 
-/* ── AURORA : orbes de couleur qui ondulent lentement ── */
+/* ── CARD : bordure 1px, ombre douce, coins arrondis ── */
+.brutal-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  transition: box-shadow 0.15s ease;
+}
+.brutal-card:hover {
+  box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.08);
+}
+.dark .brutal-card {
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+}
+
+/* ── BUTTON : sobre, enfonçable léger ── */
+.brutal-btn {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.brutal-btn:hover {
+  filter: brightness(0.95);
+}
+.brutal-btn:active {
+  box-shadow: none;
+  transform: translateY(0.5px);
+}
+.brutal-btn:disabled {
+  opacity: 0.5;
+  transform: none;
+}
+
+/* ── INPUT : bordure subtile, focus ring bleu ── */
+.brutal-input {
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: var(--card);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.brutal-input:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px rgb(30 64 175 / 0.1);
+  outline: none;
+}
+.dark .brutal-input {
+  background: var(--card);
+  border-color: var(--input);
+}
+
+/* ── NAV ITEM : accent gauche fin, hover discret ── */
+.brutal-nav-item {
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.brutal-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-left-color: #334155;
+}
+.brutal-nav-item.active {
+  border-left-color: #60A5FA;
+  background: rgba(96, 165, 250, 0.1);
+  color: #E2E8F0;
+  font-weight: 600;
+}
+
+/* ── TABLE HEADER : fond clair, texte sobre ── */
+.brutal-table-header {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.dark .brutal-table-header {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+/* ── BADGE : tons doux (pas saturés) ── */
+.brutal-badge {
+  border-radius: 6px;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  font-size: 0.72rem;
+  padding: 2px 10px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+   FX SYSTEM — Animations sobres et élégantes
+   ═════════════════════════════════════════════════════════════════ */
+
+/* ── AURORA : très subtile (5-8% opacité) ── */
 .aurora-orbe {
   position: absolute;
   width: 50vw;
   height: 50vw;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.18;
+  filter: blur(120px);
+  opacity: 0.06;
   will-change: transform;
 }
 .aurora-1 {
-  background: radial-gradient(circle, #2563EB 0%, transparent 60%);
+  background: radial-gradient(circle, #3B82F6 0%, transparent 60%);
   top: -15%;
   left: -10%;
-  animation: aurora-flotte 14s ease-in-out infinite alternate;
+  animation: aurora-flotte 16s ease-in-out infinite alternate;
 }
 .aurora-2 {
-  background: radial-gradient(circle, #F97316 0%, transparent 60%);
+  background: radial-gradient(circle, #8B5CF6 0%, transparent 60%);
   bottom: -20%;
   right: -8%;
-  animation: aurora-flotte 18s ease-in-out infinite alternate-reverse;
+  animation: aurora-flotte 20s ease-in-out infinite alternate-reverse;
 }
-.aurora-3 {
-  background: radial-gradient(circle, #8B5CF6 0%, transparent 60%);
-  top: 30%;
-  left: 40%;
-  animation: aurora-flotte 22s ease-in-out infinite alternate;
-  opacity: 0.12;
-}
+.aurora-3 { display: none; /* réduit à 2 orbes pour la sobriété */ }
 @keyframes aurora-flotte {
-  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  33% { transform: translate(6vw, -4vh) scale(1.1) rotate(10deg); }
-  66% { transform: translate(-4vw, 5vh) scale(0.95) rotate(-8deg); }
-  100% { transform: translate(3vw, 2vh) scale(1.05) rotate(5deg); }
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(4vw, -3vh) scale(1.05); }
+  100% { transform: translate(-3vw, 3vh) scale(1); }
 }
 
-/* ── SHIMMER : skeletons qui brillent en vague ── */
+/* ── SHIMMER : skeletons ── */
 @keyframes shimmer {
   100% { transform: translateX(100%); }
 }
 
-/* ── DARK MODE : transition fluide des couleurs ── */
+/* ── DARK MODE : transition fluide ── */
 html.theme-fluide, html.theme-fluide * {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease !important;
 }
 
-/* ── PULSE : pour les badges de notification temps réel ── */
-@keyframes fx-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.06); opacity: 0.8; }
-}
-.fx-pulse { animation: fx-pulse 1.6s ease-in-out infinite; }
-
-/* ── APPARITION : entrée douce de bas en haut ── */
+/* ── APPARITION : entrée douce ── */
 @keyframes fx-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.fx-slide-up { animation: fx-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fx-slide-up { animation: fx-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* ── CASCADE : éléments qui arrivent en dominos ── */
 @keyframes fx-stagger {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.fx-stagger { animation: fx-stagger 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-/* ── VAGUE DE LUMIÈRE : quand une valeur se met à jour en temps réel ── */
-@keyframes fx-flash {
-  0% { background-color: rgba(37, 99, 235, 0.15); }
-  100% { background-color: transparent; }
-}
-.fx-flash { animation: fx-flash 1s ease-out; }
-
-/* ── ANNEAU DE PROGRESSION ANIMÉ (SVG stroke-dashoffset) ── */
-.fx-anneau {
-  stroke-dasharray: var(--circonference);
-  animation: fx-anneau-remplir 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-@keyframes fx-anneau-remplir {
-  from { stroke-dashoffset: var(--circonference); }
-  to { stroke-dashoffset: var(--decalage); }
-}
-
-/* ── TOAST : entrée avec ressort ── */
-@keyframes fx-toast-entree {
-  0% { opacity: 0; transform: translateY(-16px) scale(0.95); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.fx-toast { animation: fx-toast-entree 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.fx-stagger { animation: fx-stagger 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 /* ── REDUIRE LES MOUVEMENTS (accessibilité) ── */
 @media (prefers-reduced-motion: reduce) {
   .aurora-orbe { animation: none; }
-  .fx-pulse { animation: none; }
   .fx-stagger { animation-duration: 0.01s; }
   .fx-slide-up { animation-duration: 0.01s; }
-}
-
-/* ── RIPPLE : onde circulaire au clic des boutons (Material) ── */
-.fx-btn-ripple {
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-}
-.fx-btn-ripple::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at center, rgba(255,255,255,0.4) 0%, transparent 60%);
-  opacity: 0;
-  transform: scale(0);
-  pointer-events: none;
-}
-.fx-btn-ripple:active::after {
-  opacity: 1;
-  transform: scale(1.5);
-  transition: transform 0.35s ease-out, opacity 0.1s ease-out;
-}
-
-/* ── DARK MODE : styles additionnels pour les modules ── */
-.dark .brutal-card {
-  background: var(--card);
-  border-color: var(--foreground);
-  box-shadow: 4px 4px 0px rgba(250, 250, 250, 0.15);
-}
-.dark .brutal-btn {
-  border-color: var(--foreground);
-  box-shadow: 3px 3px 0px rgba(250, 250, 250, 0.15);
-}
-.dark .brutal-input {
-  border-color: var(--foreground);
-  background: var(--card);
-}
-.dark .brutal-table-header {
-  background: var(--foreground);
-  color: var(--background);
-}
-.dark ::-webkit-scrollbar-track { background: #1a1a1a; border-color: #262626; }
-.dark ::-webkit-scrollbar-thumb { background: #FAFAFA; }
-
-/* ═════════════════════════════════════════════════════════════════
-   NEO-BRUTALIST DESIGN SYSTEM — ScolaGestion v3
-   Couleurs vives · Angles droits · Ombres sticker · Typographie forte
-   ═════════════════════════════════════════════════════════════════ */
-
-/* ── COULEURS VIVES (variables utilitaires) ── */
-:root {
-  --c-electric: #2563EB;
-  --c-orange: #F97316;
-  --c-lime: #84CC16;
-  --c-pink: #EC4899;
-  --c-violet: #8B5CF6;
-  --c-cyan: #06B6D4;
-  --c-yellow: #FACC15;
-  --c-black: #0A0A0A;
-  --c-white: #FFFFFF;
-}
-
-/* ── SCROLLBAR : carrée noire ── */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #F0F0F0;
-  border-left: 1px solid #E5E5E5;
-}
-::-webkit-scrollbar-thumb {
-  background: #0A0A0A;
-  border: 0;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #2563EB;
-}
-
-/* ── BRUTAL CARD : bordure 2px noire + ombre sticker ── */
-.brutal-card {
-  background: #FFFFFF;
-  border: 2px solid #0A0A0A;
-  border-radius: 0;
-  box-shadow: 4px 4px 0px #0A0A0A;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.brutal-card:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0px #0A0A0A;
-}
-.brutal-card:active {
-  transform: translate(2px, 2px);
-  box-shadow: 0px 0px 0px #0A0A0A;
-}
-
-/* ── BRUTAL BUTTON : enfonçable ── */
-.brutal-btn {
-  border: 2px solid #0A0A0A;
-  border-radius: 0;
-  box-shadow: 3px 3px 0px #0A0A0A;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-  font-weight: 600;
-}
-.brutal-btn:hover {
-  transform: translate(1px, 1px);
-  box-shadow: 2px 2px 0px #0A0A0A;
-}
-.brutal-btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: 0px 0px 0px #0A0A0A;
-}
-.brutal-btn:disabled {
-  opacity: 0.5;
-  transform: none;
-  box-shadow: 3px 3px 0px #0A0A0A;
-}
-
-/* ── BRUTAL INPUT ── */
-.brutal-input {
-  border: 2px solid #0A0A0A;
-  border-radius: 0;
-  background: #FFFFFF;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
-}
-.brutal-input:focus {
-  outline: none;
-  border-color: #2563EB;
-  box-shadow: 3px 3px 0px #2563EB;
-}
-.brutal-input::placeholder {
-  color: #A3A3A3;
-}
-
-/* ── BRUTAL BADGE : couleur pleine, texte blanc ── */
-.brutal-badge {
-  border: 2px solid #0A0A0A;
-  border-radius: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 700;
-  font-size: 0.65rem;
-  padding: 2px 8px;
-  display: inline-flex;
-  align-items: center;
-}
-
-/* ── SIDEBAR ITEM ── */
-.brutal-nav-item {
-  border-radius: 0;
-  border-left: 4px solid transparent;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-}
-.brutal-nav-item:hover {
-  border-left-color: #F97316;
-  transform: translateX(4px);
-}
-.brutal-nav-item.active {
-  border-left-color: #2563EB;
-  background: #2563EB;
-  color: #FFFFFF;
-  font-weight: 700;
-}
-
-/* ── TABLE BRUTAL ── */
-.brutal-table-header {
-  background: #0A0A0A;
-  color: #FFFFFF;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.65rem;
-  font-weight: 700;
-}
-.brutal-table-row:hover {
-  background: #CFFAFE;
-}
-
-/* ── ANIMATIONS ── */
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-slide-up {
-  animation: slideUp 0.3s cubic-bezier(0.2, 0, 0.2, 1) both;
-}
-
-@keyframes popIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-.animate-pop-in {
-  animation: popIn 0.2s cubic-bezier(0.2, 0, 0.2, 1) both;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-.animate-blink {
-  animation: blink 1.5s ease-in-out infinite;
-}
-
-/* ── SCROLLBAR MOBILE ── */
-@media (pointer: coarse) {
-  ::-webkit-scrollbar { display: none; }
-  * { scrollbar-width: none; }
-  button, a, input, select, textarea { min-height: 44px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
 }

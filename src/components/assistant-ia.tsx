@@ -269,13 +269,13 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 24, scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-      className="fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2.5rem))] h-[min(600px,calc(100vh-2.5rem))] bg-white dark:bg-neutral-900 border-2 border-[#0A0A0A] dark:border-white shadow-[6px_6px_0px_#0A0A0A] dark:shadow-[6px_6px_0px_rgba(255,255,255,0.15)] flex flex-col overflow-hidden"
+      className="fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2.5rem))] h-[min(600px,calc(100vh-2.5rem))] bg-white dark:bg-neutral-900 border border-slate-200 dark:border-slate-700 shadow-xl rounded-2xl flex flex-col overflow-hidden"
     >
       <div className="bg-[#0A0A0A] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#F97316]">
         <div className="flex items-center gap-2">
           {/* FX — Avatar ARIA : cligne des yeux pendant qu'elle réfléchit */}
           <motion.div
-            className="h-8 w-8 border-2 border-[#F97316] bg-[#2563EB] flex items-center justify-center"
+            className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center"
             animate={enCours ? { scale: [1, 1.05, 1] } : {}}
             transition={{ duration: 0.8, repeat: enCours ? Infinity : 0 }}
           >
@@ -294,7 +294,7 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
           <button
             onClick={basculerConversation}
             title={modeConv ? 'Arrêter la conversation vocale' : 'Mode conversation mains libres (je parle, ARIA répond à voix haute et réécoute)'}
-            className={`p-1.5 rounded ${modeConv ? 'bg-white text-emerald-700 animate-pulse' : 'hover:bg-emerald-700'}`}
+            className={`p-1.5 rounded ${modeConv ? 'bg-white text-blue-700 animate-pulse' : 'hover:bg-emerald-700'}`}
             aria-label="Mode conversation vocale"
           >
             <Headphones className="h-4 w-4" />
@@ -311,13 +311,13 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
       <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
         {tours.map((t, i) => (
           <div key={i} className={t.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${t.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 rounded-bl-sm'}`}>
+            <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${t.role === 'user' ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-slate-50 border border-slate-200 rounded-bl-sm'}`}>
               {t.content}
               {t.actions && t.actions.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
                   {t.actions.map((a, j) => (
                     <div key={j} className="flex items-start gap-1.5 text-[11px] text-gray-600">
-                      {a.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-rose-600 flex-shrink-0 mt-0.5" />}
+                      {a.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 flex-shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-rose-600 flex-shrink-0 mt-0.5" />}
                       <span><b>{a.outil}</b> — {a.resume}</span>
                     </div>
                   ))}
@@ -335,10 +335,10 @@ export default function AssistantIA({ prenom }: { prenom?: string }) {
         <div ref={finRef} />
       </div>
 
-      <div className="p-2 border-t bg-white">
+      <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-neutral-900">
         {modeConv && (
           <div className="flex items-center justify-between px-2 pb-1.5">
-            <span className="text-[11px] text-emerald-700">
+            <span className="text-[11px] text-blue-700">
               {ecoute ? '🎧 Parlez — je transcris en direct…' : parle ? '🔊 Réponse en cours de lecture…' : '⏳ Prêt à réécouter…'}
             </span>
             <button onClick={arreterVoix} className="text-[11px] text-rose-600 hover:underline">

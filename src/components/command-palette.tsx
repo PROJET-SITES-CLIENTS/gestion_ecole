@@ -178,7 +178,7 @@ export function CommandPalette({
           onClick={onFermer}
         >
           <motion.div
-            className="w-[min(560px,calc(100vw-2rem))] border-2 border-[#0A0A0A] bg-white dark:bg-neutral-900 shadow-[8px_8px_0px_#0A0A0A] overflow-hidden"
+            className="w-[min(560px,calc(100vw-2rem))] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden"
             initial={{ scale: 0.95, y: -16, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, y: -16, opacity: 0 }}
@@ -186,7 +186,7 @@ export function CommandPalette({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Champ de recherche */}
-            <div className="flex items-center gap-3 border-b-2 border-[#0A0A0A] dark:border-white px-4 py-3">
+            <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 px-4 py-3">
               <Search className="h-5 w-5 text-gray-400 flex-shrink-0" />
               <input
                 ref={inputRef}

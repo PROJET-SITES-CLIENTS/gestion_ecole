@@ -176,8 +176,8 @@ export default function LoginPage() {
           <CardHeader className="text-center pb-2">
             <motion.div
               className="mx-auto h-12 w-12 border-2 border-[#0A0A0A] bg-[#F97316] text-white flex items-center justify-center font-bold mb-3 shadow-[3px_3px_0px_#0A0A0A]"
-              initial={{ scale: 0, rotate: -180 }}
-              animate={{ scale: 1, rotate: 0 }}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 260, damping: 16, delay: 0.3 }}
             >
               <GraduationCap className="h-6 w-6" />
@@ -196,7 +196,7 @@ export default function LoginPage() {
                   </div>
                 )}
                 {oubliMessage && (
-                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-blue-800" role="status">
                     {oubliMessage}
                   </div>
                 )}
@@ -218,7 +218,7 @@ export default function LoginPage() {
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={pendingOubli}>
+                    <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={pendingOubli}>
                       {pendingOubli ? 'Enregistrement…' : 'Définir le nouveau mot de passe'}
                     </Button>
                   </form>
@@ -240,7 +240,7 @@ export default function LoginPage() {
                         />
                       </div>
                     </div>
-                    <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={pendingOubli}>
+                    <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={pendingOubli}>
                       {pendingOubli ? 'Envoi…' : 'Envoyer le lien de réinitialisation'}
                     </Button>
                   </form>
@@ -262,7 +262,7 @@ export default function LoginPage() {
                     <span>{erreur}</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-blue-800">
                   <ShieldCheck className="h-4 w-4 flex-shrink-0" />
                   <span>Double authentification requise — saisissez le code à 6 chiffres de votre application d&apos;authentification (ou un code de secours).</span>
                 </div>
@@ -279,7 +279,7 @@ export default function LoginPage() {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={pending}>
+                <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={pending}>
                   <ShieldCheck className="h-4 w-4 mr-2" />
                   {pending ? 'Vérification…' : 'Vérifier et se connecter'}
                 </Button>
@@ -331,13 +331,13 @@ export default function LoginPage() {
                     />
                   </div>
                 </div>
-                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={pending}>
+                <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={pending}>
                   <LogIn className="h-4 w-4 mr-2" />
                   {pending ? 'Connexion…' : 'Se connecter'}
                 </Button>
                 <button
                   type="button"
-                  className="w-full text-xs text-emerald-700 hover:text-emerald-800 underline"
+                  className="w-full text-xs text-blue-700 hover:text-blue-800 underline"
                   onClick={ouvrirOubli}
                 >
                   Mot de passe oublié ?
@@ -345,7 +345,7 @@ export default function LoginPage() {
                 <p className="text-xs text-gray-400 text-center">
                   Session sécurisée 8 h · verrouillage automatique après 5 tentatives échouées · protection 2FA
               <div className="text-center pt-1">
-                <a href="/inscription" className="text-sm text-emerald-600 hover:underline font-medium">
+                <a href="/inscription" className="text-sm text-blue-600 hover:underline font-medium">
                   Pas encore de compte ? S&apos;inscrire / créer votre école →
                 </a>
               </div>
@@ -372,7 +372,7 @@ export default function LoginPage() {
           >
             Votre école,
             <br />
-            <span className="text-[#2563EB]">enfin sous contrôle.</span>
+            <span className="text-blue-700">enfin sous contrôle.</span>
           </motion.h2>
           <motion.div
             className="grid grid-cols-2 gap-3 max-w-xs"
@@ -381,10 +381,10 @@ export default function LoginPage() {
             transition={{ delay: 0.55 }}
           >
             {[
-              ['📊', 'Cockpit 360°'],
-              ['🎙️', 'ARIA vocale'],
-              ['💰', 'Compta SYSCOHADA'],
-              ['🎯', 'Paie & RH complets'],
+              ['Cockpit 360° temps réel'],
+              ['ARIA — Assistant IA vocal'],
+              ['Comptabilité SYSCOHADA'],
+              ['Paie & RH complets'],
             ].map(([ico, label], i) => (
               <motion.div
                 key={label}
@@ -392,7 +392,7 @@ export default function LoginPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.6 + i * 0.1 }}
-                whileHover={{ scale: 1.05, rotate: i % 2 === 0 ? -1 : 1 }}
+                whileHover={{ scale: 1.03 }}
               >
                 {ico} {label}
               </motion.div>
