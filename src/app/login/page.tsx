@@ -47,6 +47,9 @@ export default function LoginPage() {
   const [afficherDemo, setAfficherDemo] = useState(false);
 
   useEffect(() => {
+    // RÉVEIL BDD : ping immédiat pour réchauffer Supabase pendant que
+    // l'utilisateur tape son email (le formulaire couvre le délai de réveil)
+    fetch('/api/keep-alive').catch(() => {});
     fetch('/api/config-login')
       .then((r) => (r.ok ? r.json() : { demo: false }))
       .then((d) => setAfficherDemo(Boolean(d?.demo)))
