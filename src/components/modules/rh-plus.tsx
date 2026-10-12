@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as ext from '@/app/actions/rh-complements';
+import { SkeletonCarte, SkeletonLignes } from '@/components/fx';
 
 const sel = 'w-full h-9 rounded-md border border-gray-200 bg-white px-3 text-sm';
 const fmtD = (d: any) => new Date(d).toLocaleDateString('fr-FR');
@@ -36,12 +37,21 @@ export default function RhPlusModule({ initialData }: { initialData?: any }) {
     ret.run(async () => { const r = await fn(); if (r && r.ok === false) throw new Error(r.error); charger(); return { ok: true }; }, nom);
   }
 
-  if (!data) return erreur ? (
+  if (!data) return (
+    <div className="space-y-4 p-6">
+      <SkeletonCarte />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SkeletonCarte /><SkeletonCarte /><SkeletonCarte /><SkeletonCarte />
+      </div>
+      <SkeletonLignes n={5} />
+    </div>
+  );
+  if (erreur) return (
     <div className="p-6 text-center">
       <p className="text-sm text-rose-600 mb-3">{erreur}</p>
       <button onClick={charger} className="text-sm text-emerald-600 hover:underline font-medium">Réessayer</button>
     </div>
-  ) : <div className="p-6 text-sm text-gray-500">Chargement RH…</div>;
+  );
   const formations = data.formations ?? [], sanctions = data.sanctions ?? [], soldes = data.soldes ?? [];
 
   return (

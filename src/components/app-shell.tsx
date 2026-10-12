@@ -3,7 +3,8 @@
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarreProgression } from '@/components/fx';
+import { BarreProgression, sons, sonsEnabled, reglerSons } from '@/components/fx';
+import { CommandPalette } from '@/components/command-palette';
 
 // ====================================================================
 // CODE SPLITTING — Chargement à la demande (lazy loading)
@@ -243,6 +244,25 @@ export default function AppShell({ initialData }: { initialData: any }) {
   const [pendingEcole, startEcole] = useTransition(); // D5 — bascule d'école
   const [pendingNotifs, startNotifs] = useTransition(); // C2 — tout marquer lu
   const [darkMode, setDarkMode] = useState(false); // FX — dark mode
+  const [paletteOuverte, setPaletteOuverte] = useState(false); // FX — ⌘K
+  const [sonsOn, setSonsOn] = useState(true); // FX — toggle sons UI
+
+  // FX — raccourci Ctrl+K / Cmd+K → palette
+  useEffect(() => {
+    const gerer = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOuverte((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', gerer);
+    return () => window.removeEventListener('keydown', gerer);
+  }, []);
+
+  // FX — initialiser le toggle sons
+  useEffect(() => {
+    setSonsOn(sonsEnabled());
+  }, []);
 
   // FX — initialisation du dark mode depuis localStorage
   useEffect(() => {
@@ -520,6 +540,27 @@ export default function AppShell({ initialData }: { initialData: any }) {
             </select>
           )}
 
+          {/* FX — Palette ⌘K (bouton recherche rapide) */}
+          <button
+            onClick={() => setPaletteOuverte(true)}
+            className="hidden sm:flex items-center gap-2 h-8 px-3 border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-xs"
+            title="Recherche globale (Ctrl+K)"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Rechercher…</span>
+            <kbd className="hidden md:inline-flex text-[9px] font-bold border border-gray-300 dark:border-gray-600 px-1 py-0.5">⌘K</kbd>
+          </button>
+
+          {/* FX — Toggle sons UI */}
+          <button
+            onClick={() => { const n = !sonsOn; setSonsOn(n); reglerSons(n); if (n) sons.pop(); }}
+            className="hidden sm:flex items-center justify-center h-8 w-8 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+            title={sonsOn ? 'Couper les sons' : 'Activer les sons'}
+            aria-label="Toggle sons UI"
+          >
+            {sonsOn ? '🔊' : '🔇'}
+          </button>
+
           {/* FX — Toggle dark mode */}
           <button
             onClick={basculerTheme}
@@ -547,7 +588,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
               <Button variant="ghost" size="sm" className="relative">
                 <Bell className="h-4 w-4" />
                 {nonLues > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-rose-500 border border-white text-white text-[10px] flex items-center justify-center fx-pulse">
                     {nonLues}
                   </span>
                 )}
@@ -624,6 +665,17 @@ export default function AppShell({ initialData }: { initialData: any }) {
             </motion.div>
           </AnimatePresence>
         </main>
+
+        {/* FX — Command Palette ⌘K */}
+        <CommandPalette
+          ouvert={paletteOuverte}
+          onFermer={() => setPaletteOuverte(false)}
+          modules={visibleModules.map((m) => ({ id: m.id, label: m.label }))}
+          eleves={initialData.eleves ?? []}
+          personnels={initialData.personnels ?? []}
+          classes={initialData.classes ?? []}
+          onNaviguer={(id) => setActive(id as ModuleId)}
+        />
 
         <footer className="bg-white border-t border-gray-200 py-2 px-4 text-xs text-gray-500 flex items-center justify-between">
           <span>ScolaGestion — Plateforme SaaS de Gestion Scolaire · Version 4 (cahier des charges complet)</span>

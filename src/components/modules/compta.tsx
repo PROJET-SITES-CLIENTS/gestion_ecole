@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as ext from '@/app/actions/comptabilite';
 import * as ext2 from '@/app/actions/completions';
+import { SkeletonCarte, SkeletonLignes } from '@/components/fx';
 
 const fmt = (c: number) => `${(c / 100).toLocaleString('fr-FR')} F`;
 
@@ -50,7 +51,15 @@ export default function ComptaModule({ initialData }: { initialData?: any }) {
     });
   }
 
-  if (!data) return <div className="p-6 text-sm text-gray-500">Chargement de la comptabilité…</div>;
+  if (!data) return (
+    <div className="space-y-4 p-6">
+      <SkeletonCarte />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SkeletonCarte /><SkeletonCarte /><SkeletonCarte /><SkeletonCarte />
+      </div>
+      <SkeletonLignes n={6} />
+    </div>
+  );
   const session = data.sessionCaisse;
   const fournisseurs = data.fournisseurs ?? [];
   const sections = data.sections ?? [];
