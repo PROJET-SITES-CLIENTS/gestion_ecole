@@ -1,0 +1,27 @@
+# ====================================================================
+# KEEP-ALIVE PERMANENT — GitHub Actions ping la base toutes les 5 min
+# Coût : 0€ (GitHub Actions gratuit : 2000 min/mois, on en utilise ~450)
+# Résultat : la base Supabase ne s'endort JAMAIS
+# ====================================================================
+name: Keep-Alive Database
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Toutes les 5 minutes (minimum GitHub Actions)
+  workflow_dispatch:         # Permet aussi de le déclencher manuellement
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping Supabase via Vercel
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 30 \
+            "https://extracted-indol.vercel.app/api/keep-alive")
+          BODY=$(echo "$RESPONSE" | head -n 1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "HTTP $CODE — $BODY"
+          if [ "$CODE" != "200" ]; then
+            echo "::warning::Keep-alive a retourné $CODE"
+          fi
