@@ -64,7 +64,7 @@ import {
   ScrollText, Wallet, School, ChevronDown, Bell, Menu, X,
   CheckCircle2, HeartPulse, LogOut, Search, Activity, Gavel, Plug, CheckCheck,
   UserPlus, ShieldAlert, FileText, Settings2, Building, Calculator,
-  Moon, Sun, Volume2, VolumeX } from 'lucide-react';
+  Moon, Sun, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -238,6 +238,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
   const portal: Portal = initialData?.session?.portal ?? 'direction';
   const [active, setActive] = useState<ModuleId>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCompact, setSidebarCompact] = useState(false);
   const [pendingLogout, startLogout] = useTransition();
   const [enDirect, setEnDirect] = useState(false);
   const [tempsReel, setTempsReel] = useState(false); // D1 — SSE connecté
@@ -263,6 +264,18 @@ export default function AppShell({ initialData }: { initialData: any }) {
   useEffect(() => {
     setSonsOn(sonsEnabled());
   }, []);
+
+  // Sidebar compacte — persistée
+  useEffect(() => {
+    const s = localStorage.getItem('sg-sidebar');
+    if (s === 'compact') setSidebarCompact(true);
+  }, []);
+
+  function basculerSidebar() {
+    const n = !sidebarCompact;
+    setSidebarCompact(n);
+    localStorage.setItem('sg-sidebar', n ? 'compact' : 'full');
+  }
 
   // FX — initialisation du dark mode depuis localStorage
   useEffect(() => {
@@ -452,13 +465,13 @@ export default function AppShell({ initialData }: { initialData: any }) {
   return (
     <div className="flex h-screen bg-[#FAFAFA] text-[#0A0A0A]">
       {/* Sidebar — noir pur, bordure électrique */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 sm:w-64 bg-[#0F172A] dark:bg-[#0A0F1E] border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-lg lg:shadow-none`}>
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 ${sidebarCompact ? 'w-16' : 'w-72 sm:w-64'} bg-[#0F172A] dark:bg-[#0A0F1E] border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-lg lg:shadow-none`}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
           <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
             SG
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[0.85rem] font-extrabold text-white leading-tight tracking-tight" style={{ fontFamily: 'var(--font-heading), Archivo, sans-serif' }}>ScolaGestion</div>
+          <div className={`flex-1 min-w-0 ${sidebarCompact ? 'hidden' : ''}`}>
+            <div className="text-[0.85rem] font-extrabold text-white leading-tight tracking-tight">ScolaGestion</div>
             <div className="text-[0.65rem] text-blue-400 font-medium">{PORTAL_LABELS[portal]}</div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-neutral-400 hover:text-white transition-colors">
@@ -482,7 +495,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <Icon className={`h-[1rem] w-[1rem] flex-shrink-0 ${isActive ? 'text-white' : ''}`} />
-                  <span className="truncate">{m.label}</span>
+                  <span className={`truncate ${sidebarCompact ? 'hidden' : ''}`}>{m.label}</span>
                 </div>
                 {m.id === 'eleves' && initialData?.totaux?.eleves != null && (
                   <span className={`ml-2 flex-shrink-0 text-[0.65rem] font-extrabold px-2 py-0.5 tabular-nums border ${
@@ -496,11 +509,14 @@ export default function AppShell({ initialData }: { initialData: any }) {
           })}
         </nav>
 
-        <div className="px-4 py-4 border-t border-slate-800 bg-slate-900/50">
+        <div className={`px-4 py-4 border-t border-slate-800 bg-slate-900/50 ${sidebarCompact ? 'hidden' : ''}`}>
           <div className="text-[0.6rem] text-neutral-500 font-bold uppercase tracking-widest mb-1">École courante</div>
           <div className="text-[0.8rem] font-bold text-white truncate">{school?.nom ?? '—'}</div>
           <div className="text-[0.65rem] text-neutral-500 truncate">{school?.slug}.platforme.com</div>
         </div>
+        <button onClick={basculerSidebar} className="hidden lg:flex items-center justify-center py-2.5 border-t border-slate-800 text-neutral-400 hover:text-white hover:bg-slate-800 transition-colors" title={sidebarCompact ? 'Développer' : 'Réduire'}>
+          {sidebarCompact ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
       </aside>
 
       {/* Overlay mobile */}
@@ -659,7 +675,7 @@ export default function AppShell({ initialData }: { initialData: any }) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="h-full"
+              className="h-full p-4 lg:p-6"
             >
           {renderModule()}
             </motion.div>
