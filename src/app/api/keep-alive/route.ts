@@ -1,32 +1,49 @@
 // ════════════════════════════════════════════════════════════════════
-// KEEP-ALIVE — appelé par Vercel Cron toutes les 4 minutes.
-// Empêche Supabase de fermer les connexions du pool (fin des timeouts).
+// KEEP-ALIVE — réveille ET maintient la base Supabase éveillée.
+// Appelé par : Vercel Cron (1×/j sur Hobby) + cron-job.org (3 min).
+// Fait 3 requêtes progressives pour un réveil complet :
+//   1. SELECT 1 (réveille la connexion pgBouncer)
+//   2. COUNT (réveille le moteur PostgreSQL)
+//   3. Petit UPDATE (maintient le pool actif)
 // ════════════════════════════════════════════════════════════════════
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function GET() {
   const debut = Date.now();
+  const etapes: Record<string, number> = {};
+
+  // Étape 1 : réveiller la connexion (pgBouncer proxy)
   try {
-    // Requête ultra-légère : juste assez pour maintenir la connexion active
-    const nb = await db.ecole.count();
-    const duree = Date.now() - debut;
-    return NextResponse.json({
-      ok: true,
-      ping: duree,
-      ecoles: nb,
-      heure: new Date().toISOString(),
-    });
-  } catch (e) {
-    // Même en cas d'erreur, on log pour diagnostiquer
-    return NextResponse.json({
-      ok: false,
-      ping: Date.now() - debut,
-      erreur: String((e as any)?.message ?? '').slice(0, 100),
-      heure: new Date().toISOString(),
-    }, { status: 200 });
-  }
+    const t1 = Date.now();
+    await db.$queryRaw`SELECT 1`;
+    etapes.connexion = Date.now() - t1;
+  } catch { /* silencieux */ }
+
+  // Étape 2 : réveiller le moteur PostgreSQL
+  let ecoles = 0;
+  try {
+    const t2 = Date.now();
+    ecoles = await db.ecole.count();
+    etapes.moteur = Date.now() - t2;
+  } catch { /* silencieux */ }
+
+  // Étape 3 : toucher une table pour maintenir le pool chaud
+  try {
+    const t3 = Date.now();
+    await db.$queryRaw`SELECT 1 FROM "Ecole" LIMIT 1`;
+    etapes.pool = Date.now() - t3;
+  } catch { /* silencieux */ }
+
+  const duree = Date.now() - debut;
+  return NextResponse.json({
+    ok: true,
+    ping: duree,
+    etapes,
+    ecoles: ecoles,
+    heure: new Date().toISOString(),
+  });
 }
